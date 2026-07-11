@@ -198,6 +198,122 @@ mod oracle {
                     _ => RefStep::Fault(Fault::TypeMismatch),
                 }
             }
+            // ---------------- v0.2 recursion primitives ----------------
+            Prim::PrimRec => {
+                // ( n [I] [C] -- r )
+                if n < 3 {
+                    return RefStep::Fault(Fault::Underflow);
+                }
+                match (&s[n - 3], &s[n - 2], &s[n - 1]) {
+                    (Value::Int(k), Value::Quote(qi), Value::Quote(qc)) => {
+                        let (k, qi, qc) = (*k, qi.clone(), qc.clone());
+                        let base = s[..n - 3].to_vec();
+                        if k <= 0 {
+                            let mut cont = qi;
+                            cont.extend(rest);
+                            next(base, cont)
+                        } else {
+                            let mut cont = vec![
+                                Word::PushInt(k),
+                                Word::PushInt(k - 1),
+                                Word::PushQuote(qi),
+                                Word::PushQuote(qc.clone()),
+                                Word::Prim(Prim::PrimRec),
+                            ];
+                            cont.extend(qc);
+                            cont.extend(rest);
+                            next(base, cont)
+                        }
+                    }
+                    _ => RefStep::Fault(Fault::TypeMismatch),
+                }
+            }
+            Prim::Times => {
+                // ( n [Q] -- ... )
+                if n < 2 {
+                    return RefStep::Fault(Fault::Underflow);
+                }
+                match (&s[n - 2], &s[n - 1]) {
+                    (Value::Int(k), Value::Quote(q)) => {
+                        let (k, q) = (*k, q.clone());
+                        let base = s[..n - 2].to_vec();
+                        if k <= 0 {
+                            next(base, rest)
+                        } else {
+                            let mut cont = q.clone();
+                            cont.push(Word::PushInt(k - 1));
+                            cont.push(Word::PushQuote(q));
+                            cont.push(Word::Prim(Prim::Times));
+                            cont.extend(rest);
+                            next(base, cont)
+                        }
+                    }
+                    _ => RefStep::Fault(Fault::TypeMismatch),
+                }
+            }
+            Prim::LinRec => {
+                // ( [P] [T] [R1] [R2] -- ... ) — desugars into If.
+                if n < 4 {
+                    return RefStep::Fault(Fault::Underflow);
+                }
+                match (&s[n - 4], &s[n - 3], &s[n - 2], &s[n - 1]) {
+                    (Value::Quote(qp), Value::Quote(qt), Value::Quote(qr1), Value::Quote(qr2)) => {
+                        let (qp, qt, qr1, qr2) =
+                            (qp.clone(), qt.clone(), qr1.clone(), qr2.clone());
+                        let base = s[..n - 4].to_vec();
+                        let mut else_q = qr1.clone();
+                        else_q.push(Word::PushQuote(qp.clone()));
+                        else_q.push(Word::PushQuote(qt.clone()));
+                        else_q.push(Word::PushQuote(qr1));
+                        else_q.push(Word::PushQuote(qr2.clone()));
+                        else_q.push(Word::Prim(Prim::LinRec));
+                        else_q.extend(qr2);
+                        let mut cont = qp;
+                        cont.push(Word::PushQuote(qt));
+                        cont.push(Word::PushQuote(else_q));
+                        cont.push(Word::Prim(Prim::If));
+                        cont.extend(rest);
+                        next(base, cont)
+                    }
+                    _ => RefStep::Fault(Fault::TypeMismatch),
+                }
+            }
+            Prim::Uncons => {
+                // ( [w ...] -- w [...] 1 ) | ( [] -- 0 )
+                if n < 1 {
+                    return RefStep::Fault(Fault::Underflow);
+                }
+                match &s[n - 1] {
+                    Value::Quote(q) => {
+                        let base = s[..n - 1].to_vec();
+                        if q.is_empty() {
+                            let mut ns = base;
+                            ns.push(Value::Int(0));
+                            next(ns, rest)
+                        } else {
+                            let tail = q[1..].to_vec();
+                            match &q[0] {
+                                Word::PushInt(i) => {
+                                    let mut ns = base;
+                                    ns.push(Value::Int(*i));
+                                    ns.push(Value::Quote(tail));
+                                    ns.push(Value::Int(1));
+                                    next(ns, rest)
+                                }
+                                Word::PushQuote(sq) => {
+                                    let mut ns = base;
+                                    ns.push(Value::Quote(sq.clone()));
+                                    ns.push(Value::Quote(tail));
+                                    ns.push(Value::Int(1));
+                                    next(ns, rest)
+                                }
+                                _ => RefStep::Fault(Fault::TypeMismatch),
+                            }
+                        }
+                    }
+                    _ => RefStep::Fault(Fault::TypeMismatch),
+                }
+            }
         }
     }
 
@@ -522,6 +638,267 @@ mod golden {
 }
 
 // ============================================================
+// RECURSION — v0.2 primitives: primrec, times, linrec, uncons.
+// Includes the design doc's worked example programs (§7):
+//   factorial-via-primrec, gcd-via-linrec, fib-via-times.
+// ============================================================
+mod recursion {
+    use super::*;
+
+    // ---- primrec ( n [I] [C] -- r ) ----
+
+    // factorial `[1][*]&`: base I=[1], combine C=[*] (design §7).
+    fn factorial(n: i64) -> Vec<Value> {
+        expect_halt(
+            vec![i(n)],
+            vec![quote(vec![int(1)]), quote(vec![mul()]), primrec()],
+        )
+    }
+
+    #[test]
+    fn factorial_via_primrec() {
+        assert_eq!(factorial(0), vec![i(1)]);
+        assert_eq!(factorial(1), vec![i(1)]);
+        assert_eq!(factorial(2), vec![i(2)]);
+        assert_eq!(factorial(3), vec![i(6)]);
+        assert_eq!(factorial(4), vec![i(24)]);
+        assert_eq!(factorial(5), vec![i(120)]);
+    }
+
+    // sum_to `[0][+]&`: base I=[0], combine C=[+] (design §7).
+    fn sum_to(n: i64) -> Vec<Value> {
+        expect_halt(
+            vec![i(n)],
+            vec![quote(vec![int(0)]), quote(vec![add()]), primrec()],
+        )
+    }
+
+    #[test]
+    fn sum_to_via_primrec() {
+        assert_eq!(sum_to(0), vec![i(0)]);
+        assert_eq!(sum_to(1), vec![i(1)]);
+        assert_eq!(sum_to(3), vec![i(6)]); // 3+2+1+0
+        assert_eq!(sum_to(10), vec![i(55)]);
+    }
+
+    #[test]
+    fn primrec_nonpositive_count_runs_base() {
+        // n<=0 discards the count and runs I on the base stack (total, no fault).
+        assert_eq!(
+            expect_halt(
+                vec![i(0)],
+                vec![quote(vec![int(42)]), quote(vec![mul()]), primrec()]
+            ),
+            vec![i(42)]
+        );
+        assert_eq!(
+            expect_halt(
+                vec![i(-5)],
+                vec![quote(vec![int(42)]), quote(vec![mul()]), primrec()]
+            ),
+            vec![i(42)]
+        );
+        assert_eq!(
+            expect_halt(
+                vec![i(i64::MIN)],
+                vec![quote(vec![int(7)]), quote(vec![mul()]), primrec()]
+            ),
+            vec![i(7)]
+        );
+    }
+
+    #[test]
+    fn primrec_keeps_count_available_to_combine() {
+        // The combine sees (count, subresult). With I=[] and C=[+], the fold is
+        // n + (n-1) + ... + 1 + 0 == sum_to(n); confirms n is on the stack for C.
+        assert_eq!(
+            expect_halt(
+                vec![i(4)],
+                vec![quote(vec![int(0)]), quote(vec![add()]), primrec()]
+            ),
+            vec![i(10)]
+        );
+    }
+
+    // ---- times ( n [Q] -- ... ) ----
+
+    // fib `01@[~^+].` then `_`: seed 0 1, rotate count up, step [swap over add]
+    // n times, drop the spare accumulator (design §7.2).
+    fn fib(n: i64) -> Vec<Value> {
+        expect_halt(
+            vec![i(n)],
+            vec![
+                int(0),
+                int(1),
+                rot(),
+                quote(vec![swap(), over(), add()]),
+                times(),
+                drop(),
+            ],
+        )
+    }
+
+    #[test]
+    fn fib_via_times() {
+        assert_eq!(fib(0), vec![i(0)]);
+        assert_eq!(fib(1), vec![i(1)]);
+        assert_eq!(fib(2), vec![i(1)]);
+        assert_eq!(fib(3), vec![i(2)]);
+        assert_eq!(fib(5), vec![i(5)]);
+        assert_eq!(fib(10), vec![i(55)]);
+    }
+
+    #[test]
+    fn times_counts_iterations() {
+        // Run [1 +] exactly n times over accumulator 0 -> n.
+        let prog = |n: i64| vec![int(n), quote(vec![int(1), add()]), times()];
+        assert_eq!(expect_halt(vec![i(0)], prog(3)), vec![i(3)]);
+        assert_eq!(expect_halt(vec![i(0)], prog(1)), vec![i(1)]);
+    }
+
+    #[test]
+    fn times_nonpositive_count_is_noop() {
+        // n<=0 is a no-op: Q never runs; the count and quote are consumed.
+        assert_eq!(
+            expect_halt(vec![i(99)], vec![int(0), quote(vec![int(1), add()]), times()]),
+            vec![i(99)]
+        );
+        assert_eq!(
+            expect_halt(vec![i(99)], vec![int(-4), quote(vec![int(1), add()]), times()]),
+            vec![i(99)]
+        );
+        assert_eq!(
+            expect_halt(
+                vec![i(99)],
+                vec![int(i64::MIN), quote(vec![int(1), add()]), times()]
+            ),
+            vec![i(99)]
+        );
+    }
+
+    // power `1~[^*].~_`: seed acc 1 under (b e), run [over mul] e times (design §7).
+    // Here written explicitly: stack (b), acc 1, count e, step [over mul].
+    #[test]
+    fn power_via_times() {
+        // b^e: acc starts 1, each step multiplies acc by b (over then mul).
+        // stack layout: [b, 1], then push e, push [over mul], times, then drop b.
+        let power = |b: i64, e: i64| {
+            expect_halt(
+                vec![i(b), i(1)],
+                vec![int(e), quote(vec![over(), mul()]), times(), swap(), drop()],
+            )
+        };
+        assert_eq!(power(2, 0), vec![i(1)]);
+        assert_eq!(power(2, 3), vec![i(8)]);
+        assert_eq!(power(3, 4), vec![i(81)]);
+        assert_eq!(power(5, 2), vec![i(25)]);
+    }
+
+    // ---- linrec ( [P] [T] [R1] [R2] -- ... ) ----
+
+    // gcd `[:0=][_][~^%][]|`: P tests top==0 nondestructively, T drops the 0,
+    // R1 is [swap over mod], R2 is [] (tail recursion) (design §7, §3.3).
+    fn gcd(a: i64, b: i64) -> Vec<Value> {
+        expect_halt(
+            vec![i(a), i(b)],
+            vec![
+                quote(vec![dup(), int(0), eq()]), // P
+                quote(vec![drop()]),              // T
+                quote(vec![swap(), over(), modulo()]), // R1
+                quote(vec![]),                    // R2 = []
+                linrec(),
+            ],
+        )
+    }
+
+    #[test]
+    fn gcd_via_linrec() {
+        assert_eq!(gcd(12, 8), vec![i(4)]);
+        assert_eq!(gcd(48, 36), vec![i(12)]);
+        assert_eq!(gcd(17, 5), vec![i(1)]);
+        assert_eq!(gcd(100, 0), vec![i(100)]); // base immediately: top is 0
+        assert_eq!(gcd(7, 21), vec![i(7)]);
+    }
+
+    #[test]
+    fn linrec_desugars_through_if() {
+        // A linrec with R2=[] and a base that fires immediately observes that the
+        // T-branch runs (inherits If's verified branch semantics). P=[1] (always
+        // true), T=[drop] -> drops the flag-provider... use a neutral T=[] here.
+        // Countdown: P=[:] copies top as flag; when 0, stop; else 1- and recurse.
+        // Simpler: immediate base. P pushes nonzero, T is identity, R never runs.
+        assert_eq!(
+            expect_halt(
+                vec![i(5)],
+                vec![
+                    quote(vec![int(1)]),          // P: push truthy flag
+                    quote(vec![]),                // T: identity
+                    quote(vec![int(0)]),          // R1 (unused)
+                    quote(vec![]),                // R2
+                    linrec(),
+                ]
+            ),
+            vec![i(5)]
+        );
+    }
+
+    // ---- uncons ( [w ...] -- w [...] 1 ) | ( [] -- 0 ) ----
+
+    #[test]
+    fn uncons_empty_pushes_flag_zero() {
+        assert_eq!(
+            expect_halt(vec![], vec![quote(vec![]), uncons()]),
+            vec![i(0)]
+        );
+    }
+
+    #[test]
+    fn uncons_int_head() {
+        // [7 8 9] > -> 7 [8 9] 1
+        assert_eq!(
+            expect_halt(
+                vec![],
+                vec![quote(vec![int(7), int(8), int(9)]), uncons()]
+            ),
+            vec![i(7), q(vec![int(8), int(9)]), i(1)]
+        );
+    }
+
+    #[test]
+    fn uncons_quote_head() {
+        // [[1] 2] > -> [1] [2] 1  (head is itself a quotation value)
+        assert_eq!(
+            expect_halt(
+                vec![],
+                vec![quote(vec![quote(vec![int(1)]), int(2)]), uncons()]
+            ),
+            vec![q(vec![int(1)]), q(vec![int(2)]), i(1)]
+        );
+    }
+
+    #[test]
+    fn uncons_singleton_leaves_empty_tail() {
+        // [5] > -> 5 [] 1
+        assert_eq!(
+            expect_halt(vec![], vec![quote(vec![int(5)]), uncons()]),
+            vec![i(5), q(vec![]), i(1)]
+        );
+    }
+
+    #[test]
+    fn uncons_roundtrips_with_cons() {
+        // cons then uncons is identity on (v, [q]) up to the flag: 5 [8] ; > -> 5 [8] 1
+        assert_eq!(
+            expect_halt(
+                vec![],
+                vec![int(5), quote(vec![int(8)]), cons(), uncons()]
+            ),
+            vec![i(5), q(vec![int(8)]), i(1)]
+        );
+    }
+}
+
+// ============================================================
 // BOUNDARY — overflow, div/mod edges, underflow per arity.
 // ============================================================
 mod boundary {
@@ -634,6 +1011,67 @@ mod boundary {
         }
     }
 
+    // ---- v0.2 recursion primitive arity underflow ----
+    #[test]
+    fn underflow_uncons_arity_1() {
+        // uncons needs 1.
+        let fi = expect_fault(vec![], vec![uncons()]);
+        assert_eq!(fi.fault, Fault::Underflow);
+        assert_eq!(fi.cont, vec![uncons()]);
+        assert_eq!(fi.stack, vec![]);
+    }
+    #[test]
+    fn underflow_times_arity_2() {
+        // times needs 2; 1 item -> Underflow before types are inspected.
+        let fi = expect_fault(vec![q(vec![])], vec![times()]);
+        assert_eq!(fi.fault, Fault::Underflow);
+    }
+    #[test]
+    fn underflow_primrec_arity_3() {
+        // primrec needs 3.
+        let fi = expect_fault(vec![i(1), q(vec![])], vec![primrec()]);
+        assert_eq!(fi.fault, Fault::Underflow);
+    }
+    #[test]
+    fn underflow_linrec_arity_4() {
+        // linrec needs 4.
+        let fi = expect_fault(vec![q(vec![]), q(vec![]), q(vec![])], vec![linrec()]);
+        assert_eq!(fi.fault, Fault::Underflow);
+    }
+
+    // ---- i64 edges: primrec/times count boundaries ----
+    #[test]
+    fn primrec_count_i64_min_runs_base_no_overflow() {
+        // k = i64::MIN is <= 0, so the base runs; k-1 is never computed => no panic.
+        assert_eq!(
+            expect_halt(
+                vec![i(i64::MIN)],
+                vec![quote(vec![int(1)]), quote(vec![mul()]), primrec()]
+            ),
+            vec![i(1)]
+        );
+    }
+    #[test]
+    fn times_count_i64_min_is_noop_no_overflow() {
+        assert_eq!(
+            expect_halt(
+                vec![i(7)],
+                vec![int(i64::MIN), quote(vec![int(1), add()]), times()]
+            ),
+            vec![i(7)]
+        );
+    }
+    #[test]
+    fn primrec_combine_overflow_propagates() {
+        // factorial with a large-ish count overflows i64 inside the combine `*`;
+        // the Overflow fault comes from Mul, not from primrec's counting.
+        let fi = expect_fault(
+            vec![i(25)],
+            vec![quote(vec![int(1)]), quote(vec![mul()]), primrec()],
+        );
+        assert_eq!(fi.fault, Fault::Overflow); // 25! >> i64::MAX
+    }
+
     #[test]
     fn unknown_word_faults_with_state() {
         // Call in the pure v0.1 core -> UnknownWord (spec §8), state carried.
@@ -703,6 +1141,85 @@ mod precedence {
         let fi = expect_fault(vec![i(i64::MAX), i(1)], vec![add()]);
         assert_eq!(fi.fault, Fault::Overflow);
     }
+
+    // ---- v0.2 recursion primitives: arity (Underflow) before types (TypeMismatch) ----
+
+    #[test]
+    fn primrec_arity_beats_type() {
+        // Only 2 items, and both are the wrong shape for the count slot: arity
+        // (needs 3) wins over the type check.
+        let fi = expect_fault(vec![q(vec![]), q(vec![])], vec![primrec()]);
+        assert_eq!(fi.fault, Fault::Underflow);
+    }
+    #[test]
+    fn primrec_type_mismatch_when_arity_satisfied() {
+        // 3 items but the count slot (stk[n-3]) is a Quote, not an Int.
+        let fi = expect_fault(
+            vec![q(vec![]), q(vec![]), q(vec![])],
+            vec![primrec()],
+        );
+        assert_eq!(fi.fault, Fault::TypeMismatch);
+        // And a non-Quote combine slot also mismatches.
+        let fi = expect_fault(vec![i(1), q(vec![]), i(2)], vec![primrec()]);
+        assert_eq!(fi.fault, Fault::TypeMismatch);
+    }
+    #[test]
+    fn times_arity_beats_type() {
+        // 1 item, wrong type: arity (needs 2) wins.
+        let fi = expect_fault(vec![i(1)], vec![times()]);
+        assert_eq!(fi.fault, Fault::Underflow);
+    }
+    #[test]
+    fn times_type_mismatch_when_arity_satisfied() {
+        // 2 items but top is not a Quote.
+        let fi = expect_fault(vec![i(3), i(1)], vec![times()]);
+        assert_eq!(fi.fault, Fault::TypeMismatch);
+        // count slot not an Int.
+        let fi = expect_fault(vec![q(vec![]), q(vec![])], vec![times()]);
+        assert_eq!(fi.fault, Fault::TypeMismatch);
+    }
+    #[test]
+    fn linrec_arity_beats_type() {
+        // 3 items (need 4), one wrong type: arity wins.
+        let fi = expect_fault(vec![i(1), q(vec![]), q(vec![])], vec![linrec()]);
+        assert_eq!(fi.fault, Fault::Underflow);
+    }
+    #[test]
+    fn linrec_type_mismatch_when_arity_satisfied() {
+        // 4 items but one is not a Quote.
+        let fi = expect_fault(
+            vec![q(vec![]), i(1), q(vec![]), q(vec![])],
+            vec![linrec()],
+        );
+        assert_eq!(fi.fault, Fault::TypeMismatch);
+    }
+    #[test]
+    fn uncons_type_mismatch_on_non_quote() {
+        // arity ok (1), operand is an Int, not a Quote -> TypeMismatch.
+        let fi = expect_fault(vec![i(9)], vec![uncons()]);
+        assert_eq!(fi.fault, Fault::TypeMismatch);
+    }
+    #[test]
+    fn uncons_type_mismatch_on_non_value_head() {
+        // A quotation whose head is a bare Prim (not PushInt/PushQuote) is not a
+        // value; uncons faults TypeMismatch (the design's faithful reading).
+        let fi = expect_fault(vec![q(vec![add()])], vec![uncons()]);
+        assert_eq!(fi.fault, Fault::TypeMismatch);
+        // Faulting word retained, machine state untouched.
+        assert_eq!(fi.cont, vec![uncons()]);
+        assert_eq!(fi.stack, vec![q(vec![add()])]);
+        // A Call head also faults.
+        let fi = expect_fault(vec![q(vec![call("emit")])], vec![uncons()]);
+        assert_eq!(fi.fault, Fault::TypeMismatch);
+    }
+    #[test]
+    fn uncons_value_head_variants_ok() {
+        // Contrast: PushInt and PushQuote heads are values -> Next, not a fault.
+        assert_eq!(
+            expect_halt(vec![], vec![quote(vec![int(3), int(4)]), uncons()]),
+            vec![i(3), q(vec![int(4)]), i(1)]
+        );
+    }
 }
 
 // ============================================================
@@ -731,6 +1248,10 @@ mod differential {
             Just(Prim::Eq),
             Just(Prim::Lt),
             Just(Prim::If),
+            Just(Prim::PrimRec),
+            Just(Prim::Times),
+            Just(Prim::LinRec),
+            Just(Prim::Uncons),
         ]
     }
 

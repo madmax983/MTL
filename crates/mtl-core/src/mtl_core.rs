@@ -25,6 +25,11 @@ pub enum SpecPrim {
     Add, Sub, Mul, Div, Mod,
     Eq, Lt,
     If,
+    // v0.2 recursion primitives (design: docs/design/v0.2-recursion-primitives.md).
+    // primrec/times: bounded, total, terminating (count strictly decreases).
+    // linrec: partial, DESUGARS into If (inherits verified branch semantics).
+    // uncons: structural quotation deconstructor (the TC-proof enabler, §6.2).
+    PrimRec, Times, LinRec, Uncons,
 }
 
 pub enum SpecWord {
@@ -297,6 +302,127 @@ pub open spec fn spec_step_prim(
                             stack: stk.subrange(0, n - 3),
                             cont: (if c != 0 { t } else { f }) + rest,
                         }),
+                    _ => SpecStep::Fault(Error::TypeMismatch),
+                }
+            }
+        }
+        // ---------------- v0.2 recursion primitives (spec §3 of the design) ----------------
+        // primrec ( n [I] [C] -- r ): total primitive recursion on a natural count.
+        // n<=0 runs I on the base stack; n>0 keeps n available and folds C over
+        // the (n-1) subresult. Terminating: the count strictly decreases toward 0.
+        SpecPrim::PrimRec => {
+            if n < 3 { SpecStep::Fault(Error::Underflow) }
+            else {
+                match (stk[n - 3], stk[n - 2], stk[n - 1]) {
+                    (SpecValue::Int(k), SpecValue::Quote(qi), SpecValue::Quote(qc)) => {
+                        let base = stk.subrange(0, n - 3);
+                        if k <= 0 {
+                            // base: discard the count, run I on the base stack.
+                            SpecStep::Next(SpecState { stack: base, cont: qi + rest })
+                        } else {
+                            // else: keep n, recurse on (n-1), then run C(n, sub).
+                            // k>0 && k<=i64::MAX => 0 <= k-1 < k, so in_i64(k-1)
+                            // holds: no Overflow arm is reachable here.
+                            let recur = seq![
+                                SpecWord::PushInt(k),
+                                SpecWord::PushInt(k - 1),
+                                SpecWord::PushQuote(qi),
+                                SpecWord::PushQuote(qc),
+                                SpecWord::Prim(SpecPrim::PrimRec)
+                            ] + qc;
+                            SpecStep::Next(SpecState { stack: base, cont: recur + rest })
+                        }
+                    }
+                    _ => SpecStep::Fault(Error::TypeMismatch),
+                }
+            }
+        }
+        // times ( n [Q] -- ... ): run Q exactly max(n,0) times, left to right.
+        // Total and terminating (count decreases; n<=0 is a no-op).
+        SpecPrim::Times => {
+            if n < 2 { SpecStep::Fault(Error::Underflow) }
+            else {
+                match (stk[n - 2], stk[n - 1]) {
+                    (SpecValue::Int(k), SpecValue::Quote(q)) => {
+                        let base = stk.subrange(0, n - 2);
+                        if k <= 0 {
+                            SpecStep::Next(SpecState { stack: base, cont: rest })
+                        } else {
+                            // run Q once, then times(n-1) Q.
+                            let recur = q + seq![
+                                SpecWord::PushInt(k - 1),
+                                SpecWord::PushQuote(q),
+                                SpecWord::Prim(SpecPrim::Times)
+                            ];
+                            SpecStep::Next(SpecState { stack: base, cont: recur + rest })
+                        }
+                    }
+                    _ => SpecStep::Fault(Error::TypeMismatch),
+                }
+            }
+        }
+        // linrec ( [P] [T] [R1] [R2] -- ... ): general linear recursion. DESUGARS
+        // into the existing If primitive — no new control operator — so it inherits
+        // If's verified branch semantics. Partial, like Apply: termination depends
+        // on P/R1 and is bounded by fuel.
+        SpecPrim::LinRec => {
+            if n < 4 { SpecStep::Fault(Error::Underflow) }
+            else {
+                match (stk[n - 4], stk[n - 3], stk[n - 2], stk[n - 1]) {
+                    (SpecValue::Quote(qp), SpecValue::Quote(qt),
+                     SpecValue::Quote(qr1), SpecValue::Quote(qr2)) => {
+                        let base = stk.subrange(0, n - 4);
+                        // else-branch: R1 ; (re-push the four quotes) linrec ; R2
+                        let else_q = qr1 + seq![
+                            SpecWord::PushQuote(qp),
+                            SpecWord::PushQuote(qt),
+                            SpecWord::PushQuote(qr1),
+                            SpecWord::PushQuote(qr2),
+                            SpecWord::Prim(SpecPrim::LinRec)
+                        ] + qr2;
+                        // continuation: P ; push T-quote ; push else-quote ; If
+                        let spliced = qp + seq![
+                            SpecWord::PushQuote(qt),
+                            SpecWord::PushQuote(else_q),
+                            SpecWord::Prim(SpecPrim::If)
+                        ];
+                        SpecStep::Next(SpecState { stack: base, cont: spliced + rest })
+                    }
+                    _ => SpecStep::Fault(Error::TypeMismatch),
+                }
+            }
+        }
+        // uncons ( [w ...] -- w [...] 1 ) | ( [] -- 0 ): deconstruct a quotation.
+        // Structural and affine — the input quote is consumed once and split, never
+        // duplicated. A head word that is not itself a value (a bare Prim/Call, not
+        // PushInt/PushQuote) faults TypeMismatch (the faithful reading of the design's
+        // one open decision — see the implementer report).
+        SpecPrim::Uncons => {
+            if n < 1 { SpecStep::Fault(Error::Underflow) }
+            else {
+                match stk[n - 1] {
+                    SpecValue::Quote(q) => {
+                        let base = stk.subrange(0, n - 1);
+                        if q.len() == 0 {
+                            SpecStep::Next(SpecState {
+                                stack: base.push(SpecValue::Int(0int)),
+                                cont: rest,
+                            })
+                        } else {
+                            let tail = SpecValue::Quote(q.subrange(1, q.len() as int));
+                            match q[0] {
+                                SpecWord::PushInt(i) => SpecStep::Next(SpecState {
+                                    stack: base.push(SpecValue::Int(i)).push(tail).push(SpecValue::Int(1int)),
+                                    cont: rest,
+                                }),
+                                SpecWord::PushQuote(s) => SpecStep::Next(SpecState {
+                                    stack: base.push(SpecValue::Quote(s)).push(tail).push(SpecValue::Int(1int)),
+                                    cont: rest,
+                                }),
+                                _ => SpecStep::Fault(Error::TypeMismatch),
+                            }
+                        }
+                    }
                     _ => SpecStep::Fault(Error::TypeMismatch),
                 }
             }
@@ -620,6 +746,118 @@ pub fn exec_prim(vm: &mut Vm, p: SpecPrim, n: usize) -> StepResult {
             }
             StepResult::Next
         }
+        // ---------------- v0.2 recursion primitives (mirror of spec_step_prim) ----------------
+        SpecPrim::PrimRec => {
+            if n < 3 { return StepResult::Fault(Error::Underflow); }
+            let ok = matches!(vm.stack[n - 3], Value::Int(_))
+                && matches!(vm.stack[n - 2], Value::Quote(_))
+                && matches!(vm.stack[n - 1], Value::Quote(_));
+            if !ok { return StepResult::Fault(Error::TypeMismatch); }
+            vm.cont.remove(0);
+            let qc = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+            let qi = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+            let k = match vm.stack.pop() { Some(Value::Int(k)) => k, _ => 0 };
+            if k <= 0 {
+                // cont := qi ++ rest
+                let mut recur = qi;
+                recur.append(&mut vm.cont);
+                vm.cont = recur;
+            } else {
+                // cont := [PushInt(k), PushInt(k-1), PushQuote(qi), PushQuote(qc), Prim(PrimRec)] ++ qc ++ rest
+                let mut recur = vec![
+                    Word::PushInt(k),
+                    Word::PushInt(k - 1),
+                    Word::PushQuote(qi),
+                    Word::PushQuote(qc.clone()),
+                    Word::Prim(SpecPrim::PrimRec),
+                ];
+                recur.extend(qc);
+                recur.append(&mut vm.cont);
+                vm.cont = recur;
+            }
+            StepResult::Next
+        }
+        SpecPrim::Times => {
+            if n < 2 { return StepResult::Fault(Error::Underflow); }
+            let ok = matches!(vm.stack[n - 2], Value::Int(_))
+                && matches!(vm.stack[n - 1], Value::Quote(_));
+            if !ok { return StepResult::Fault(Error::TypeMismatch); }
+            vm.cont.remove(0);
+            let q = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+            let k = match vm.stack.pop() { Some(Value::Int(k)) => k, _ => 0 };
+            if k > 0 {
+                // cont := q ++ [PushInt(k-1), PushQuote(q), Prim(Times)] ++ rest
+                let mut recur = q.clone();
+                recur.push(Word::PushInt(k - 1));
+                recur.push(Word::PushQuote(q));
+                recur.push(Word::Prim(SpecPrim::Times));
+                recur.append(&mut vm.cont);
+                vm.cont = recur;
+            }
+            StepResult::Next
+        }
+        SpecPrim::LinRec => {
+            if n < 4 { return StepResult::Fault(Error::Underflow); }
+            let ok = matches!(vm.stack[n - 4], Value::Quote(_))
+                && matches!(vm.stack[n - 3], Value::Quote(_))
+                && matches!(vm.stack[n - 2], Value::Quote(_))
+                && matches!(vm.stack[n - 1], Value::Quote(_));
+            if !ok { return StepResult::Fault(Error::TypeMismatch); }
+            vm.cont.remove(0);
+            let qr2 = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+            let qr1 = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+            let qt = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+            let qp = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+            // else_q := R1 ++ [PushQuote(P), PushQuote(T), PushQuote(R1), PushQuote(R2), Prim(LinRec)] ++ R2
+            let mut else_q = qr1.clone();
+            else_q.push(Word::PushQuote(qp.clone()));
+            else_q.push(Word::PushQuote(qt.clone()));
+            else_q.push(Word::PushQuote(qr1));
+            else_q.push(Word::PushQuote(qr2.clone()));
+            else_q.push(Word::Prim(SpecPrim::LinRec));
+            else_q.extend(qr2);
+            // spliced := P ++ [PushQuote(T), PushQuote(else_q), Prim(If)] ++ rest
+            let mut spliced = qp;
+            spliced.push(Word::PushQuote(qt));
+            spliced.push(Word::PushQuote(else_q));
+            spliced.push(Word::Prim(SpecPrim::If));
+            spliced.append(&mut vm.cont);
+            vm.cont = spliced;
+            StepResult::Next
+        }
+        SpecPrim::Uncons => {
+            if n < 1 { return StepResult::Fault(Error::Underflow); }
+            // Inspect (without consuming) so a fault leaves the machine untouched.
+            match &vm.stack[n - 1] {
+                Value::Quote(q) => {
+                    if !q.is_empty() {
+                        match &q[0] {
+                            Word::PushInt(_) | Word::PushQuote(_) => {}
+                            _ => return StepResult::Fault(Error::TypeMismatch),
+                        }
+                    }
+                }
+                _ => return StepResult::Fault(Error::TypeMismatch),
+            }
+            vm.cont.remove(0);
+            let q = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+            if q.is_empty() {
+                vm.stack.push(Value::Int(0));
+            } else {
+                let mut it = q.into_iter();
+                let head = it.next().unwrap();
+                let tail: Vec<Word> = it.collect();
+                let head_val = match head {
+                    Word::PushInt(i) => Value::Int(i),
+                    Word::PushQuote(s) => Value::Quote(s),
+                    _ => Value::Int(0), // unreachable: guarded above
+                };
+                vm.stack.push(head_val);
+                vm.stack.push(Value::Quote(tail));
+                vm.stack.push(Value::Int(1));
+            }
+            StepResult::Next
+        }
     }
 }
 
@@ -769,6 +1007,150 @@ pub proof fn smoke_dup_apply(q: Seq<SpecWord>)
         }
     }),
 {
+}
+
+// --- Smoke theorems for the v0.2 recursion primitives (design §3, §10.2). ---
+// These mirror the `smoke_dup_apply` style: a single symbolic spec step from a
+// constructed state, asserting the exact successor. primrec/times get both the
+// base (count exhausted) and step (recur expansion) cases — the count strictly
+// decreases, which is a *stronger* guarantee than anything provable about `:!`.
+// linrec gets only the one-step DESUGARING into `If` (no termination claim,
+// since it is partial like `!`): this reduces linrec to the verified `If` arm.
+
+// primrec base: k<=0 discards the count and runs I on the base stack.
+pub proof fn smoke_primrec_base(qi: Seq<SpecWord>, qc: Seq<SpecWord>, k: int)
+    requires k <= 0,
+    ensures ({
+        let s0 = SpecState {
+            stack: seq![SpecValue::Int(k), SpecValue::Quote(qi), SpecValue::Quote(qc)],
+            cont: seq![SpecWord::Prim(SpecPrim::PrimRec)],
+        };
+        &&& spec_step(s0) is Next
+        &&& spec_step(s0)->Next_0.stack =~= Seq::<SpecValue>::empty()
+        &&& spec_step(s0)->Next_0.cont =~= qi
+    }),
+{
+}
+
+// primrec step: k>0 keeps n, recurses on (n-1), then folds C over the subresult.
+pub proof fn smoke_primrec_step(qi: Seq<SpecWord>, qc: Seq<SpecWord>, k: int)
+    requires k > 0,
+    ensures ({
+        let s0 = SpecState {
+            stack: seq![SpecValue::Int(k), SpecValue::Quote(qi), SpecValue::Quote(qc)],
+            cont: seq![SpecWord::Prim(SpecPrim::PrimRec)],
+        };
+        let recur = seq![
+            SpecWord::PushInt(k),
+            SpecWord::PushInt(k - 1),
+            SpecWord::PushQuote(qi),
+            SpecWord::PushQuote(qc),
+            SpecWord::Prim(SpecPrim::PrimRec)
+        ] + qc;
+        &&& spec_step(s0) is Next
+        &&& spec_step(s0)->Next_0.stack =~= Seq::<SpecValue>::empty()
+        &&& spec_step(s0)->Next_0.cont =~= recur
+    }),
+{
+}
+
+// times base: k<=0 is a no-op (Q is discarded, continuation is `rest`).
+pub proof fn smoke_times_base(q: Seq<SpecWord>, k: int)
+    requires k <= 0,
+    ensures ({
+        let s0 = SpecState {
+            stack: seq![SpecValue::Int(k), SpecValue::Quote(q)],
+            cont: seq![SpecWord::Prim(SpecPrim::Times)],
+        };
+        &&& spec_step(s0) is Next
+        &&& spec_step(s0)->Next_0.stack =~= Seq::<SpecValue>::empty()
+        &&& spec_step(s0)->Next_0.cont =~= Seq::<SpecWord>::empty()
+    }),
+{
+}
+
+// times step: k>0 runs Q once then times(n-1) Q.
+pub proof fn smoke_times_step(q: Seq<SpecWord>, k: int)
+    requires k > 0,
+    ensures ({
+        let s0 = SpecState {
+            stack: seq![SpecValue::Int(k), SpecValue::Quote(q)],
+            cont: seq![SpecWord::Prim(SpecPrim::Times)],
+        };
+        let recur = q + seq![
+            SpecWord::PushInt(k - 1),
+            SpecWord::PushQuote(q),
+            SpecWord::Prim(SpecPrim::Times)
+        ];
+        &&& spec_step(s0) is Next
+        &&& spec_step(s0)->Next_0.stack =~= Seq::<SpecValue>::empty()
+        &&& spec_step(s0)->Next_0.cont =~= recur
+    }),
+{
+}
+
+// linrec desugaring: one step splices P then an `If` over T and the else-quote,
+// reducing linrec to the verified `If` arm (no new control operator).
+pub proof fn smoke_linrec_desugar(
+    qp: Seq<SpecWord>, qt: Seq<SpecWord>, qr1: Seq<SpecWord>, qr2: Seq<SpecWord>,
+)
+    ensures ({
+        let s0 = SpecState {
+            stack: seq![
+                SpecValue::Quote(qp), SpecValue::Quote(qt),
+                SpecValue::Quote(qr1), SpecValue::Quote(qr2)
+            ],
+            cont: seq![SpecWord::Prim(SpecPrim::LinRec)],
+        };
+        let else_q = qr1 + seq![
+            SpecWord::PushQuote(qp),
+            SpecWord::PushQuote(qt),
+            SpecWord::PushQuote(qr1),
+            SpecWord::PushQuote(qr2),
+            SpecWord::Prim(SpecPrim::LinRec)
+        ] + qr2;
+        let spliced = qp + seq![
+            SpecWord::PushQuote(qt),
+            SpecWord::PushQuote(else_q),
+            SpecWord::Prim(SpecPrim::If)
+        ];
+        &&& spec_step(s0) is Next
+        &&& spec_step(s0)->Next_0.stack =~= Seq::<SpecValue>::empty()
+        &&& spec_step(s0)->Next_0.cont =~= spliced
+    }),
+{
+}
+
+// uncons empty: an empty quotation pushes only the flag 0.
+pub proof fn smoke_uncons_empty()
+    ensures ({
+        let s0 = SpecState {
+            stack: seq![SpecValue::Quote(Seq::<SpecWord>::empty())],
+            cont: seq![SpecWord::Prim(SpecPrim::Uncons)],
+        };
+        &&& spec_step(s0) is Next
+        &&& spec_step(s0)->Next_0.stack =~= seq![SpecValue::Int(0int)]
+        &&& spec_step(s0)->Next_0.cont =~= Seq::<SpecWord>::empty()
+    }),
+{
+}
+
+// uncons head-int: a quote whose head is PushInt(i) splits into i, [tail], 1.
+pub proof fn smoke_uncons_head_int(i: int, t: Seq<SpecWord>)
+    ensures ({
+        let q = seq![SpecWord::PushInt(i)] + t;
+        let s0 = SpecState {
+            stack: seq![SpecValue::Quote(q)],
+            cont: seq![SpecWord::Prim(SpecPrim::Uncons)],
+        };
+        &&& spec_step(s0) is Next
+        &&& spec_step(s0)->Next_0.stack
+              =~= seq![SpecValue::Int(i), SpecValue::Quote(t), SpecValue::Int(1int)]
+        &&& spec_step(s0)->Next_0.cont =~= Seq::<SpecWord>::empty()
+    }),
+{
+    assert((seq![SpecWord::PushInt(i)] + t)[0] == SpecWord::PushInt(i));
+    assert((seq![SpecWord::PushInt(i)] + t).subrange(1, (seq![SpecWord::PushInt(i)] + t).len() as int) =~= t);
 }
 
 // --- General div/mod correctness: the spine lemma P2's arithmetic
