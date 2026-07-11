@@ -1,0 +1,9 @@
+[package]
+name = "mtl-core"
+version = "0.1.0"
+edition = "2021"
+description = "Core reference semantics for MTL, formally verified in Verus."
+license = "MIT"
+repository = "https://github.com/madmax983/MTL"
+
+[dependencies]
