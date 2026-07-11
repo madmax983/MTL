@@ -21,7 +21,8 @@
 //! toward zero (Rust semantics); every fault is a value. `run` is fuel-bounded and
 //! does not assume termination (MTL is Turing complete).
 
-/// The 17 primitives of MTL v0.1. Mirrors `SpecPrim` in `mtl_core.rs`.
+/// The primitives of MTL: the 17 v0.1 primitives plus the 4 v0.2 recursion
+/// primitives. Mirrors `SpecPrim` in `mtl_core.rs`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Prim {
     Dup,
@@ -41,6 +42,15 @@ pub enum Prim {
     Eq,
     Lt,
     If,
+    // v0.2 recursion primitives (design: docs/design/v0.2-recursion-primitives.md).
+    /// `( n [I] [C] -- r )` bounded primitive recursion. Total, terminating.
+    PrimRec,
+    /// `( n [Q] -- ... )` bounded iteration: run Q max(n,0) times. Total.
+    Times,
+    /// `( [P] [T] [R1] [R2] -- ... )` linear recursion; desugars into `If`. Partial.
+    LinRec,
+    /// `( [w ...] -- w [...] 1 )` | `( [] -- 0 )` quotation deconstructor. Affine.
+    Uncons,
 }
 
 /// A program word. Mirrors exec `Word` in `mtl_core.rs`.
@@ -343,6 +353,143 @@ fn exec_prim(vm: &mut Vm, p: Prim) -> Step {
                 _ => Step::Fault(Fault::TypeMismatch),
             }
         }
+        // ---------------- v0.2 recursion primitives ----------------
+        // Byte-for-byte semantic mirror of the ghost `spec_step_prim` arms in
+        // `mtl_core.rs`: same fault precedence (arity -> types), same expansions.
+        Prim::PrimRec => {
+            // ( n [I] [C] -- r )
+            if n < 3 {
+                return Step::Fault(Fault::Underflow);
+            }
+            match (&vm.stack[n - 3], &vm.stack[n - 2], &vm.stack[n - 1]) {
+                (Value::Int(_), Value::Quote(_), Value::Quote(_)) => {
+                    vm.cont.remove(0);
+                    let qc = pop_quote(vm);
+                    let qi = pop_quote(vm);
+                    let k = match vm.stack.pop() {
+                        Some(Value::Int(k)) => k,
+                        _ => unreachable!("checked Int below two quotes"),
+                    };
+                    if k <= 0 {
+                        // base: discard the count, run I: cont := qi ++ rest
+                        prepend(&mut vm.cont, qi);
+                    } else {
+                        // else: cont := [k, k-1, [qi], [qc], primrec] ++ qc ++ rest.
+                        // k>0 => k-1 does not underflow; k<=i64::MAX => no overflow.
+                        let mut recur = Vec::with_capacity(qc.len() + 5);
+                        recur.push(Word::PushInt(k));
+                        recur.push(Word::PushInt(k - 1));
+                        recur.push(Word::PushQuote(qi));
+                        recur.push(Word::PushQuote(qc.clone()));
+                        recur.push(Word::Prim(Prim::PrimRec));
+                        recur.extend(qc);
+                        prepend(&mut vm.cont, recur);
+                    }
+                    Step::Next
+                }
+                _ => Step::Fault(Fault::TypeMismatch),
+            }
+        }
+        Prim::Times => {
+            // ( n [Q] -- ... )
+            if n < 2 {
+                return Step::Fault(Fault::Underflow);
+            }
+            match (&vm.stack[n - 2], &vm.stack[n - 1]) {
+                (Value::Int(_), Value::Quote(_)) => {
+                    vm.cont.remove(0);
+                    let q = pop_quote(vm);
+                    let k = match vm.stack.pop() {
+                        Some(Value::Int(k)) => k,
+                        _ => unreachable!("checked Int below quote"),
+                    };
+                    if k > 0 {
+                        // cont := q ++ [k-1, [q], times] ++ rest
+                        let mut recur = q.clone();
+                        recur.push(Word::PushInt(k - 1));
+                        recur.push(Word::PushQuote(q));
+                        recur.push(Word::Prim(Prim::Times));
+                        prepend(&mut vm.cont, recur);
+                    }
+                    // k <= 0: no-op, cont := rest
+                    Step::Next
+                }
+                _ => Step::Fault(Fault::TypeMismatch),
+            }
+        }
+        Prim::LinRec => {
+            // ( [P] [T] [R1] [R2] -- ... ) — desugars into If.
+            if n < 4 {
+                return Step::Fault(Fault::Underflow);
+            }
+            match (
+                &vm.stack[n - 4],
+                &vm.stack[n - 3],
+                &vm.stack[n - 2],
+                &vm.stack[n - 1],
+            ) {
+                (Value::Quote(_), Value::Quote(_), Value::Quote(_), Value::Quote(_)) => {
+                    vm.cont.remove(0);
+                    let qr2 = pop_quote(vm);
+                    let qr1 = pop_quote(vm);
+                    let qt = pop_quote(vm);
+                    let qp = pop_quote(vm);
+                    // else_q := R1 ++ [[P],[T],[R1],[R2],linrec] ++ R2
+                    let mut else_q = qr1.clone();
+                    else_q.push(Word::PushQuote(qp.clone()));
+                    else_q.push(Word::PushQuote(qt.clone()));
+                    else_q.push(Word::PushQuote(qr1));
+                    else_q.push(Word::PushQuote(qr2.clone()));
+                    else_q.push(Word::Prim(Prim::LinRec));
+                    else_q.extend(qr2);
+                    // spliced := P ++ [[T], [else_q], If] ++ rest
+                    let mut spliced = qp;
+                    spliced.push(Word::PushQuote(qt));
+                    spliced.push(Word::PushQuote(else_q));
+                    spliced.push(Word::Prim(Prim::If));
+                    prepend(&mut vm.cont, spliced);
+                    Step::Next
+                }
+                _ => Step::Fault(Fault::TypeMismatch),
+            }
+        }
+        Prim::Uncons => {
+            // ( [w ...] -- w [...] 1 ) | ( [] -- 0 )
+            if n < 1 {
+                return Step::Fault(Fault::Underflow);
+            }
+            // Inspect without consuming: a non-value head (bare Prim/Call) or a
+            // non-Quote operand faults, leaving the machine state untouched.
+            match &vm.stack[n - 1] {
+                Value::Quote(q) => {
+                    if let Some(head) = q.first() {
+                        match head {
+                            Word::PushInt(_) | Word::PushQuote(_) => {}
+                            _ => return Step::Fault(Fault::TypeMismatch),
+                        }
+                    }
+                }
+                _ => return Step::Fault(Fault::TypeMismatch),
+            }
+            vm.cont.remove(0);
+            let q = pop_quote(vm);
+            if q.is_empty() {
+                vm.stack.push(Value::Int(0));
+            } else {
+                let mut it = q.into_iter();
+                let head = it.next().expect("non-empty checked above");
+                let tail: Vec<Word> = it.collect();
+                let head_val = match head {
+                    Word::PushInt(k) => Value::Int(k),
+                    Word::PushQuote(s) => Value::Quote(s),
+                    _ => unreachable!("head is a value word, guarded above"),
+                };
+                vm.stack.push(head_val);
+                vm.stack.push(Value::Quote(tail));
+                vm.stack.push(Value::Int(1));
+            }
+            Step::Next
+        }
     }
 }
 
@@ -541,5 +688,18 @@ pub mod build {
     }
     pub fn iff() -> Word {
         Word::Prim(Prim::If)
+    }
+    // v0.2 recursion primitives.
+    pub fn primrec() -> Word {
+        Word::Prim(Prim::PrimRec)
+    }
+    pub fn times() -> Word {
+        Word::Prim(Prim::Times)
+    }
+    pub fn linrec() -> Word {
+        Word::Prim(Prim::LinRec)
+    }
+    pub fn uncons() -> Word {
+        Word::Prim(Prim::Uncons)
     }
 }

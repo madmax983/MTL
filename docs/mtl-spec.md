@@ -1,6 +1,6 @@
-# MTL: Minimal Token Language — Specification v0.1.1
+# MTL: Minimal Token Language — Specification v0.2-draft
 
-**Status:** Draft for review — revised in response to the 2026-07-11 adversarial review (`docs/reviews/2026-07-11-adversarial-review.md`).
+**Status:** Draft for review — revised in response to the 2026-07-11 adversarial review (`docs/reviews/2026-07-11-adversarial-review.md`); v0.2-draft adds the four recursion primitives (`primrec`, `times`, `linrec`, `uncons`) admitted by `docs/design/v0.2-recursion-primitives.md` (merged PR #8) and implemented in the core (`spec_step_prim` + `crate::interp`).
 **North star:** Turing complete (conjectured — see §6). Minimize expected total LLM inference tokens to a correct solution over a benchmark task distribution.
 **Verification target:** Reference semantics and interpreter verified in Verus (SPEC → PROOF → RED → GREEN → REFACTOR). The normative artifact is `crates/mtl-core/src/mtl_core.rs`: where this prose and `spec_step` disagree, `spec_step` is authoritative and the prose is the defect.
 
@@ -157,6 +157,28 @@ Notation: stack grows rightward; `s · v` is stack `s` with `v` on top. `p` is t
 (s · Int(c) · Quote(t) · Quote(f), If p)
     → Next(s, t ++ p)   if c ≠ 0
     → Next(s, f ++ p)   if c = 0
+
+-- Bounded recursion & iteration (v0.2). Total and terminating: the count
+-- strictly decreases toward 0. Checked i64 arithmetic; because k>0 ⇒
+-- 0 ≤ k-1 < k, the decrement is always in range — no Overflow rule is needed.
+(s · Int(k) · Quote(i) · Quote(c), PrimRec p)        -- ( n [I] [C] -- r )
+    → Next(s, i ++ p)                                             if k ≤ 0
+    → Next(s, [k, k-1, [i], [c], PrimRec] ++ c ++ p)             if k > 0
+(s · Int(k) · Quote(q), Times p)                     -- ( n [Q] -- … )
+    → Next(s, p)                                                 if k ≤ 0
+    → Next(s, q ++ [k-1, [q], Times] ++ p)                       if k > 0
+
+-- Linear recursion (v0.2). DESUGARS into If — no new control operator; it
+-- inherits If's branch semantics. Partial, like Apply: bounded by fuel.
+(s · Quote(P) · Quote(T) · Quote(R1) · Quote(R2), LinRec p)  -- ( [P][T][R1][R2] -- … )
+    → Next(s, P ++ [[T], [E], If] ++ p)
+      where E = R1 ++ [[P], [T], [R1], [R2], LinRec] ++ R2      -- else-branch quote
+
+-- Quotation deconstruction (v0.2). Structural, affine: the input quote is
+-- consumed once and split. A head word that is not a value (a bare Prim/Call,
+-- not Push) faults TypeMismatch.
+(s · Quote([]),        Uncons p) → Next(s · Int(0), p)               -- empty
+(s · Quote(Push(v)::t), Uncons p) → Next(s · v · Quote(t) · Int(1), p) -- non-empty
 ```
 
 Any pattern not matched above with the required arity/types faults with `Underflow` or `TypeMismatch` per the precedence in §4.4. **No rule is partial; no rule panics.**
@@ -198,6 +220,11 @@ This ordering is normative because `spec_step` **is** the specification: P2 refi
 | `[Int(5), Int(0)]` | `Div` | `Fault(DivByZero)` | arity ok, both `Int`; divisor 0 |
 | `[Int(i64::MIN), Int(-1)]` | `Div` | `Fault(Overflow)` | arity ok, both `Int`, divisor ≠ 0; result leaves `i64` |
 | `[Int(3)]` | `Apply` | `Fault(TypeMismatch)` | arity ok (1); `Apply` requires `Quote`, got `Int` |
+| `[Quote(q), Quote(q)]` | `PrimRec` | `Fault(Underflow)` | arity: `primrec` needs 3, stack has 2 — checked before types |
+| `[Quote(q), Quote(q), Quote(q)]` | `PrimRec` | `Fault(TypeMismatch)` | arity ok (3); count slot is `Quote`, not `Int` |
+| `[Int(3), Int(1)]` | `Times` | `Fault(TypeMismatch)` | arity ok (2); `times` requires `Quote` on top, got `Int` |
+| `[Int(9)]` | `Uncons` | `Fault(TypeMismatch)` | arity ok (1); `uncons` requires `Quote`, got `Int` |
+| `[Quote([Add])]` | `Uncons` | `Fault(TypeMismatch)` | arity ok, is `Quote`; head word `Add` is not a value (`Push…`) |
 
 The review's illustrative pair maps as: `[Str] Add` → single non-matching operand, arity 2 unsatisfied → `Underflow` (arity checked first); `[Str, Int] Add` → arity satisfied, operand wrong → `TypeMismatch`. In the v0.1 core these are moot because `Str` never reaches the stack.
 
@@ -223,6 +250,17 @@ Glyphs below are **provisional** — final assignment comes from the measurement
 | `=` | eq | `( a b -- 0\|1 )` | |
 | `<` | lt | `( a b -- 0\|1 )` | |
 | `?` | if | `( c [t] [f] -- ... )` | |
+
+**v0.2 recursion primitives** (admitted by `docs/design/v0.2-recursion-primitives.md`, merged PR #8; implemented in `spec_step_prim` and `crate::interp`). Glyphs are the measured assignment from the design doc (§5 there); the lexer wiring for these glyphs lands with the v0.2 parser.
+
+| Glyph | Name | Stack effect | Notes |
+|---|---|---|---|
+| `&` | primrec | `( n [I] [C] -- r )` | bounded primitive recursion; **total, terminating** (count ↓ to 0). `n≤0` runs `I`; `n>0` folds `C` over the `(n-1)` subresult, keeping `n` available to `C`. Checked i64; no Overflow arm (`k-1` provably in range) |
+| `.` | times | `( n [Q] -- ... )` | run `Q` exactly `max(n,0)` times, left to right; **total, terminating**. `.` is unambiguous next to digits — integer literals have no decimal point (§2.3), so `3.` is `Int(3) Times` |
+| `\|` | linrec | `( [P] [T] [R1] [R2] -- ... )` | general linear/tail recursion; **desugars into `?` (if)** — inherits its verified branch semantics, adds no control operator. **Partial**, like `!`; bounded by fuel. Tail recursion is `R2 = []` |
+| `>` | uncons | `( [w …] -- w [ … ] 1 )` \| `( [] -- 0 )` | deconstruct a quotation: non-empty → head value, tail quote, flag `1`; empty → flag `0`. Structural and **affine** (consumed once, split). A non-value head (bare `Prim`/`Call`) faults `TypeMismatch`. The direct enabler of the honest TC proof (§6.2) |
+
+`primrec`/`times`/`linrec` are admitted on token grounds (frozen `T_v0` reaches 3.72× with `primrec`+`linrec`); `uncons` is admitted on the TC-proof / list-enablement rationale. Multiplicity (spec §14.4): `primrec`/`times`/`linrec` **replicate** their quote arguments along the recursion spine (like `:!`), while `uncons` is genuinely **affine** — it splits its one quote without duplication.
 
 **Deliberate inclusions beyond the minimal base.** `swap`, `rot`, `over`, `dip`, native ints, `if` are all derivable from the Kerby base `{dup, drop, cat, cons, apply}` — and we include them anyway, because derived forms cost 5–20 tokens *per use site* while a primitive costs ~1. This is the anti-tarpit principle applied consistently: **the primitive set is open, and admission is decided by corpus-level token accounting**, not by minimality aesthetics.
 
@@ -607,5 +645,6 @@ Before expanding the language or publishing quantitative claims, these gates mus
 
 ## 16. Changelog
 
+- **v0.2-draft** (2026-07-11) — Added the four v0.2 recursion primitives admitted by `docs/design/v0.2-recursion-primitives.md` (merged PR #8) and implemented in the verified ghost model (`SpecPrim::{PrimRec, Times, LinRec, Uncons}` + `spec_step_prim` arms), the exec twin, and the cargo interpreter `crate::interp`: **`primrec` (`&`)** bounded primitive recursion `( n [I] [C] -- r )`, **`times` (`.`)** bounded iteration `( n [Q] -- … )` — both total and terminating (count strictly decreases; checked i64, no Overflow arm since `k-1` is provably in range); **`linrec` (`\|`)** linear recursion `( [P] [T] [R1] [R2] -- … )` that **desugars into `if`** (inherits its verified branch semantics, adds no control operator; partial, fuel-bounded); and **`uncons` (`>`)** quotation deconstructor `( [w …] -- w [ … ] 1 ) | ( [] -- 0 )` — structural, affine, and the TC-proof enabler (§6.2). Step rules added to §4.1, primitive table and multiplicity notes to §5, fault-precedence worked examples to §4.4 (each new arm checks arity → types → semantics). Golden (incl. factorial-via-primrec, gcd-via-linrec, fib-via-times, sum_to, power), boundary (i64 edges, non-positive/`i64::MIN` counts, empty-quotation uncons), fault-precedence, and differential-proptest-oracle coverage added in `crates/mtl-core/tests/interpreter.rs`. Uncons open decision (non-value head) resolved to `TypeMismatch` per the design's faithful reading. Smoke theorems for the new arms (`smoke_primrec_*`, `smoke_times_*`, `smoke_linrec_desugar`, `smoke_uncons_*`) stated in `mtl_core.rs` for the Verus CI job.
 - **v0.1.1** (2026-07-11) — Revision in response to the adversarial review (`docs/reviews/2026-07-11-adversarial-review.md`). TC "theorem" withdrawn to a conjecture with a quotation-encoded repair route and a v0.2 `uncons` candidate (§6). Deterministic lexer with unsigned integer literals (Option A) and test vectors; `-` is always `Sub` (§2.3). Normative fault precedence arity → types → semantics with worked examples (§4.4). `Call → UnknownWord` documented as v0.1 core behavior; two-machine `Invoke`/host-runner split specified for v0.2; "unconditional theorems" reworded (§8). `: !` reframed as a self-application kernel with a recursive-normal-form definition; "proper tail calls for free" made conditional on a loop normal form (P6) (§4.2, §6.3). §14 frozen as v0.2+ exploratory future work with claim-by-claim softening (Perceus "resembles"; `dip` = non-access interval; `over` = duplicate; P8 → P8a/b/c; P9 split into static / guarded / host-conformance / normal-exit; linear = at-most-once + exactly-once-on-normal-halt). Definitions `#f[...]` deferred out of v0.1 (§9). Benchmark redesigned with corpus splits, versioned task sets (T_v0 / T_v0.2), a baseline panel, warm/cold protocol, total-token accounting, and the headline metric *correct solutions per million inference tokens* (§10–§11). Layered proof hierarchy A–F (§7.5) and Go/No-Go gates (§15) added. String literals / `Str` clarified as not part of the v0.1 core (parser rejects; §2–§3, §7.1). Verification-status caveat added and the Verus pin corrected to the full build id `0.2026.07.05.49b8806` (the date-shaped `0.2026.07.05` named no downloadable asset → HTTP 403; fixed in CI #5), satisfying the review's "pin a precise commit, not a date-shaped version"; GREEN-phase proofs remain contract-stated and differential-proptest-evidenced pending the interpreter (§7.3, G7).
 - **v0.1** — Initial draft.
