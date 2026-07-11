@@ -1,0 +1,5 @@
+# The mtl-core cargo crate builds on stable Rust.
+# The Verus artifact (crates/mtl-core/src/mtl_core.rs) is checked by the
+# `verus` binary, which bundles its own toolchain (Verus 0.2026.07.05).
+[toolchain]
+channel = "stable"

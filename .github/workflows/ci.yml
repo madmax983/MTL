@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main, bootstrap]
+  pull_request:
+
+jobs:
+  cargo:
+    name: cargo check + test (stable)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo check
+        run: cargo check --workspace --all-targets
+      - name: cargo test
+        run: cargo test --workspace
+
+  verus:
+    name: verus verify (0.2026.07.05)
+    runs-on: ubuntu-latest
+    # Non-blocking: pinning/installing a specific Verus build in CI is flaky.
+    # Do not gate merges on this job until the install is proven stable.
+    continue-on-error: true
+    env:
+      VERUS_VERSION: "0.2026.07.05"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Verus ${{ env.VERUS_VERSION }}
+        run: |
+          set -euxo pipefail
+          url="https://github.com/verus-lang/verus/releases/download/release%2F${VERUS_VERSION}/verus-${VERUS_VERSION}-x86-linux.zip"
+          echo "Fetching $url"
+          curl -fL "$url" -o verus.zip
+          unzip -q verus.zip -d verus-dist
+          echo "$PWD/$(dirname "$(find verus-dist -name verus -type f | head -1)")" >> "$GITHUB_PATH"
+      - name: verus version
+        run: verus --version
+      - name: verus verify mtl_core.rs
+        run: verus crates/mtl-core/src/mtl_core.rs
