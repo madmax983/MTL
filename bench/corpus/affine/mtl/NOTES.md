@@ -11,6 +11,6 @@ Reading (stack top on the right), input `n` already on the stack:
 
 Straight-line stack code, no recursion.
 
-STATUS: unvalidated — MTL interpreter (Track B) has not landed; this solution's correctness is a best-effort structural claim, not executed. Token count is exact regardless of correctness.
+STATUS: validated — parses with mtl-syntax and executes correctly on the mtl-core interpreter against 4 test vectors (see bench/validate/tests/corpus.rs).
 
 CONFIDENCE: high — straight-line stack code, no recursion.

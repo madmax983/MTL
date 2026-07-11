@@ -211,14 +211,17 @@ def build_report() -> str:
     lines.append("")
     lines.append("### Caveats")
     lines.append("")
-    lines.append("- The MTL solutions are **unvalidated**: the interpreter (Track B) has not "
-                 "landed, so no MTL program here has been executed. Token counts are exact; "
-                 "correctness is a structural claim.")
-    lines.append("- The two **recursion** tasks (factorial, gcd) are structural sketches — the "
-                 "`:!` self-application ordering is not yet interpreter-checked. Treat their "
-                 "token counts as indicative.")
-    lines.append("- This is **stage 1** (static program tokens) of the full metric. The real "
-                 "north-star is E[total inference tokens x attempts to correct] under a "
+    lines.append("- The MTL solutions are now **parse-and-execute validated**: each is run "
+                 "against the merged `mtl-syntax` parser and `mtl-core` interpreter by "
+                 "`bench/validate/tests/corpus.rs`, which checks every task against multiple "
+                 "input/output vectors. Token counts are exact; correctness is executed, not "
+                 "merely structural.")
+    lines.append("- The two **recursion** tasks (factorial, gcd) were originally structural "
+                 "sketches that **faulted (TypeMismatch)** on execution; they have been "
+                 "corrected to interpreter-verified programs. Their token counts rose "
+                 "accordingly (factorial 12->19, gcd 12->15).")
+    lines.append("- This is still **stage 1** (static program tokens) of the full metric. The "
+                 "real north-star is E[total inference tokens x attempts to correct] under a "
                  "warm/cold agent protocol (spec section 10); stages 2+ add agent success rate.")
     lines.append("- Corpus is versioned `" + CORPUS_VERSION + "` and populated only on the "
                  "`dev` split; `train` and `sealed-eval` are reserved-empty in v0.")
