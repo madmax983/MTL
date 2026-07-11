@@ -1,0 +1,5 @@
+# Pinned to the version actually installed and verified end-to-end on 2026-07-11.
+# tiktoken lazily downloads vocab files (o200k_base, cl100k_base) from
+# openaipublic.blob.core.windows.net on first use. Both encoders were confirmed
+# to download and encode successfully in this environment.
+tiktoken==0.8.0

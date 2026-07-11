@@ -1,0 +1,27 @@
+# Token-measurement report for the MTL bench/ harness (stage 1: static tokens).
+#
+# This job is intentionally non-blocking: `continue-on-error: true`. tiktoken
+# lazily downloads its vocab files (o200k_base, cl100k_base) from
+# openaipublic.blob.core.windows.net on first use, so this job is
+# network-dependent and may be flaky in CI. It is informational only and must
+# never gate a merge. (Does not touch the existing ci.yml.)
+name: tokreport
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  tokreport:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install harness dependencies
+        run: pip install -r bench/tokcount/requirements.txt
+      - name: Run token report
+        run: python3 bench/tokcount/report.py
