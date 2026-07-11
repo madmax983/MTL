@@ -13,3 +13,11 @@
 
 /// The Verus version this crate's proofs are pinned to.
 pub const VERUS_VERSION: &str = "0.2026.07.05";
+
+/// The MTL executable interpreter (Track B).
+///
+/// The cargo-compiled, stable-Rust runtime for the MTL concatenative core: exec
+/// AST types, `exec_step`, and the fuel-bounded `run`. It is the runtime mirror
+/// of the Verus-verified `exec_step`/`run` in `src/mtl_core.rs` (which is checked
+/// by `verus`, not compiled by `cargo`). See the module docs for the split.
+pub mod interp;
