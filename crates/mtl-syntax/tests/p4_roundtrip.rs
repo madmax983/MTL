@@ -17,8 +17,8 @@ use mtl_syntax::ast::Prim;
 use mtl_syntax::{parse, print, Word};
 use proptest::prelude::*;
 
-/// All 17 primitives, for the generator.
-const ALL_PRIMS: [Prim; 17] = [
+/// All 21 primitives, for the generator.
+const ALL_PRIMS: [Prim; 21] = [
     Prim::Dup,
     Prim::Drop,
     Prim::Swap,
@@ -36,6 +36,10 @@ const ALL_PRIMS: [Prim; 17] = [
     Prim::Eq,
     Prim::Lt,
     Prim::If,
+    Prim::PrimRec,
+    Prim::Times,
+    Prim::LinRec,
+    Prim::Uncons,
 ];
 
 /// A name `[a-z][a-z0-9]*` of 1..=3 chars.

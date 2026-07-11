@@ -66,6 +66,10 @@ fn each_glyph_alone() {
         ("=", Eq),
         ("<", Lt),
         ("?", If),
+        ("&", PrimRec),
+        (".", Times),
+        ("|", LinRec),
+        (">", Uncons),
     ];
     for (glyph, prim) in cases {
         check(glyph, vec![p(*prim)], glyph);
@@ -83,6 +87,94 @@ fn adjacency() {
     check("a5", vec![call("a5")], "a5");
     check("a 5", vec![call("a"), i(5)], "a 5");
     check("5a", vec![i(5), call("a")], "5a");
+}
+
+#[test]
+fn v02_glyph_adjacency() {
+    // The KEY case from the design doc §5: `]&` is self-delimiting and must
+    // round-trip (closing quote bracket immediately followed by `&`).
+    check("[1][*]&", vec![q(vec![i(1)]), q(vec![p(Mul)]), p(PrimRec)], "[1][*]&");
+    // `.` after a digit: integer literals are `[0-9]+` (no decimal point per
+    // spec §2.3), so `3.` lexes to `[Int(3), Times]`, never a float.
+    check("3.", vec![i(3), p(Times)], "3.");
+    // `]|` adjacency (linrec combine form).
+    check("[*]|", vec![q(vec![p(Mul)]), p(LinRec)], "[*]|");
+    // `]>` adjacency (uncons on a quotation).
+    check("[1]>", vec![q(vec![i(1)]), p(Uncons)], "[1]>");
+
+    // Each new glyph directly after a digit — all self-delimiting.
+    check("3&", vec![i(3), p(PrimRec)], "3&");
+    check("3|", vec![i(3), p(LinRec)], "3|");
+    check("3>", vec![i(3), p(Uncons)], "3>");
+
+    // New glyphs adjacent to each other.
+    check("&.|>", vec![p(PrimRec), p(Times), p(LinRec), p(Uncons)], "&.|>");
+    // ...and adjacent to brackets.
+    check("&[]", vec![p(PrimRec), q(vec![])], "&[]");
+    check("[.]", vec![q(vec![p(Times)])], "[.]");
+    // A new glyph followed by a digit needs no separator (punct is self-delim).
+    check("&3", vec![p(PrimRec), i(3)], "&3");
+    check(".3", vec![p(Times), i(3)], ".3");
+}
+
+#[test]
+fn v02_design_doc_programs() {
+    // Design doc §7 hand-traced example programs for the recursion primitives.
+
+    // factorial `[1][*]&` (primrec, §3.1):
+    // PushQuote[PushInt(1)] PushQuote[Prim(Mul)] Prim(PrimRec)
+    check(
+        "[1][*]&",
+        vec![q(vec![i(1)]), q(vec![p(Mul)]), p(PrimRec)],
+        "[1][*]&",
+    );
+
+    // gcd `[:0=][_][~^%][]|` (linrec, §3.3): four PushQuotes then LinRec.
+    // P=:0= -> [Dup, Int(0), Eq]; T=_ -> [Drop]; R1=~^% -> [Swap, Over, Mod];
+    // R2=[] -> empty quote.
+    check(
+        "[:0=][_][~^%][]|",
+        vec![
+            q(vec![p(Dup), i(0), p(Eq)]),
+            q(vec![p(Drop)]),
+            q(vec![p(Swap), p(Over), p(Mod)]),
+            q(vec![]),
+            p(LinRec),
+        ],
+        "[:0=][_][~^%][]|",
+    );
+
+    // fib (times, §3.2):
+    // [Int(0), Int(1), Rot, PushQuote[Swap, Over, Add], Times, Drop]
+    //
+    // NOTE: the design doc §7 writes the source as `01@[~^+]._`, but under the
+    // merged spec's maximal-munch integer rule (`[0-9]+`, parse.rs:149), `01`
+    // lexes as the SINGLE literal `1`, not the two seeds `0` `1`. The two int
+    // pushes must be separated; the canonical form has a space between them.
+    check(
+        "0 1@[~^+]._",
+        vec![
+            i(0),
+            i(1),
+            p(Rot),
+            q(vec![p(Swap), p(Over), p(Add)]),
+            p(Times),
+            p(Drop),
+        ],
+        "0 1@[~^+]._",
+    );
+    // Confirm the doc's unspaced form collapses the seeds (spec behaviour, not a
+    // bug in the parser): `01` == integer 1.
+    assert_eq!(
+        parse("01@[~^+]._"),
+        Ok(vec![
+            i(1),
+            p(Rot),
+            q(vec![p(Swap), p(Over), p(Add)]),
+            p(Times),
+            p(Drop),
+        ])
+    );
 }
 
 #[test]
