@@ -46,6 +46,12 @@ pub fn conv(w: &Word) -> IWord {
             Prim::Eq => IPrim::Eq,
             Prim::Lt => IPrim::Lt,
             Prim::If => IPrim::If,
+            // v0.2 recursion/list primitives: parsed by mtl-syntax but not yet
+            // executable — mtl-core's interp variants land in the v02-core PR.
+            // Explicit arms (no wildcard) so the compiler flags any future Prim.
+            Prim::PrimRec | Prim::Times | Prim::LinRec | Prim::Uncons => {
+                unimplemented!("v0.2 recursion primitive not yet executable (mtl-core support pending)")
+            }
         }),
     }
 }
