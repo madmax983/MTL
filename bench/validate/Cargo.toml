@@ -1,0 +1,8 @@
+[package]
+name = "mtl-bench-validate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mtl-syntax = { path = "../../crates/mtl-syntax" }
+mtl-core = { path = "../../crates/mtl-core" }

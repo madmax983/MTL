@@ -26,10 +26,10 @@
 | is_even | predicate | mtl | 4 | 4 | 3.50x | 3.50x |
 | is_even | predicate | python-idiomatic | 14 | 14 | 1.00x | 1.00x |
 | is_even | predicate | python-minified | 9 | 9 | 1.56x | 1.56x |
-| factorial | recursion | mtl | 12 | 12 | 2.17x | 2.17x |
+| factorial | recursion | mtl | 19 | 19 | 1.37x | 1.37x |
 | factorial | recursion | python-idiomatic | 26 | 26 | 1.00x | 1.00x |
 | factorial | recursion | python-minified | 19 | 19 | 1.37x | 1.37x |
-| gcd | recursion | mtl | 12 | 12 | 2.00x | 2.00x |
+| gcd | recursion | mtl | 15 | 15 | 1.60x | 1.60x |
 | gcd | recursion | python-idiomatic | 24 | 24 | 1.00x | 1.00x |
 | gcd | recursion | python-minified | 15 | 15 | 1.60x | 1.60x |
 
@@ -37,7 +37,7 @@
 
 | Variant | o200k_base total | cl100k_base total |
 | --- | ---: | ---: |
-| mtl | 34 | 34 |
+| mtl | 44 | 44 |
 | python-idiomatic | 93 | 93 |
 | python-minified | 63 | 63 |
 
@@ -47,8 +47,8 @@ Aggregate ratio = sum(idiomatic-python tokens) / sum(mtl tokens), per encoding.
 
 | Encoding | idiomatic-py total | mtl total | aggregate ratio | >=3x gate |
 | --- | ---: | ---: | ---: | :---: |
-| o200k_base | 93 | 34 | 2.74x | NOT MET |
-| cl100k_base | 93 | 34 | 2.74x | NOT MET |
+| o200k_base | 93 | 44 | 2.11x | NOT MET |
+| cl100k_base | 93 | 44 | 2.11x | NOT MET |
 
 ### Gate verdict
 
@@ -57,8 +57,8 @@ Aggregate ratio = sum(idiomatic-python tokens) / sum(mtl tokens), per encoding.
 
 ### Caveats
 
-- The MTL solutions are **unvalidated**: the interpreter (Track B) has not landed, so no MTL program here has been executed. Token counts are exact; correctness is a structural claim.
-- The two **recursion** tasks (factorial, gcd) are structural sketches — the `:!` self-application ordering is not yet interpreter-checked. Treat their token counts as indicative.
-- This is **stage 1** (static program tokens) of the full metric. The real north-star is E[total inference tokens x attempts to correct] under a warm/cold agent protocol (spec section 10); stages 2+ add agent success rate.
+- The MTL solutions are now **parse-and-execute validated**: each is run against the merged `mtl-syntax` parser and `mtl-core` interpreter by `bench/validate/tests/corpus.rs`, which checks every task against multiple input/output vectors. Token counts are exact; correctness is executed, not merely structural.
+- The two **recursion** tasks (factorial, gcd) were originally structural sketches that **faulted (TypeMismatch)** on execution; they have been corrected to interpreter-verified programs. Their token counts rose accordingly (factorial 12->19, gcd 12->15).
+- This is still **stage 1** (static program tokens) of the full metric. The real north-star is E[total inference tokens x attempts to correct] under a warm/cold agent protocol (spec section 10); stages 2+ add agent success rate.
 - Corpus is versioned `T_v0` and populated only on the `dev` split; `train` and `sealed-eval` are reserved-empty in v0.
 

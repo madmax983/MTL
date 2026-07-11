@@ -1,18 +1,36 @@
 # factorial — MTL notes
 
-Program: `[:1<[_1][:1-'!*]?]:!`
+Program: `1~[^0=[__][[:@*~1-]':!]?]:!`
 
-Intended reading: the `[...]:!` Y-idiom dup-applies the body quotation,
-leaving a self-copy available for re-entry. The body:
+Idiom: the `[L]:!` self-application (spec §6.2 `: !`) pushes the loop
+quotation `L`, `:` dups it, `!` applies one copy — so at loop-body entry `L`
+is retained ON TOP of the stack and the body may `:!` it again to recurse or
+drop it to terminate. This mirrors the interpreter's `countdown` test in
+`crates/mtl-core/tests/interpreter.rs`.
 
-- `:` dup n
-- `1<` test `n < 1`
-- `[_1]` base-case quotation: drop n, push `1`
-- `[:1-'!*]` recursive quotation: dup n, compute `n-1`, `'` dip the
-  recursive self-apply `!` under the saved `n`, then `*` to form
-  `n * fact(n-1)`
+An accumulator carries the running product. Loop state is `[acc, n, L]`
+(`L` on top). Setup `1~` turns input `[n]` into `[1, n]` (`acc = 1`), then
+`[L]:!` starts the loop.
+
+Body `^0=[__][[:@*~1-]':!]?` on `[acc, n, L]`:
+
+- `^` over — copy `n` (the second-from-top) to the top → `[acc, n, L, n]`
+- `0=` — test `n == 0`
+- `[__]` base case (`n == 0`): drop `L`, drop `n`, leaving `[acc]` = `n!`
+- `[[:@*~1-]':!]` recursive case: `'` dip runs `[:@*~1-]` on `[acc, n]`
+  beneath `L`, producing `[acc*n, n-1]`, then restores `L` and `:!` recurses.
+  The dipped quote `:@*~1-` maps `[acc, n]` → `[acc*n, n-1]`:
+  `:` dup, `@` rot, `*` mul (→ `acc*n`), `~` swap, `1-` decrement `n`.
 - `?` if — select base vs recursive branch
 
-STATUS: unvalidated — MTL interpreter (Track B) has not landed; this solution's correctness is a best-effort structural claim, not executed. Token count is exact regardless of correctness.
+Correction note: the original corpus text `[:1<[_1][:1-'!*]?]:!` was an
+unvalidated structural sketch and is INCORRECT — its body opens with `:`
+(dup), which duplicates the loop-quote `L` (on top), so the following `1<`
+compares a Quote against an Int and the interpreter faults `TypeMismatch`
+immediately (n=3 → Fault(TypeMismatch)). The corrected program brings the
+numeric argument to the top with `^` before testing, carries an explicit
+accumulator, and uses `'` dip to keep `L` on top across the recursion.
 
-CONFIDENCE: structural sketch — the `:!` self-application ordering is not yet interpreter-checked; treat its token count as indicative.
+STATUS: validated — parses with mtl-syntax and executes correctly on the mtl-core interpreter against 6 test vectors (n = 0,1,2,3,5,6; see bench/validate/tests/corpus.rs).
+
+CONFIDENCE: high — executed on the reference interpreter.
