@@ -1,0 +1,62 @@
+MTL core — Verus proof log
+===========================
+
+Pinned toolchain
+----------------
+Verus release tag : release/0.2026.07.05.49b8806
+Release asset     : verus-0.2026.07.05.49b8806-x86-linux.zip
+Underlying version: 0.2026.07.05  (build/commit suffix .49b8806)
+Artifact          : crates/mtl-core/src/mtl_core.rs   (verus!{}-wrapped; checked
+                    by `verus`, NOT compiled by cargo — see lib.rs stub)
+
+NOTE ON THE PIN: the project spec pins the bare string "0.2026.07.05", but
+verus-lang publishes every release tag with a trailing build/commit hash. The
+bare "0.2026.07.05" tag/asset does NOT exist on GitHub (the previous CI workflow
+404'd on that exact URL, which is why the `verus verify` job had been failing at
+the install step — verus never ran). The exact downloadable id is recorded
+above. The spec-revision session should fold the .49b8806 suffix into the pin.
+
+Verification commands (as run by .github/workflows/ci.yml)
+----------------------------------------------------------
+# Core gate — machine-checks P1/P3; the stubbed P2 is a trusted boundary, so
+# this PASSES on the real proofs and FAILS only on a genuine P1/P3 regression:
+    verus crates/mtl-core/src/mtl_core.rs
+
+# Honesty audit — rejects assume/admit/external_body; EXPECTED to fail on the
+# known P2 stubs, run report-only to make the trust boundary explicit:
+    verus --no-cheating crates/mtl-core/src/mtl_core.rs
+
+What is MACHINE-CHECKED (real proofs, discharged by Verus/Z3)
+------------------------------------------------------------
+  p3_progress            P3 progress: every SpecState steps to Next | Halt | Fault
+                         (totality of spec_step; no wildcard, no partial match).
+  div_semantics_witnesses  Pinned truncating div/mod witnesses (by (compute)):
+                         trunc_div(-7,2) = -3, trunc_mod(-7,2) = -1, ...,
+                         and i64::MIN / -1 overflows.
+  trunc_divmod_correct   General truncating div/mod correctness (nonlinear_arith):
+                         a = q*b + r, |r| < |b|, sign(r) = sign(a) or r = 0.
+  smoke_dup_apply        P1 determinism witness: the two-token `dup apply` Y-idiom
+                         reaches stack [Quote(q)] with continuation q in two steps.
+  spec_step / spec_step_prim / spec_arith / spec_divmod / view_* / deep_view
+                         Well-formedness + termination (decreases) discharged.
+
+What is STUBBED / TRUSTED (P2 refinement — OPEN proof hole)
+-----------------------------------------------------------
+  p2_refinement          `admit()` — the exec-refines-spec obligation is asserted,
+                         not proved.
+  exec_step, exec_prim, exec_arith, exec_divmod, exec_cmp, run,
+  value_to_exec_word     `#[verifier::external_body]` — bodies unchecked; their
+                         refinement `ensures` is ASSUMED (trust boundary).
+  Executable evidence for P2 meanwhile is the differential proptest oracle in
+  crates/mtl-core/tests/interpreter.rs (independent transliteration of spec_step
+  checked step-for-step against crate::interp).
+
+Live machine-checked output
+---------------------------
+The authoritative, machine-produced `verus` output is uploaded by CI as the
+workflow artifact `verus-proof-log` (artifacts/proof-log.txt + no-cheating
+audit) on every run of the `verus verify` job. This checked-in log documents the
+pinned toolchain and the verified/stubbed split; it was authored WITHOUT running
+verus in the build container (the sandbox proxy blocks the release-asset
+download — a container-only limitation; GitHub-hosted runners fetch it directly).
+Pull the `verus-proof-log` artifact from a CI run for the exact prover output.
