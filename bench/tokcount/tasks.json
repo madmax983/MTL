@@ -1,0 +1,60 @@
+{
+  "version": "T_v0",
+  "tasks": [
+    {
+      "id": "affine",
+      "category": "arithmetic-pipeline",
+      "split": "dev",
+      "description": "Given integer n on the stack, compute 3*n + 7.",
+      "files": {
+        "mtl": "corpus/affine/mtl/solution.mtl",
+        "python_idiomatic": "corpus/affine/python-idiomatic/solution.py",
+        "python_minified": "corpus/affine/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "rev3",
+      "category": "stack-shuffle",
+      "split": "dev",
+      "description": "Given a b c on the stack (c on top), produce c b a (a on top) — reverse the top three.",
+      "files": {
+        "mtl": "corpus/rev3/mtl/solution.mtl",
+        "python_idiomatic": "corpus/rev3/python-idiomatic/solution.py",
+        "python_minified": "corpus/rev3/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "is_even",
+      "category": "predicate",
+      "split": "dev",
+      "description": "Given integer n on the stack, return 1 if n is even, else 0.",
+      "files": {
+        "mtl": "corpus/is_even/mtl/solution.mtl",
+        "python_idiomatic": "corpus/is_even/python-idiomatic/solution.py",
+        "python_minified": "corpus/is_even/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "factorial",
+      "category": "recursion",
+      "split": "dev",
+      "description": "Given non-negative integer n on the stack, compute n! (with 0!=1).",
+      "files": {
+        "mtl": "corpus/factorial/mtl/solution.mtl",
+        "python_idiomatic": "corpus/factorial/python-idiomatic/solution.py",
+        "python_minified": "corpus/factorial/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "gcd",
+      "category": "recursion",
+      "split": "dev",
+      "description": "Given a b on the stack, compute gcd(a,b) by Euclid's algorithm (gcd(a,0)=a).",
+      "files": {
+        "mtl": "corpus/gcd/mtl/solution.mtl",
+        "python_idiomatic": "corpus/gcd/python-idiomatic/solution.py",
+        "python_minified": "corpus/gcd/python-minified/solution.py"
+      }
+    }
+  ]
+}
