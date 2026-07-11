@@ -1,5 +1,5 @@
 {
-  "version": "T_v0",
+  "version": "T_v0.2",
   "tasks": [
     {
       "id": "affine",
@@ -8,6 +8,7 @@
       "description": "Given integer n on the stack, compute 3*n + 7.",
       "files": {
         "mtl": "corpus/affine/mtl/solution.mtl",
+        "mtl_v0_2": "corpus/affine/mtl-v0.2/solution.mtl",
         "python_idiomatic": "corpus/affine/python-idiomatic/solution.py",
         "python_minified": "corpus/affine/python-minified/solution.py"
       }
@@ -19,6 +20,7 @@
       "description": "Given a b c on the stack (c on top), produce c b a (a on top) — reverse the top three.",
       "files": {
         "mtl": "corpus/rev3/mtl/solution.mtl",
+        "mtl_v0_2": "corpus/rev3/mtl-v0.2/solution.mtl",
         "python_idiomatic": "corpus/rev3/python-idiomatic/solution.py",
         "python_minified": "corpus/rev3/python-minified/solution.py"
       }
@@ -30,6 +32,7 @@
       "description": "Given integer n on the stack, return 1 if n is even, else 0.",
       "files": {
         "mtl": "corpus/is_even/mtl/solution.mtl",
+        "mtl_v0_2": "corpus/is_even/mtl-v0.2/solution.mtl",
         "python_idiomatic": "corpus/is_even/python-idiomatic/solution.py",
         "python_minified": "corpus/is_even/python-minified/solution.py"
       }
@@ -41,6 +44,7 @@
       "description": "Given non-negative integer n on the stack, compute n! (with 0!=1).",
       "files": {
         "mtl": "corpus/factorial/mtl/solution.mtl",
+        "mtl_v0_2": "corpus/factorial/mtl-v0.2/solution.mtl",
         "python_idiomatic": "corpus/factorial/python-idiomatic/solution.py",
         "python_minified": "corpus/factorial/python-minified/solution.py"
       }
@@ -52,8 +56,42 @@
       "description": "Given a b on the stack, compute gcd(a,b) by Euclid's algorithm (gcd(a,0)=a).",
       "files": {
         "mtl": "corpus/gcd/mtl/solution.mtl",
+        "mtl_v0_2": "corpus/gcd/mtl-v0.2/solution.mtl",
         "python_idiomatic": "corpus/gcd/python-idiomatic/solution.py",
         "python_minified": "corpus/gcd/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "fib",
+      "category": "recursion",
+      "split": "dev",
+      "description": "Given non-negative integer n on the stack, compute the nth Fibonacci number (fib(0)=0, fib(1)=1).",
+      "files": {
+        "mtl_v0_2": "corpus/fib/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/fib/python-idiomatic/solution.py",
+        "python_minified": "corpus/fib/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "sum_to",
+      "category": "recursion",
+      "split": "dev",
+      "description": "Given non-negative integer n on the stack, compute the sum 0 + 1 + ... + n.",
+      "files": {
+        "mtl_v0_2": "corpus/sum_to/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/sum_to/python-idiomatic/solution.py",
+        "python_minified": "corpus/sum_to/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "power",
+      "category": "recursion",
+      "split": "dev",
+      "description": "Given b e on the stack (e on top), compute b raised to the power e (b^0=1).",
+      "files": {
+        "mtl_v0_2": "corpus/power/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/power/python-idiomatic/solution.py",
+        "python_minified": "corpus/power/python-minified/solution.py"
       }
     }
   ]
