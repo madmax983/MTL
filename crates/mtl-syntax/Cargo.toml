@@ -1,0 +1,12 @@
+[package]
+name = "mtl-syntax"
+version = "0.1.0"
+edition = "2021"
+description = "Lexer, parser, and canonical pretty-printer for MTL, with the P4 round-trip property."
+license = "MIT"
+repository = "https://github.com/madmax983/MTL"
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1"
