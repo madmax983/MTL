@@ -5,3 +5,4 @@ Cargo.lock
 # Verus build artifacts
 *.smt2
 .verus-log/
+crates/mtl-core/tests/*.proptest-regressions

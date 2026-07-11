@@ -162,14 +162,7 @@ fn value_to_word(v: Value) -> Word {
 ///
 /// On `Fault`, `vm` is left holding the pre-step machine state (the faulting
 /// word is still `vm.cont[0]`), so the caller can snapshot it.
-#[allow(unused_variables)]
 pub fn exec_step(vm: &mut Vm) -> Step {
-    // RED phase: exec_step is not yet implemented. Compiles, fails at runtime.
-    todo!("GREEN phase: implement exec_step mirroring spec_step")
-}
-
-#[allow(dead_code)]
-fn exec_step_impl(vm: &mut Vm) -> Step {
     if vm.cont.is_empty() {
         return Step::Halt;
     }
@@ -457,14 +450,7 @@ fn prepend(cont: &mut Vec<Word>, prefix: Vec<Word>) {
 ///
 /// Termination is NOT assumed (MTL is Turing complete). `fuel` counts small
 /// steps; `fuel == 0` returns `FuelExhausted` immediately with the initial state.
-#[allow(unused_variables, unused_mut)]
 pub fn run(mut vm: Vm, fuel: u64) -> Outcome {
-    // RED phase: run is not yet implemented. Compiles, fails at runtime.
-    todo!("GREEN phase: implement fuel-bounded run over exec_step")
-}
-
-#[allow(dead_code)]
-fn run_impl(mut vm: Vm, fuel: u64) -> Outcome {
     let mut steps: u64 = 0;
     loop {
         if steps >= fuel {
