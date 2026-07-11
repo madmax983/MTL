@@ -1,8 +1,8 @@
-# MTL: Minimal Token Language — Specification v0.1
+# MTL: Minimal Token Language — Specification v0.1.1
 
-**Status:** Draft for review
-**North star:** Turing complete. Minimize expected LLM-tokenizer tokens per program over a benchmark task distribution.
-**Verification target:** Reference semantics and interpreter verified in Verus (SPEC → PROOF → RED → GREEN → REFACTOR).
+**Status:** Draft for review — revised in response to the 2026-07-11 adversarial review (`docs/reviews/2026-07-11-adversarial-review.md`).
+**North star:** Turing complete (conjectured — see §6). Minimize expected total LLM inference tokens to a correct solution over a benchmark task distribution.
+**Verification target:** Reference semantics and interpreter verified in Verus (SPEC → PROOF → RED → GREEN → REFACTOR). The normative artifact is `crates/mtl-core/src/mtl_core.rs`: where this prose and `spec_step` disagree, `spec_step` is authoritative and the prose is the defect.
 
 ---
 
@@ -10,11 +10,13 @@
 
 ### 1.1 The metric
 
-Let `T` be a task distribution (§10), `tok(p)` the token count of program text `p` under a fixed tokenizer set (o200k_base, cl100k_base, Claude tokenizer), and `sol(t, L)` the shortest known correct solution to task `t` in language `L`.
+Let `T` be a task distribution (§10), `tok(p)` the token count of program text `p` under a fixed, pinned tokenizer set (o200k_base, cl100k_base, and a pinned Claude tokenizer implementation — §11), and `sol(t, L)` the shortest known correct solution to task `t` in language `L`.
 
-> **Objective:** minimize `E[t ~ T] [ tok(sol(t, MTL)) ]`, subject to MTL being Turing complete.
+> **Program-length objective:** minimize `E[t ~ T] [ tok(sol(t, MTL)) ]`, subject to MTL being Turing complete.
 
-**Success gate (Abrash rule):** MTL ships only if it achieves ≥3× token reduction vs. idiomatic Python on the benchmark suite, at equal or better agent success rate. Below that, it's a curiosity and we say so.
+Program length is necessary but not sufficient. The **operational headline metric** is *correct solutions per million inference tokens* on a sealed evaluation set (§10.6), which folds in language-acquisition cost, validator errors, and repair attempts — a token-cheap but unwritable language loses. Raw `tok(sol)` is one input to that, not the target.
+
+**Success gate (Abrash rule):** MTL ships only if it beats a baseline panel — in particular idiomatic Python — on correct-solutions-per-million-inference-tokens at equal or better agent success rate, on the sealed set (§10.6). Below that, it's a curiosity and we say so.
 
 ### 1.2 Non-goals
 
@@ -26,35 +28,69 @@ Let `T` be a task distribution (§10), `tok(p)` the token count of program text 
 
 ## 2. Lexical Structure
 
-The lexer is deliberately trivial — every lexing rule exists to enable BPE merges.
+The lexer is deliberately trivial — every lexing rule exists to enable BPE merges — but it is now specified as a deterministic algorithm with test vectors (§2.3).
 
 ### 2.1 Token classes
 
 | Class | Rule |
 |---|---|
 | **Symbol word** | A single ASCII punctuation character from the primitive table (§5). Self-delimiting: `:!` lexes as `:` `!`. |
-| **Integer literal** | `-?[0-9]+`, value in `i64`. Delimited by any non-digit. |
-| **String literal** | `"..."` with `\"` and `\\` escapes only. |
-| **Named word** | `[a-z][a-z0-9]*` — used only for host-injected capabilities (§8) and user definitions (§9). Delimited by non-alphanumerics. |
+| **Integer literal** | `[0-9]+`, value in `0 ..= i64::MAX`. **Unsigned** — a leading `-` is never part of a literal; it is always the `Sub` primitive (§2.3). Delimited by any non-digit. |
+| **String literal** | `"..."` with `\"` and `\\` escapes only. **Reserved, not part of the v0.1 core** — the v0.1 parser rejects string literals (`StringUnsupported`); see §3. |
+| **Named word** | `[a-z][a-z0-9]*` — reserved for host-injected capabilities (§8). Delimited by non-alphanumerics. |
 | **Whitespace** | Optional between all tokens except adjacent integers / adjacent named words. Never required between symbol words. |
 
 ### 2.2 The merge principle
 
-Because symbol words self-delimit, programs are written **without whitespace between symbols**: `:!` not `: !`. BPE tokenizers frequently merge adjacent punctuation into single tokens (`:!`, `];`, `[[` are commonly 1 token each). This means MTL's effective cost per primitive is often *below* 1 token — a property no whitespace-separated language can have.
+Because symbol words self-delimit, programs are written **without whitespace between symbols**: `:!` not `: !`. BPE tokenizers *often* merge adjacent punctuation into single tokens (`:!`, `];`, `[[` are 1 token under some tokenizers/revisions). Whether a given pair merges — and at what cost — differs across tokenizers and revisions and must be **measured against pinned tokenizer snapshots** (§11), not assumed. Where merges occur, MTL's effective cost per primitive can fall *below* 1 token — a property whitespace-separated languages structurally cannot achieve for their delimiters, which must spend a separator token. The stronger v0.1 phrasings ("frequently merge", "effective cost often below one token", "no whitespace-separated language can have this property") are downgraded to hypotheses to be demonstrated on a published corpus + tokenizer snapshot, not established facts.
 
 **Consequence:** primitive glyph assignment is an empirical optimization problem (§11), not an aesthetic choice. Glyphs are assigned to maximize merge frequency of common *bigrams and trigrams* in the benchmark corpus.
+
+### 2.3 Tokenization algorithm (deterministic)
+
+The v0.1 lexer is a deterministic maximal-munch scanner. Given the rejection of signed literals (below), there is no `1-2` ambiguity.
+
+**Integer-literal decision (Option A, normative).** Integer literals are **unsigned**: `IntegerLiteral ::= [0-9]+`, value in `0 ..= i64::MAX`. A `-` is **always** the `Sub` primitive (§5), never part of a literal. Negative constants are produced operationally: `-7` is written `0 7 -` (push 0, push 7, subtract). This supersedes the v0.1 `-?[0-9]+` grammar.
+
+Rationale: this eliminates the `1-2` ambiguity (is it `Int(1) Int(-2)` or `Int(1) Sub Int(2)`?) and the closely related LLM footgun where `1 -2` and `1 - 2` would otherwise tokenize differently. Writability — expected `tokens × attempts` to a correct program — dominates the rare saving on negative literals: a model that must reason about literal-vs-operator sign boundaries fails more often, and each failure costs far more than the one token a signed literal would occasionally save.
+
+**Algorithm.** Scan left to right; at each position, skip optional whitespace, then match the longest token by class:
+
+1. Next char is an ASCII digit `[0-9]`: consume the maximal run of digits → `Int(value)`. No preceding `-` is ever folded into the literal.
+2. Else next char is `[a-z]`: consume the maximal run of `[a-z0-9]` → `Name(word)`.
+3. Else next char is `"`: consume a string literal with `\"`/`\\` escapes → **reserved**; the v0.1 parser rejects it (`StringUnsupported`, §3).
+4. Else next char is a primitive symbol from §5 (`[ ] : _ ~ @ ^ ! , ; ' + - * / % = < ? `): consume exactly that one char → the corresponding symbol word. Symbol words are always single-character and self-delimiting, so maximal munch never merges two symbols into one lexical token (BPE merging happens later, in the tokenizer, and is orthogonal to lexing).
+5. Else: lexical error (unknown character).
+
+Whitespace is required only to separate two adjacent integer literals or two adjacent named words (rules 1–2 are the only greedy classes); it is never required around symbol words and never changes the tokenization of a symbol run.
+
+**Test vectors.**
+
+| Source | Tokens |
+|---|---|
+| `1-2` | `Int(1) Sub Int(2)` |
+| `1 - 2` | `Int(1) Sub Int(2)` |
+| `12 34` | `Int(12) Int(34)` |
+| `1234` | `Int(1234)` |
+| `0 7 -` | `Int(0) Int(7) Sub` (the canonical `-7`) |
+| `:!` | `Dup Apply` |
+| `:[` | `Dup LQuote` |
+| `[1 2+]` | `LQuote Int(1) Int(2) Add RQuote` |
+| `~@^` | `Swap Rot Over` |
+| `3:*` | `Int(3) Dup Mul` |
 
 ---
 
 ## 3. Values and Machine State
 
 ```
-Value  ::= Int(i64) | Str(string) | Quote(Program)
+Value   ::= Int(i64) | Quote(Program)          -- v0.1 core (matches mtl_core.rs)
 Program ::= sequence of Word
-Word   ::= Push(Value) | Prim(PrimOp) | Call(name)
-State  ::= (stack: List<Value>, cont: Program)
+Word    ::= Push(Value) | Prim(PrimOp) | Call(name)
+State   ::= (stack: List<Value>, cont: Program)
 ```
 
+- `Str(string)` is **reserved, not a v0.1 core value.** `mtl_core.rs` defines `SpecValue` and `Value` with only `Int` and `Quote`; the parser rejects string literals (`StringUnsupported`). This resolves the review's observation that strings were "semantically present but unusable": v0.1 excludes them from the core, and they return as a v0.2 value once string primitives and/or host capabilities justify them (§10.2, §14).
 - A **program** is a finite sequence of words.
 - The **machine state** is a pair: an operand stack and a continuation (the remaining program).
 - **Quotations** `[ ... ]` are first-class values: unevaluated programs pushed onto the stack. They are MTL's *only* abstraction mechanism — functions, closures, control flow, and data constructors are all quotations.
@@ -69,11 +105,13 @@ There are no variables and no environments. This is a design consequence of the 
 The semantics is a **total step function** — this is the load-bearing decision for Verus verification. Every state maps to exactly one of three outcomes:
 
 ```
-Step ::= Next(State) | Halt(stack) | Fault(Error)
+Step  ::= Next(State) | Halt(stack) | Fault(Error)
 
 Error ::= Underflow | TypeMismatch | Overflow | DivByZero
         | UnknownWord | FuelExhausted   -- FuelExhausted: driver only, not step
 ```
+
+`Invoke(name, stack, cont)` — a fourth, host-suspension outcome — is a **v0.2 addition** (§8.2). In the v0.1 core there is no successful `Call` transition: every `Call(name)` faults with `UnknownWord` (this is exactly what `spec_step` does).
 
 ### 4.1 Step rules
 
@@ -121,15 +159,47 @@ Notation: stack grows rightward; `s · v` is stack `s` with `v` on top. `p` is t
     → Next(s, f ++ p)   if c = 0
 ```
 
-Any pattern not matched above with the required arity/types faults with `Underflow` or `TypeMismatch`. **No rule is partial; no rule panics.**
+Any pattern not matched above with the required arity/types faults with `Underflow` or `TypeMismatch` per the precedence in §4.4. **No rule is partial; no rule panics.**
 
 ### 4.2 Key semantic property
 
-`Apply` splices the quotation into the continuation rather than recursing into a sub-interpreter. This makes the step relation *flat* — a single small-step transition system with no nested evaluation — which is what makes the Verus refinement proof tractable (§7). It also gives proper tail calls for free: a loop written as `dup apply` consumes no stack in the continuation.
+`Apply` splices the quotation into the continuation rather than recursing into a sub-interpreter. This makes the step relation *flat* — a single small-step transition system with no nested evaluation — which is what makes the Verus refinement proof tractable (§7).
+
+**Bounded-space tail execution (conditional).** Flat continuation splicing permits *bounded-space* tail execution for quotations in a **loop normal form** in which the recursive self-application occurs in *tail position* — no work is scheduled in the continuation after the recursive call. It does **not** give "proper tail calls for free" unconditionally: `Apply` sets `cont := q ++ rest`, so a body that schedules work after its recursive `!` grows the continuation by `len(q)` each iteration. The bound is proof obligation **P6**, which must first define tail position precisely, then state *which* space it bounds. Four distinct quantities must not be conflated:
+
+- **semantic continuation size** — `len(cont)` in the spec machine (what P6 targets);
+- **temporary allocation** during `Vec` concatenation in the exec machine;
+- **physical call-stack usage** of the interpreter;
+- **heap retention** from shared quotation values.
+
+P6 bounds the first, for the loop normal form only.
 
 ### 4.3 Determinism
 
 For every state `σ`, exactly one rule applies. Determinism is proof obligation **P1** (§7.3).
+
+### 4.4 Fault classification and precedence (normative)
+
+When a primitive cannot fire, `spec_step` faults, and the *order* in which `spec_step_prim` checks determines *which* error is reported. The v0.1 draft left "`Underflow` or `TypeMismatch`" undetermined; the normative precedence, read directly off `spec_step_prim` in `mtl_core.rs`, is:
+
+1. **Arity** — if the stack holds fewer values than the primitive's input count, `Fault(Underflow)`. Checked first, before any operand is inspected.
+2. **Operand types** — with arity satisfied, if any consumed operand has the wrong type, `Fault(TypeMismatch)` (first mismatch under the arm's match).
+3. **Semantic checks** — with arity and types satisfied, value-level checks fire: `Fault(DivByZero)` for `/ %` with divisor `0`; `Fault(Overflow)` for arithmetic whose true result leaves `i64` (including `i64::MIN / -1` and `i64::MIN % -1`).
+
+This ordering is normative because `spec_step` **is** the specification: P2 refines the exec interpreter against exactly this function, and P1/P3 are stated over it. The document does not get to override it; if the prose above ever disagrees with `spec_step_prim`, the code wins.
+
+**Worked examples.** Core value types are `Int` and `Quote` only (§3); `Str` is not a v0.1 core value, so the review's `[Str] …` cases are rejected earlier by the parser (`StringUnsupported`) and never reach `spec_step`. Using `Quote` as the concrete non-`Int` value:
+
+| Stack (top at right) | Word | Outcome | Why |
+|---|---|---|---|
+| `[Int(1)]` | `Add` | `Fault(Underflow)` | arity: `Add` needs 2, stack has 1 — checked before types |
+| `[Quote(q), Int(1)]` | `Add` | `Fault(TypeMismatch)` | arity ok (2); operand `Quote` is not `Int` |
+| `[Int(1), Quote(q)]` | `Add` | `Fault(TypeMismatch)` | arity ok; top operand `Quote` is not `Int` |
+| `[Int(5), Int(0)]` | `Div` | `Fault(DivByZero)` | arity ok, both `Int`; divisor 0 |
+| `[Int(i64::MIN), Int(-1)]` | `Div` | `Fault(Overflow)` | arity ok, both `Int`, divisor ≠ 0; result leaves `i64` |
+| `[Int(3)]` | `Apply` | `Fault(TypeMismatch)` | arity ok (1); `Apply` requires `Quote`, got `Int` |
+
+The review's illustrative pair maps as: `[Str] Add` → single non-matching operand, arity 2 unsatisfied → `Underflow` (arity checked first); `[Str, Int] Add` → arity satisfied, operand wrong → `TypeMismatch`. In the v0.1 core these are moot because `Str` never reaches the stack.
 
 ---
 
@@ -149,48 +219,78 @@ Glyphs below are **provisional** — final assignment comes from the measurement
 | `,` | cat | `( [a] [b] -- [ab] )` | |
 | `;` | cons | `( v [q] -- [v q] )` | |
 | `'` | dip | `( a [q] -- ... a )` | run q under top |
-| `+` `-` `*` `/` `%` | arith | `( a b -- c )` | checked |
+| `+` `-` `*` `/` `%` | arith | `( a b -- c )` | checked; `-` is always Sub (§2.3) |
 | `=` | eq | `( a b -- 0\|1 )` | |
 | `<` | lt | `( a b -- 0\|1 )` | |
 | `?` | if | `( c [t] [f] -- ... )` | |
 
 **Deliberate inclusions beyond the minimal base.** `swap`, `rot`, `over`, `dip`, native ints, `if` are all derivable from the Kerby base `{dup, drop, cat, cons, apply}` — and we include them anyway, because derived forms cost 5–20 tokens *per use site* while a primitive costs ~1. This is the anti-tarpit principle applied consistently: **the primitive set is open, and admission is decided by corpus-level token accounting**, not by minimality aesthetics.
 
-**v0.2 candidates** (admit if benchmarks justify): `times` (bounded loop), `map`/`fold` over a list value type, `pick`/`roll` generalized stack access, a `linrec`-style recursion combinator.
+**v0.2 candidates** (admit if benchmarks justify, per §10.2's admission corpus): `uncons` (quotation deconstructor — the direct enabler of the honest Turing-completeness proof, §6.2); `times` (bounded loop); `map`/`fold` over a list value type; `pick`/`roll` generalized stack access; a `linrec`-style recursion combinator; string primitives (§10.2). The Gemini review recommends prioritizing `pick`/`roll` over `map`/`fold`, on the grounds that LLMs handle explicit indexed stack access better than blind spatial routing (§10 notes the stack-juggling tax) — measurement decides.
 
 ---
 
 ## 6. Turing Completeness
 
-**Theorem (TC).** MTL with primitive set §5 is Turing complete.
+**Status: conjecture, not theorem.** The v0.1 draft asserted a "Theorem (TC)" via a two-counter Minsky simulation using two `i64` integers as counters. That argument is **invalid** and is withdrawn. This section documents the gap honestly and the intended repair route.
 
-**Proof route: simulation of 2-counter Minsky machines** (chosen over SKI translation because every step is directly checkable and the encoding uses no cleverness).
+> **Conjecture (TC).** MTL is intended to be Turing complete. The current `i64`-based Minsky encoding is insufficient because Minsky counters are unbounded while `Int` is bounded to `i64`. P5 will establish universality using quotation-encoded unbounded storage or another suitable machine.
 
-A Minsky machine is a finite list of instructions over counters `c1, c2`:
-`INC(ci, next)` | `DEC_JZ(ci, next_if_zero, next_else)` | `HALT`.
-2-counter Minsky machines are Turing complete (Minsky 1967).
+### 6.1 Why the bounded-counter argument fails
 
-**Encoding.**
+The natural encoding — each Minsky counter as one `Int` at the bottom of the stack — does **not** yield universality. A two-counter Minsky machine is Turing complete precisely because its counters are *unbounded* nonnegative integers. With two `i64` counters, a finite instruction set, and no other unbounded storage participating in the simulation, the reachable simulated state space is **finite**, and a finite-state machine is not Turing complete. The implication
 
-1. **Counters** are the two integers at the bottom of the stack: state shape is `c1 c2 ⟨control⟩`.
-2. **Unbounded iteration** comes from self-application. For any quotation body `B`:
+> "MTL has two `i64` counters + branching + iteration, therefore MTL simulates an arbitrary two-counter machine"
 
-   ```
-   [ :[B]!' ... ] : !
-   ```
+is invalid as written, so the draft's "Theorem (TC)" is withdrawn to the conjecture above.
 
-   The idiom `: !` (dup, apply) applied to a quotation that re-duplicates itself yields unbounded recursion — MTL's Y combinator is two tokens. Because `!` splices into the continuation (§4.2), this loops in constant continuation space.
-3. **Each instruction** becomes a quotation:
-   - `INC(c1, j)`: `[ ['1+]'! Qj ]` — increment under the top, continue as `Qj`. (Concretely: bring `c1` up with stack ops, `1+`, restore, then run `Qj`.)
-   - `DEC_JZ(c1, j, k)`: fetch `c1`, `:0=` , `[ restore; Qj ] [ 1-; restore; Qk ] ?`
-   - `HALT`: `[]` (empty quotation → continuation empties → machine `Halt`s).
-4. **Program counter** is which quotation currently occupies the continuation; the instruction table is finite, so each `Qi` is a fixed literal quotation.
+This does **not** show MTL is *not* Turing complete. MTL quotations grow without bound through `Cons` (`;`), `Cat` (`,`), and continuation splicing under `Apply` (`!`). That is a genuine source of unbounded storage — the v0.1 proof simply failed to use it.
 
-**Simulation invariant.** Define `R(m, σ)`: Minsky configuration `m = (pc, c1, c2)` is represented by MTL state `σ` iff `σ.stack = [Int(c1), Int(c2)] ++ scratch` with empty scratch at instruction boundaries and `σ.cont = ⟦Q_pc⟧ ++ ε`. Then:
+### 6.2 Repair route: quotation-encoded unbounded storage
 
-> **Lemma (lock-step):** if `m →_Minsky m'` then the MTL machine reaches, in a bounded number of steps, a state `σ'` with `R(m', σ')`; and the Minsky machine halts iff the MTL machine `Halt`s.
+The honest Minsky proof represents each counter `n` as a **unary quotation** holding `n` marker words:
 
-This lemma is finite case analysis over three instruction forms — each case is a fixed-length symbolic execution of the step rules in §4.1. It is proof obligation **P5** and is *mechanizable in Verus* as a spec-level theorem about the step relation, since both machines are pure spec functions. ∎
+- **Increment** — `Cons` a marker onto the quotation (`;`).
+- **Zero test** — distinguish the empty quotation from a non-empty one.
+- **Decrement** — inspect the quotation and remove one marker.
+
+The obstruction in the v0.1 primitive set: `Cons` (`;`) *constructs* quotations, but **nothing deconstructs them**. Both zero-testing and decrement need to observe a quotation's head/emptiness. This requires a new primitive, tentatively:
+
+```
+uncons : [v q]  ->  v [q] Int(1)     -- non-empty: head v, tail [q], flag 1
+       : []      ->  Int(0)           -- empty: flag 0 only
+```
+
+With `uncons` (or an equivalent deconstructor plus an emptiness test) the unary-quotation Minsky encoding gives a direct, step-checkable universality proof. `uncons` is therefore a **v0.2 primitive candidate** (§5), subject to the token-accounting admission rule — admitted only if it pays for itself corpus-wide; the TC proof is one strong argument in its favor.
+
+Alternative repair routes, if `uncons` is not admitted:
+
+- **Arbitrary-precision naturals** — replace `Int(i64)` with a `Nat`/`BigInt` value. Makes the Minsky argument straightforward but materially changes the implementation and overflow story, and is at odds with the verified `i64` arithmetic already pinned in `mtl_core.rs`.
+- **Translation from another universal calculus** — SKI/combinatory logic, a tag system, or a small concatenative core with a known universality result.
+
+### 6.3 Self-application and the `: !` kernel
+
+`: !` (`dup`, `apply`) is a **two-glyph self-application kernel**, not — by itself — a Y combinator. The v0.1 draft's "MTL's Y combinator is two tokens" overclaims: `: !` self-applies whatever quotation sits on top of the stack, but a fixed point results only when that quotation has the right shape. Three notions must be kept distinct:
+
+1. **Self-application kernel** — the fixed two glyphs `: !`. Given stack `[Quote(q)]`, `: !` steps (in two spec steps) to stack `[Quote(q)]` with `q`'s body spliced into the continuation — i.e. it runs `q` while handing `q` a fresh copy of itself. Verified: the `smoke_dup_apply` theorem in `mtl_core.rs`.
+2. **Recursive quotation normal form** — the shape a body `q` must have for `: !` to loop rather than crash. A quotation is in *recursive normal form* when, along every control path, it (a) consumes the self-copy `: !` leaves for it, (b) preserves the stack-effect signature it was entered with, and (c) re-establishes `[Quote(q)]` on top before re-invoking `: !` (typically by threading the retained self-copy back to the top). A body lacking this shape produces stack debris or `Underflow`/`TypeMismatch` when driven by `: !`.
+3. **Fixed-point construction** — a (future) theorem transforming an arbitrary suitable body into a recursive program in normal form. This is a P6-adjacent obligation, not yet discharged.
+
+Readers who test an *arbitrary* quotation with `: !` and observe underflow are seeing (2) violated, not a defect in (1).
+
+### 6.4 Instruction encoding (repaired route)
+
+Under the quotation-encoded storage of §6.2, each Minsky instruction becomes a fixed literal quotation:
+
+- `INC(ci, j)`: `Cons` a marker onto counter `ci`'s quotation, then run `Qj`.
+- `DEC_JZ(ci, j, k)`: `uncons` counter `ci`; on flag `0` (empty) run `Qj`; on flag `1` discard the removed marker and run `Qk`.
+- `HALT`: `[]` (empty quotation → continuation empties → machine `Halt`s).
+
+The **program counter** is which quotation currently occupies the continuation; the instruction table is finite, so each `Qi` is a fixed literal quotation. Unbounded *iteration* comes from `: !` (§6.3); unbounded *storage* from the unary quotations (§6.2).
+
+### 6.5 The lock-step lemma (P5), restated
+
+P5 is deferred until the unbounded representation is fixed. When it lands it is a simulation invariant `R(m, σ)` between a Minsky configuration `m = (pc, c1, c2)` and an MTL state `σ`, with counters encoded as **unary quotations** (not bottom-of-stack `Int`s), proving that `m →_Minsky m'` implies the MTL machine reaches, in a bounded number of steps, a `σ'` with `R(m', σ')`, and that the Minsky machine halts iff the MTL machine `Halt`s. It is finite case analysis over three instruction forms and is mechanizable in Verus as a spec-level theorem, since both machines are pure spec functions. **No TC claim is made until P5 lands** — universality is its own milestone (§7.5, Layer B).
 
 ---
 
@@ -212,35 +312,38 @@ Structure follows TAVDD: the Verus spec is written and its spine proofs discharg
 └──────────────────────────────────────────────┘
 ```
 
-- Spec side: `SpecValue { Int(int), Str(Seq<char>), Quote(Seq<SpecWord>) }`, state as `(Seq<SpecValue>, Seq<SpecWord>)`. Recursive datatype with `decreases` on structural size.
-- Exec side: `enum Value { Int(i64), Str(String), Quote(Vec<Word>) }` with a `View` impl mapping to spec values (i64 → int is where the overflow obligations surface).
-- Driver: `fn run(vm, fuel: u64) -> Outcome` — a fuel-bounded loop. **We do not prove termination of `run`; TC forbids it.** We prove that `run` is a correct finite unrolling of `spec_step` up to `fuel`, and that `FuelExhausted` is the only outcome the spec doesn't determine.
+- Spec side: `SpecValue { Int(int), Quote(Seq<SpecWord>) }`, state as `(Seq<SpecValue>, Seq<SpecWord>)`. Recursive datatype with `decreases` on structural size. (No `Str` variant — the core carries only `Int` and `Quote`, matching `mtl_core.rs`; the v0.1 draft's `Str(Seq<char>)` is dropped from the core, §3.)
+- Exec side: `enum Value { Int(i64), Quote(Vec<Word>) }` with a deep-view mapping to spec values (i64 → int is where the overflow obligations surface).
+- Driver: `fn run(vm, fuel: u64) -> Outcome` — a fuel-bounded loop. **We do not prove termination of `run`; TC forbids it.** We prove that `run` is a correct finite unrolling of `spec_step` up to `fuel`, and that `FuelExhausted` is the only outcome the spec doesn't determine. Fuel exhaustion is semantically load-bearing for linear resources (§14.2).
 
 ### 7.2 Invariants ("impossible states are impossible")
 
 - **I1 — Totality of step:** `spec_step` is a total function on all states (Verus enforces this by construction; no `arbitrary()`, no partial match).
 - **I2 — No panics:** exec interpreter has no `unwrap`, no indexing without proof, no unchecked arithmetic. All Vec pops are guarded by length preconditions discharged from the match structure.
-- **I3 — Value well-formedness:** every `Quote` contains a well-formed program (structural, by construction of the parser's postcondition).
+- **I3 — Value well-formedness:** every `Quote` contains a well-formed program (structural, by construction of the parser's postcondition; well-formed programs have every `PushInt` ≥ 0, matching the unsigned-literal lexer §2.3).
 - **I4 — Fault stability:** `Fault` states are terminal — no rule resumes from a fault.
 
 ### 7.3 Proof obligations (spine proofs first)
 
 | ID | Statement | Kind |
 |---|---|---|
-| **P1** | Determinism: `spec_step` is a function (free — it's a `spec fn`, but we additionally prove the §4.1 rules are non-overlapping as documentation-grade lemma) | spec |
+| **P1** | Determinism: `spec_step` is a function (free — it's a `spec fn`); additionally, the §4.1 rules are proven non-overlapping and the fault precedence (§4.4) is faithful to the published rules | spec |
 | **P2** | Refinement: `exec_step` faults exactly when `spec_step` faults, else `vm'@ == next state of spec_step(vm@)`; overflow in exec ↔ result outside i64 in spec | refinement |
 | **P3** | Progress: every state is `Next`, `Halt`, or `Fault` — no stuck states | spec |
-| **P4** | Parser round-trip: `parse(print(p)) == Ok(p)` and `parse` postcondition establishes I3 | exec |
-| **P5** | TC lock-step lemma (§6) over the spec step relation | spec, hard |
-| **P6** | Tail-call space bound: for programs in loop normal form `Q = [... :!]`, continuation length is bounded across iterations | spec, v0.2 |
-| **P7** | Heap acyclicity: the value heap is a DAG in every reachable state (§14.3) | spec |
-| **P8** | No leaks: every value pushed is eventually consumed, dropped, or in the final stack; the refcount model is exact (§14.3) | spec |
-| **P9** | Checker soundness: statically checked programs never fault with `Underflow`, `TypeMismatch`, or resource misuse, and never leak (§14.5) — progress + preservation over multiplicity-typed stacks | spec, headline |
+| **P4** | Parser round-trip over well-formed programs (all `PushInt` ≥ 0, §2.3): `parse(print(p)) == Ok(p)` **and** `print(parse(src)) == canonicalize(src)`; `parse` postcondition establishes I3. The second direction catches normalization surprises that matter to token accounting | exec |
+| **P5** | TC lock-step lemma (§6.5) over the spec step relation, with counters as unary quotations | spec, hard, deferred |
+| **P6** | Tail-call space bound: for programs in the defined loop normal form (recursive `: !` in tail position, §4.2), *semantic continuation length* is bounded across iterations | spec, v0.2 |
+| **P7** | Heap acyclicity: the core value heap is a DAG in every reachable state (§14.3) | spec, future |
+| **P8a/b/c** | Exact reference counts / prompt reclamation / normal-termination resource closure (§14.3) — replaces the single "no leaks" claim | spec, future |
+| **P9 (split)** | Checker soundness, split into static soundness / guard-insertion soundness / host conformance / normal-exit resource theorem (§14.5) | spec, future |
 
 If P2 gets hard, that's the design-smell signal: refine the representation (e.g., continuation as a persistent list vs. Vec splice) before fighting the prover.
 
-**Verification status (Verus 0.2026.07.05, `mtl_core.rs`, 10 queries, 0 errors):**
-machine-checked as of this revision — P3 (progress); P1 (by construction, total non-overlapping match, no wildcard arm); truncating div/mod semantics via concrete witnesses *and* the general correctness lemma (`a = q·b + r`, `|r| < |b|`, remainder sign follows dividend) discharged with `nonlinear_arith`; deep-view termination through nested quotations (lexicographic datatype-height measure); and a smoke theorem that the two-token Y idiom `:!` self-applies in exactly two spec steps, retaining the quotation while splicing its body into the continuation. Open holes: P2 (needs the GREEN interpreter), P5 (needs the Minsky spec machine), P6–P9 (scheduled).
+**Verification status (as stated in `crates/mtl-core/src/mtl_core.rs`):** P3 (progress); P1 (by construction — total, non-overlapping match, no wildcard arm); truncating div/mod semantics via concrete witnesses *and* the general correctness lemma (`a = q·b + r`, `|r| < |b|`, remainder sign follows dividend) discharged with `nonlinear_arith`; deep-view termination through nested quotations (lexicographic datatype-height measure); and the `smoke_dup_apply` theorem that `: !` self-applies in exactly two spec steps, retaining the quotation while splicing its body into the continuation. Open holes: P2 (needs the GREEN interpreter), P5 (needs the unbounded-storage Minsky machine, §6.2), P6–P9 (scheduled per §7.5).
+
+> **Reproducibility (per review §7).** "N queries, 0 errors" is evidence about a *particular artifact*. Claims must be accompanied by a **pinned Verus commit** (not a date-shaped version string), the exact invocation command, solver versions, and a checked-in proof log. This is Go/No-Go gate **G7** (§15); until it is met, the verification status above is provisional.
+
+> **Current verification status (2026-07-11) — honest caveat.** The Verus 0.2026.07.05 release asset returns HTTP 403 in our build/CI containers, so `verus` cannot currently be run here to re-check `mtl_core.rs`. The spec-level obligations above (P1, P3, div/mod, deep-view termination, `smoke_dup_apply`) are written as genuine proofs in the artifact but are, for now, **not independently re-verifiable in-container**; the GREEN-phase obligations (P2 refinement, P4 round-trip) are currently evidenced by **differential-oracle property tests** (exec vs. a naive reference interpreter, §7.4) with their Verus proof contracts **stubbed via `admit()`**, pending CI or a local Verus install. Until `verus` runs green with a checked-in proof log (gate **G7**), treat "machine-checked" here as *contract-stated, proptest-evidenced*, not SMT-discharged.
 
 ### 7.4 Test layer (RED/GREEN — complements, not replaces, proofs)
 
@@ -248,49 +351,132 @@ Proofs cover what we modeled; property tests poke at what we forgot to model:
 
 - **Happy path:** golden programs (factorial, Fibonacci, the Minsky simulator itself) with expected final stacks.
 - **Boundary:** empty program, deeply nested quotations, `i64::MIN / -1`, `i64::MIN % -1`, quotation catenation at size limits.
-- **Property (proptest):** (a) fuzz arbitrary programs — interpreter never panics, always returns in ≤ fuel steps (this re-checks I2/P3 against the *actual binary*, catching spec/exec transcription gaps); (b) differential testing exec vs. a naive unverified oracle interpreter; (c) `parse ∘ print` round-trip on arbitrary ASTs (re-checks P4).
+- **Property (proptest):** (a) fuzz arbitrary well-formed programs — interpreter never panics, always returns in ≤ fuel steps (re-checks I2/P3 against the *actual binary*, catching spec/exec transcription gaps); (b) differential testing exec vs. a naive unverified oracle interpreter (currently the primary evidence for P2/P4 while `verus` is unavailable, §7.3); (c) `parse ∘ print` round-trip on arbitrary ASTs (re-checks P4, both directions).
 - **Regression:** every bug found by Havoc-style fuzzing lands as a named test before the fix commits.
 
 Coverage gate 85–90%; criterion benches on the step loop.
+
+### 7.5 Layered proof hierarchy (six milestones, not one cliff)
+
+Per review §20, the proof program is layered so that universality, typing, heap, and effects are *separate publishable milestones* rather than one P9-shaped obligation:
+
+- **Layer A — pure core:** `Int(i64) | Quote(Program)`; no strings, definitions, host calls, heap identities, or resources. Total step, explicit fault precedence (§4.4), exec/spec refinement (P2), parser/printer properties (P4), no interpreter panic. *This is v0.1's scope.*
+- **Layer B — universality:** add the unbounded representation the proof needs (§6.2); representation invariant, instruction simulation, halting correspondence (P5). No TC claim before this lands.
+- **Layer C — static stack typing:** literal quotations only; preservation, progress excluding arithmetic faults, branch-stack compatibility.
+- **Layer D — dynamic quotation composition:** effect-carrying quotation values or runtime guards; gradual guarantee.
+- **Layer E — heap implementation:** allocation identities, explicit refcount semantics, edge-age acyclicity (P7), exact counts, no unreachable nodes after reclamation (P8a/b).
+- **Layer F — host effects and linear resources:** host contracts and cancellation semantics; at-most-once use, no live resources on normal halt (P8c), host-conformance preservation.
 
 ---
 
 ## 8. Effects: Host-Injected Capabilities
 
-The core is pure — `spec_step` closes over nothing. Effects enter only as **named words bound by the host** at VM construction:
+The core is pure — `spec_step` closes over nothing — and in v0.1 it has **no successful rule for `Call(name)`**: every `Call` faults with `UnknownWord`. This is the actual behavior of `spec_step` in `mtl_core.rs` and is the normative v0.1 core semantics. Effects are therefore not yet part of the verified core; §8.2 specifies the v0.2 design.
+
+### 8.1 v0.1: Call is UnknownWord
+
+`State = (stack, cont)` carries no word dictionary, host state, effect trace, or capability signature. There is consequently no successful `Call` transition, and the pure-core theorems (P1–P3) hold **independently of any host**. The v0.1 draft's phrase "the verified core's theorems are unconditional" is replaced by the more precise:
+
+> The pure-core theorems are independent of host behavior. End-to-end guarantees about a *running* MTL program additionally require assumptions about the host contract (§8.2): a host word may panic, diverge, return a malformed value, violate its declared stack effect, leak a resource, or mutate ambient state. Trusted or external components remain part of the trusted computing base; they are not discharged by the core proofs.
+
+### 8.2 v0.2: two-machine split (pure core + host runner)
+
+The v0.2 effects design separates a **verified pure core** from an **untrusted host runner**, making the trust boundary explicit rather than blurred:
 
 ```
-Vm::new(program).with_word("emit", host_fn)  // ( v -- )
+CoreStep   ::= Next(CoreState)
+             | Halt(stack)
+             | Fault(CoreError)
+             | Invoke(name, stack, cont)     -- new: core suspends, names a capability
+
+HostResult ::= Resume(stack, host_state)     -- host returns a new stack
+             | HostFault(error, host_state)
 ```
 
-- Unknown named word → `Fault(UnknownWord)`. The verified core's theorems are unconditional; host words are trusted boundary, documented as such.
-- Capability style: an MTL program can only affect what its host explicitly granted. This makes MTL programs safe to run when *generated by agents* — which is the point.
+The core steps deterministically until it reaches `Invoke(name, stack, cont)`, at which point it suspends and hands `(name, stack)` to the host runner. The host runner — outside the verified core, part of the TCB — executes the named capability and returns a `HostResult`; the core resumes from `cont` with the returned stack. Capability style is unchanged: a program can only affect what its host explicitly granted, which is what makes agent-generated MTL safe to run (subject to resource metering — fuel, heap quota, max quotation/stack size, output bytes, per-capability call budget, host timeout — listed as future work per review §19).
+
+**Host contract.** For end-to-end theorems, each host word declares a stack effect and a capability signature, and the host runner is *assumed* to conform: return the declared arity/types, not leak linear resources, and either terminate or signal `HostFault`. These assumptions are the price of the trust boundary; the core proofs do not establish them. Verus's own discipline is the model — specification, proof, and executable code are distinct, and trusted external components stay in the TCB rather than disappearing by declaration.
+
+This split lands in v0.2; v0.1 ships the pure core with `Call → UnknownWord`.
 
 ---
 
-## 9. Definitions (v0.1, restricted)
+## 9. Definitions — deferred out of v0.1
 
-```
-#f[...]        -- bind quotation to single-letter name f
-```
+> **Status: deferred entirely. Not part of v0.1.**
 
-- Names are **single lowercase letters** in v0: a multi-char name costs ≥2 tokens per use site and its glyph budget is better spent on primitives.
-- A definition is sugar: `f` ≡ `Push(Quote(body)) Apply`. No recursion through the name table needed — recursion is `: !` (§6.2) — so definitions never complicate the semantics or the proofs.
+The v0.1 draft sketched `#f[...]` to bind a quotation to a single-letter name. On review this is **under-specified**: `#` is not in the lexical classes (§2); it is unclear whether definitions are a lexical macro, an AST desugaring, or a runtime dictionary lookup; and scope, shadowing of host words, behavior inside quotations, forward references, whether `f` parses as `Call("f")`, printer behavior, whether the declaration counts toward token benchmarking, and whether expansion duplicates bodies are all unresolved. Rather than ship an ambiguous feature, **definitions are removed from v0.1 entirely.** When reintroduced, the spec will pick exactly one mechanism — lexical macro expansion before parsing, AST desugaring before execution, or runtime dictionary lookup — and specify it fully, including its interaction with the token metric and the checker.
+
+Recursion does **not** depend on definitions — it is `: !` (§6.3) — so their removal does not affect the semantics or the proofs.
 
 ---
 
 ## 10. Benchmark Suite (define before optimizing)
 
-Task distribution `T`, three tiers, each task specified as (input stack, expected output stack or effect trace):
+The benchmark is the project's oracle, and it can be gamed several ways; the design below is built to resist that.
 
-1. **Micro (20 tasks):** arithmetic pipelines, stack shuffles, predicates, min/max, gcd, factorial, fib.
-2. **Algorithmic (15 tasks):** list fold/map (via quotation encoding or v0.2 list values), sorting a small list, prime sieve, string reverse, run-length encoding, the Minsky simulator.
-3. **Agentic (10 tasks):** capability-driven — "read value via host word, transform, emit"; small state-machine policies; the shape of Kairos-style skill bodies.
+### 10.1 Corpus splits (anti-overfitting)
 
-Recorded per task, per language (MTL, Python, jq where applicable, Forth as a concatenative control):
-`tokens(solution)` under each tokenizer × `agent success rate` (N attempts, fixed model, fixed prompt scaffold) × `attempts-to-first-correct`.
+The task corpus is partitioned into four disjoint sets, and glyphs/primitives are optimized on *different* data than they are evaluated on:
 
-**The real headline metric is `E[tokens × attempts]`** — token-cheap but unwritable loses.
+- **Glyph-training corpus** — used only to measure bigram/trigram frequencies for glyph assignment (§11).
+- **Primitive-admission corpus** — used only to decide whether a candidate primitive pays for itself.
+- **Development set** — used during implementation for iteration and debugging.
+- **Sealed evaluation set** — held out; touched only for the final headline numbers. Never used to admit a glyph or a primitive.
+
+Optimizing glyphs on the training split and admitting primitives on the admission split — then reporting on the sealed split — is what separates *general* token compression from benchmark-fitting (introducing a primitive in response to a task and then evaluating it on that same task).
+
+### 10.2 Task sets are versioned against the primitive set
+
+Because the primitive set is open (§5), each task set is tagged with the primitive set it assumes:
+
+- **T_v0** — primitive set §5, no strings, no host capabilities.
+- **T_v0.2** — adds whatever v0.2 admits: string primitives, list values, `uncons`, host capabilities.
+
+String tasks (string reverse, run-length encoding) and capability-driven agentic tasks are **T_v0.2**: they are *impossible* in T_v0, which has no `Str` value at all (§3) and no host words. Reporting a T_v0.2 result as a v0.1 number would be a category error.
+
+### 10.3 Comparison baselines (per task)
+
+`sol(t, L)` is measured for a *panel* of languages per task, not MTL vs. one strawman:
+
+- **Idiomatic Python**, **minified Python**, and **Python generated by the evaluated model** (controls for researcher golfing effort);
+- **Forth** and **Joy** (concatenative controls);
+- **jq** and a compact S-expression DSL where suitable;
+- **MTL without corpus-optimized glyphs** (mnemonic / un-optimized) and **MTL with optimized glyphs** (isolates the glyph-assignment contribution).
+
+"Shortest known correct solution" alone measures researcher search effort as much as language merit; the panel controls for that.
+
+### 10.4 Total-token accounting
+
+Per task, per language, per tokenizer, record **total inference tokens to a correct solution**, not just program length:
+
+```
+total_tokens = amortized_language_instruction_tokens   -- teaching the language
+             + generated_program_tokens
+             + validator_error_tokens                  -- checker/parse errors seen
+             + repair_attempt_tokens                   -- failed attempts (full cost)
+             + execution/tool_tokens
+```
+
+`tokens × attempts` (the v0.1 draft's metric) is **insufficient**: an "attempt" hides its size — a failed attempt may be a five-token patch or a 2,000-token explanation. Measure total consumption directly.
+
+### 10.5 Warm vs. cold agent protocol
+
+Each task is run under two conditions:
+
+- **Warm agent** — the language lives in the model's system context or fine-tuning (amortized instruction cost near zero).
+- **Cold agent** — the language reference is supplied in the prompt (instruction cost paid per task).
+
+Report both; they answer different questions (steady-state cost vs. acquisition cost).
+
+### 10.6 Metrics
+
+- **Headline: correct solutions per million inference tokens** (on the sealed set).
+- Supporting: `P(correct within budget)`; median total model-output tokens to first correct; mean censored at budget; execution success after validator acceptance; semantic diversity of failures.
+
+**Success gate (Abrash rule), restated:** MTL ships only if it beats the panel — in particular idiomatic Python — on *correct solutions per million inference tokens at equal-or-better correctness*, on the sealed set. Token-cheap but unwritable loses; the objective is to minimize expected total inference tokens to correct execution subject to a fixed correctness target, **not** raw program length (see §11 on why the most compressible alphabet may not be the most generatable one).
+
+A cross-cutting writability concern (Gemini review): point-free code imposes a **stack-juggling tax** — bringing a deeply buried value to the top costs routing tokens (`@ ^ ~ @`) that can exceed the savings of omitting a name, and LLMs track an implicit stack poorly across long generations. Two consequences fold into the harness: (1) validator errors must report the **exact typed stack state at the fault**, not just "TypeMismatch at word 14", so the agent can repair its mental model; (2) `pick`/`roll` are prioritized v0.2 candidates (§5).
 
 ## 11. Glyph Assignment Protocol (Abrash-style measurement)
 
@@ -299,18 +485,17 @@ Recorded per task, per language (MTL, Python, jq where applicable, Forth as a co
 3. For each assignment, render the full solution corpus and count tokens under each tokenizer — **corpus-level, not per-glyph**, because BPE merging is context-dependent (`:!` may be 1 token; `:?` may be 2).
 4. Frequency-weighted optimization: assign the most merge-friendly bigrams to the most frequent primitive *pairs* in the corpus (measure pair frequencies first).
 5. Freeze assignment; re-run whenever the primitive set changes. The script lives in-repo; assignments never change without a measurement diff in the ADR.
-
----
+6. **Pinned tokenizers.** All counts are reported against pinned tokenizer implementations and versions: `tiktoken` `o200k_base` and `cl100k_base` at a recorded release, and a **pinned Claude tokenizer implementation** — a web tokenizer UI is not a reproducible gate. Merge behavior is tokenizer- and revision-dependent, so the snapshot is part of the result.
+7. Glyph assignment is measured on the **glyph-training corpus** only and frozen before the sealed evaluation set is touched (§10.1).
+8. **Generatability ablation.** The most *compressible* alphabet may not be the most *generatable* one: tokenizer-optimal punctuation can sit on weak learned priors, while verbose Python rides a polished statistical highway. Token count is not information content from the model's perspective. Run ablations over alphabets — mnemonic names, arbitrary punctuation, tokenizer-optimized punctuation, and model-optimized punctuation discovered by generation experiments — and select for *generatability at fixed correctness*, not raw compressibility.
 
 ## 12. Open Questions
 
 1. **List/record values in core vs. quotation-encoded** — quotation encoding is elegant and proof-cheap but token-expensive per access; measurement decides (v0.2).
 2. **Static arity/type checking** — subsumed by the linearity checker (§14): the multiplicity-typed stack-effect checker is a strictly stronger validator, converting more runtime faults into pre-execution errors at zero token cost.
 3. **Continuation representation** — Vec splice (`q ++ p`) is O(n) per apply; a cons-list or rope may be needed. Must not disturb P2; do representation change spec-first per TAVDD.
-4. **String primitives** — none in v0; admit via benchmark pressure only.
+4. **String primitives** — none in v0; `Str` is not even a v0.1 core value (§3). Admit via benchmark pressure only (T_v0.2, §10.2).
 5. **Whether `'` (dip) merges badly** — apostrophe adjacency to `]` is tokenizer-hostile in early checks; may swap glyph with a lower-frequency primitive.
-
----
 
 ## 13. Roadmap
 
@@ -321,63 +506,75 @@ Recorded per task, per language (MTL, Python, jq where applicable, Forth as a co
 | RED | Golden + boundary + proptest suites (failing) | tests exist, fail |
 | GREEN | Exec interpreter passing tests, P2 discharged | tests + proofs green |
 | REFACTOR | Continuation representation tuning under green lights | benches |
-| CHECK | §14 multiplicity checker + P7–P9 | `verus` green on P9 |
-| MEASURE | §10 suite vs. Python; §11 glyph freeze | ≥3× or write the post-mortem |
+| CHECK | §14 multiplicity checker + P7–P9 (future work) | `verus` green on split P9 |
+| MEASURE | §10 suite vs. panel; §11 glyph freeze | headline metric ≥ panel or write the post-mortem |
 
----
+## 14. Linearity and Memory Model (v0.2+ exploratory — future work)
 
-## 14. Linearity and Memory Model — Rust-Grade Safety, GC-Free, Zero Token Cost
+> **Status: exploratory future work (v0.2+).** Nothing in §14 is part of the v0.1 verified core. `mtl_core.rs` implements no heap model, no refcount instrumentation, no multiplicity checker, and no linear resources. The claims here are a research direction, deliberately stated conservatively below; the strong forms in the v0.1 draft (a literal Perceus equivalence, an unconditional no-leak theorem, `dip`-as-borrow, "exactly once" resources) overreached what any current artifact proves. P7–P9 are **not** scheduled for v0.1; they are Layers E–F (§7.5).
 
 ### 14.1 The structural observation
 
-Rust needs a borrow checker because **names create aliases**: multiple variables can reach one value, so ownership must be tracked through binding structure. MTL has no binders. The only way a value is aliased is `:` (dup) / `^` (over); the only ways it dies are `_` (drop) or consumption by a word. Therefore **every MTL program already contains its ownership operations in the program text**.
+Rust needs a borrow checker because **names create aliases**: multiple variables can reach one value, so ownership must be tracked through binding structure. MTL has no binders. The only way a value is aliased is `:` (dup) / `^` (over); the only ways it dies are `_` (drop) or consumption by a word. So **every MTL program already contains its ownership operations in the program text** — the most interesting structural insight of this section, and directionally right.
 
-This is precisely the structure Koka's *Perceus* algorithm infers — precise compile-time dup/drop insertion yielding GC-free reference counting. In MTL, the inference step is the identity: the program *is* its ownership trace. Point-free concatenative code is accidentally a linear language with explicit structural rules (dup = contraction, drop = weakening).
+The safer statement of the Perceus connection: MTL exposes the structural events (dup = contraction, drop = weakening) that a Perceus-like precise reference-counting system ordinarily *infers*. In MTL that inference is closer to the identity. But Perceus is a precise reference-counting *and reuse* system over a particular linear functional core — **not** merely "programs contain dup and drop", so this **resembles** Perceus rather than **being** it. Honest claim: *MTL exposes the structural events that a Perceus-like system tracks, potentially simplifying exact reference-count accounting.*
 
-**Design consequence:** memory safety is enforced by a *static checker over unmodified programs*, not by syntax. The default path costs **zero additional tokens** — the multiplicity information lives in primitive signatures and the checker, never in program text.
+**Design consequence:** memory safety would be enforced by a *static checker over unmodified programs*, not by syntax. The default path costs **zero additional tokens** — the multiplicity information lives in primitive signatures and the checker, never in program text.
 
 ### 14.2 Multiplicity discipline
 
 Every stack type carries a multiplicity:
 
-| Multiplicity | May `:` / `^` | May `_` | Must be consumed |
+| Multiplicity | May `:` / `^` | May `_` | Consumption |
 |---|---|---|---|
-| **unrestricted** (`Int`) | yes | yes | no |
-| **affine** (`Quote`, `Str`) | yes (refcounted) | yes | no |
-| **linear** (host resources, v0.2) | **no** — check-time error | **no** — implicit drop is an error | **yes, exactly once** (e.g. an explicit `close`-style capability word) |
+| **unrestricted** (`Int`) | yes | yes | no requirement |
+| **affine** (`Quote`; `Str` when it arrives in v0.2) | yes (refcounted) | yes | no requirement |
+| **linear** (host resources, v0.2) | **no** — check-time error | **no** — implicit drop is an error | **at most once in all executions; exactly once on every normal terminating path** (§14.2a) |
 
 - Words are linear function signatures: inputs are consumed, outputs are produced. This is already how §4.1 is written — no rule copies a value implicitly.
 - Linear resources get Rust move semantics *as a restriction rather than an annotation*: `:` on a file handle is rejected before execution. Zero tokens, because prohibitions are free.
-- The linear tier is what makes agent-generated Kairos-style skills safe to run unattended: "leaked forty handles" becomes "validator rejected the skill."
+- The linear tier is what would make agent-generated Kairos-style skills safe to run unattended: "leaked forty handles" becomes "validator rejected the skill."
+
+**14.2a "Exactly once" vs. nontermination.** A Turing-complete program may diverge while holding a linear resource (`Q : !` can preserve `Q` — and a resource it closes over — through infinitely many iterations), so "consumed exactly once" cannot hold unconditionally. The precise discipline is: **used at most once in every execution**; **consumed on every *normal* terminating path**; and **no linear resource left on the final stack**. Cancellation or fuel exhaustion while a resource is live invokes a **host-defined cleanup protocol** — return ownership to the host, close it, preserve the suspended VM, or (worst case) leak — a host-contract decision (§8.2). This is why fuel exhaustion is semantically load-bearing, not merely an implementation cap.
 
 ### 14.3 Heap model: acyclic, refcounted, deterministic — not GC
 
 v0 values are immutable, and the only constructors (`;` cons, `,` cat, `[...]` literal) build new values from existing ones. Back-edges are unconstructible, so:
 
-> **P7 (acyclicity):** in every reachable state, the value heap is a DAG.
+> **P7 (acyclicity — future work).** In every reachable state the *core* value heap is a DAG. Because the only constructors build new values from existing ones, every heap edge `u → v` satisfies `birth(v) < birth(u)` — an age-ordering that entails acyclicity by construction. This is a **constructor-level invariant, not a reachability theorem**, and it holds only for core values: host-injected objects may conceal arbitrary graphs and are excluded unless opaque.
 
-Acyclic + refcounted = exact, deterministic destruction at last drop/consume — the pathological case for reference counting (cycles) is *provably impossible*, so this is no more "garbage collection" than Rust's own `Rc`. Freeing is deterministic and prompt, preserving the predictability story (no pauses, no tracing).
+Given exact counts, age-ordered heap edges, and recursive zero-count reclamation, unreachable *core* values are reclaimed deterministically and promptly — the pathological case for reference counting (cycles) is *provably impossible* for core values, so this is no more "garbage collection" than Rust's own `Rc`. The v0.1 draft's flat "acyclic + refcounted = exact deterministic destruction" is the conditional statement above, not an unconditional one.
 
-> **P8 (no leaks):** every value pushed is eventually consumed, dropped, or present in the final stack; the spec-level refcount model is exact (count = number of stack/continuation/heap references).
+> **P8 (split — future work).** The single "no leaks" claim is false-or-vacuous as written (for a diverging program "eventually consumed" may never hold) and is replaced by three:
+> - **P8a (exact reference counts):** for each heap value `v`, `rc(v)` equals its incoming heap edges plus root (stack/continuation) references.
+> - **P8b (prompt reclamation):** after each transition and its reclamation step, every allocated node is reachable from a root.
+> - **P8c (normal-termination resource closure):** if a statically checked program halts *normally*, no linear resources remain unconsumed.
 
-Both are spec-level invariants over an instrumented heap model in Verus — the exec interpreter then refines them via P2, giving a *verified* claim that the runtime neither leaks nor double-frees.
+These are spec-level invariants over an instrumented heap model in Verus, refined by the exec interpreter via P2 (Layer E, §7.5).
 
-### 14.4 Mutation and borrows without syntax (v0.2)
+### 14.4 Mutation and non-access intervals without syntax (v0.2+)
 
-- **Uniqueness typing does `&mut`'s job.** A mutation word (e.g. buffer write) requires its target to be *statically unique* — refcount provably 1 — which the multiplicity checker establishes. Unique ⇒ in-place mutation is unobservable ⇒ safe. This is Clean's uniqueness typing and Perceus's reuse optimization; no borrow syntax exists because exclusive access is a stack position, not a name.
-- **`'` (dip) is a scoped borrow.** The value leaves the stack, the quotation runs, the value returns; the checker verifies the quotation cannot have captured it (no escape ⇒ the "borrow" ends by construction). `^` (over) is a shared borrow that the duplicable tiers pay for with a refcount increment.
-- **Copy-on-write fallback:** a mutation word applied to a non-unique affine value either faults (strict mode) or clones then mutates (COW mode) — a per-word decision made by token accounting, as usual.
+- **Uniqueness typing for in-place mutation.** A mutation word requires its target to be statically unique. But `rc(v) = 1` is **not by itself sufficient** for safe in-place mutation: every possible alias must be represented by that count — host aliases, continuation literals, nested quotation values, temporary interpreter references, capability-owned references, suspended effect calls. The actual obligation is `rc(v) = 1 ∧ unique_root(v) ⇒ no other observable path reaches v`. Under that condition, in-place mutation is unobservable, echoing Clean's uniqueness typing and Perceus-style reuse.
+- **`'` (dip) is a non-access interval, not a borrow.** `dip` temporarily removes one stack occurrence, runs the quotation, and restores it (the restore is compiled into the continuation — see `spec_step_prim`'s `Dip` arm, which appends `value_to_word(a)` after `q`). This means the quotation cannot access *that stack occurrence* — it does **not** imply the absence of aliases elsewhere, no host mutation, no global handle, or a Rust-sense unique borrow. Precisely: `dip` creates a stack-local, checked interval in which one occurrence is inaccessible.
+- **`^` (over) is a duplicate, not a shared borrow.** `over` produces an actual second reference (a refcount increment), not a borrow.
+- **Copy-on-write fallback:** a mutation word on a non-unique affine value either faults (strict mode) or clones-then-mutates (COW mode) — a per-word decision made by token accounting.
 
 ### 14.5 The checker
 
 A **linear stack-effect checker**: abstract interpretation over stacks of multiplicity-annotated types, run pre-execution by the validator.
 
-- **Literal quotations** (the overwhelmingly common case in benchmark and agent-generated code): fully static — the checker recurses into `[...]` bodies, joins branches at `?`, and verifies loop bodies in `:!` normal form preserve their stack-type signature.
-- **Runtime-composed quotations** (`,` / `;` on non-literal operands): the known hard problem in typing concatenative languages (cf. Cat, Kleffner). MTL's answer is **gradual**: at truly dynamic composition points, either a checker-visible effect annotation or a deferred runtime multiplicity check. The escape hatch costs tokens *only where dynamism is actually used* — the metric and the type system have aligned incentives.
+- **Literal quotations** (the overwhelmingly common case): fully static — the checker recurses into `[...]` bodies, joins branches at `?`, and verifies loop bodies in `: !` normal form preserve their stack-type signature.
+- **Runtime-composed quotations** (`,` / `;` on non-literal operands): the known-hard problem in typing concatenative languages (cf. Cat, Kleffner; row-like stack typing; quotation typing). MTL's answer is **gradual**: at truly dynamic composition points, either a checker-visible effect annotation or a deferred runtime multiplicity check. The escape hatch costs tokens *only where dynamism is actually used*.
 
-> **P9 (checker soundness) — headline theorem:** if `check(p) = Ok`, then no state reachable from `(ε, p)` faults with `Underflow`, `TypeMismatch`, or resource misuse, and P8's no-leak property holds unconditionally. Proved as progress + preservation over the multiplicity-typed stack relation; tractable in Verus because the checker and `spec_step` are both pure spec functions over the same datatypes.
+> **P9 (split — future work).** The single "headline" checker-soundness theorem is too broad for a gradual checker over higher-order quotations. It is replaced by separate judgments and theorems:
+> - `check_static(p) = Static(effect)` — **static soundness:** statically checked programs never fault with `Underflow` or `TypeMismatch`.
+> - `check_guarded(p) = Guarded(effect, obligations)` — **guard-insertion soundness:** the inserted runtime multiplicity guards discharge the residual obligations.
+> - **host conformance:** end-to-end soundness holds *given* the host contract (§8.2).
+> - **normal-exit resource theorem:** a statically checked program that halts normally leaves no linear resource unconsumed (this is P8c).
+>
+> Bundling these into one theorem would be a proof obligation "shaped like a small moon." Each is its own milestone (§7.5, Layers C/D/F).
 
-P9 is also the metric's best friend: it converts runtime faults into pre-execution validator errors, directly raising agent success rate and protecting `E[tokens × attempts]` (§10).
+P9-family soundness is also the metric's best friend: it converts runtime faults into pre-execution validator errors, directly raising agent success rate and protecting the headline metric (§10.6) — provided validator errors report the exact typed stack state at the fault (§10.6).
 
 ### 14.6 Token accounting summary
 
@@ -386,7 +583,29 @@ P9 is also the metric's best friend: it converts runtime faults into pre-executi
 | Ownership / moves / drops | 0 — already in program text (`:`, `_`, consumption) |
 | Lifetimes, `&`, `mut`, annotations | 0 — do not exist |
 | Linear resource discipline | 0 net — explicit `close` words you'd write anyway |
-| Scoped borrows | 0 — `'` and `^` already exist |
+| Non-access intervals / duplicates | 0 — `'` and `^` already exist |
 | Dynamic-composition escape hatch | >0, rare, self-punishing — paid only where used |
 
-**Scope honesty:** interpreter memory safety was already guaranteed (verified Rust). §14 makes *MTL programs themselves* memory-safe as a language property — free correctness in pure v0, load-bearing the moment resources and mutation arrive in v0.2.
+**Scope honesty:** interpreter memory safety was already guaranteed (verified Rust). §14 is the *aspiration* to make *MTL programs themselves* memory-safe as a language property — free correctness in pure v0, load-bearing the moment resources and mutation arrive in v0.2. None of it is proven in v0.1; it is future work (Layers E–F, §7.5).
+
+---
+
+## 15. Go/No-Go Gates (v0.1 → v0.2)
+
+Before expanding the language or publishing quantitative claims, these gates must be green (adapted from the adversarial review §22; see `docs/reviews/2026-07-11-adversarial-review.md`):
+
+- **G1** Deterministic lexer specification with test vectors (§2.3). — ✅ specified in this revision.
+- **G2** Complete step semantics including fault precedence (§4.4). — ✅ specified in this revision.
+- **G3** Separated pure-core / host-call boundary (§8.2). — ◑ v0.1 documents `Call → UnknownWord`; the `Invoke` split is specified for v0.2.
+- **G4** Corrected TC theorem, or explicit withdrawal of the claim (§6). — ✅ claim withdrawn to a conjecture; repair route specified.
+- **G5** Five real programs written entirely in the stated v0 primitive set (T_v0). — ☐ open.
+- **G6** Reproducible tokenizer measurements for those programs against pinned tokenizers (§11). — ☐ open.
+- **G7** Pinned Verus commit and checked-in proof log (not a date-shaped version). — ☐ open (blocked: Verus 0.2026.07.05 asset returns HTTP 403 in-container, §7.3).
+- **G8** P2 discharged for at least the pure arithmetic/quotation core. — ☐ open (needs GREEN interpreter; currently proptest-evidenced with `admit()` stubs, §7.3).
+- **G9** §14 reduced to claims supported by an actual heap semantics. — ◑ §14 frozen as future work; claims softened.
+- **G10** Benchmark split preventing glyph and primitive overfitting (§10.1). — ✅ specified in this revision.
+
+## 16. Changelog
+
+- **v0.1.1** (2026-07-11) — Revision in response to the adversarial review (`docs/reviews/2026-07-11-adversarial-review.md`). TC "theorem" withdrawn to a conjecture with a quotation-encoded repair route and a v0.2 `uncons` candidate (§6). Deterministic lexer with unsigned integer literals (Option A) and test vectors; `-` is always `Sub` (§2.3). Normative fault precedence arity → types → semantics with worked examples (§4.4). `Call → UnknownWord` documented as v0.1 core behavior; two-machine `Invoke`/host-runner split specified for v0.2; "unconditional theorems" reworded (§8). `: !` reframed as a self-application kernel with a recursive-normal-form definition; "proper tail calls for free" made conditional on a loop normal form (P6) (§4.2, §6.3). §14 frozen as v0.2+ exploratory future work with claim-by-claim softening (Perceus "resembles"; `dip` = non-access interval; `over` = duplicate; P8 → P8a/b/c; P9 split into static / guarded / host-conformance / normal-exit; linear = at-most-once + exactly-once-on-normal-halt). Definitions `#f[...]` deferred out of v0.1 (§9). Benchmark redesigned with corpus splits, versioned task sets (T_v0 / T_v0.2), a baseline panel, warm/cold protocol, total-token accounting, and the headline metric *correct solutions per million inference tokens* (§10–§11). Layered proof hierarchy A–F (§7.5) and Go/No-Go gates (§15) added. String literals / `Str` clarified as not part of the v0.1 core (parser rejects; §2–§3, §7.1). Verification-status caveat added: `verus` cannot run in-container (release asset 403), so proofs are currently contract-stated and differential-proptest-evidenced (§7.3).
+- **v0.1** — Initial draft.
