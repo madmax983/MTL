@@ -24,6 +24,12 @@ For each task we hold three variants — `mtl`, `python-idiomatic`,
 `python-minified` — and count tokens for each under each encoding. The headline
 is the **MTL reduction ratio vs idiomatic Python** (higher = better for MTL).
 
+**Headline (stage 1, static program tokens):** on interpreter-validated
+static-token counts, the frozen-`T_v0` **v0.2** solution set reaches **3.72x** vs
+idiomatic Python (**>=3x gate MET**), where the frozen **v0.1** solutions were
+**2.11x** (NOT MET). This is still stage 1 (static program tokens); the full
+`E[tokens x attempts]` metric remains future work.
+
 Counting policy: a single trailing newline is stripped from every file before
 counting, applied **uniformly** to all variants so cross-variant comparisons are
 fair. The `.mtl` files contain **only** the token-measured program on a single
@@ -63,7 +69,8 @@ harness intentionally ships only the two public tiktoken encodings today.)
   run at gate-decision time, so we cannot overfit the glyph set to the eval
   tasks. In **v0, only `dev` is populated**; `train` and `sealed-eval` are
   **reserved-empty** to prevent glyph overfitting.
-- **Versioned task sets.** This corpus is **`T_v0`**. Freezing the task-set
+- **Versioned task sets.** This corpus is **`T_v0.2`** (frozen `T_v0` tasks
+  retained). Freezing the task-set
   version prevents silently swapping tasks to flatter the numbers. Any change to
   the task set bumps the version.
 - **The full intended metric.** The real target is
@@ -76,6 +83,12 @@ harness intentionally ships only the two public tiktoken encodings today.)
 
 ## Corpus
 
+The task set is now **`T_v0.2`**. The frozen `T_v0` tasks are retained
+unchanged; **v0.2** adds an **interpreter-validated** solution set built on the
+new recursion primitives `&` (primrec), `.` (times), `|` (linrec), `>` (uncons),
+carried in a `mtl-v0.2/` solution directory alongside the retained frozen v0.1
+solutions. It also adds three **dev** tasks (fib, sum_to, power).
+
 Five seed micro-tier tasks, all expressible in MTL v0 primitives (no string
 tasks — v0 has no string primitives):
 
@@ -87,9 +100,11 @@ tasks — v0 has no string primitives):
 | factorial | recursion | dev | yes |
 | gcd | recursion | dev | yes |
 
+Plus v0.2 dev tasks: fib, sum_to, power.
+
 Each task directory holds `task.md`, `mtl/solution.mtl` (+ `mtl/NOTES.md`),
 `python-idiomatic/solution.py`, and `python-minified/solution.py`. The manifest
-is `tokcount/tasks.json` (version tag `T_v0`).
+is `tokcount/tasks.json` (version tag `T_v0.2`).
 
 ## How to run
 
@@ -113,12 +128,12 @@ echo "hello" | python3 -m tokcount.tokcount  # stdin
 
 ## Honesty caveats
 
-- **MTL solutions are unvalidated** until the interpreter (Track B) lands. No MTL
-  program here has been executed; correctness is a best-effort structural claim.
-  **Token counts are exact regardless of correctness.**
-- The **recursion** solutions (factorial, gcd) are **structural sketches** — the
-  `:!` self-application ordering is not yet interpreter-checked; treat their
-  token counts as indicative.
+- **MTL solutions are now parse-and-execute validated.** Both the v0.2 and v0.1
+  solution sets are run through the interpreter by
+  `bench/validate/tests/corpus.rs` against per-task I/O vectors, so correctness is
+  checked rather than asserted. **Token counts are exact regardless.**
+- The **recursion** solutions (factorial, gcd) are validated via the v0.2
+  recursion primitives (`&` primrec, `.` times, `|` linrec, `>` uncons).
 - The **Python** solutions are honest idiomatic/minified pairs — ordinary code a
   competent Python author would write, not adversarially inflated.
 - If a tokenizer's vocab cannot be loaded (e.g. blocked network download), the

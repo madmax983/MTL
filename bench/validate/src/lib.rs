@@ -3,7 +3,7 @@
 //! The two crates `mtl-syntax` (parser) and `mtl-core` (interpreter) share no
 //! types, so this crate provides:
 //!   * [`conv`] — convert a parsed `mtl_syntax::Word` into an executable
-//!     `mtl_core::interp::Word` (the 17 `Prim` variants map by name).
+//!     `mtl_core::interp::Word` (the 21 `Prim` variants map by name).
 //!   * [`load_solution`] — read a corpus `solution.mtl` file from disk, strip a
 //!     single trailing newline, and parse it into an executable program.
 //!
@@ -20,7 +20,7 @@ use mtl_syntax::{parse, ParseError, Prim, Word};
 /// Convert one parsed syntax word into an executable interpreter word.
 ///
 /// `PushInt` maps straight across, `PushQuote` recurses, `Call(Vec<char>)`
-/// becomes `Call(String)`, and the 17 primitives map by name (both enums list
+/// becomes `Call(String)`, and the 21 primitives map by name (both enums list
 /// them in the same order).
 pub fn conv(w: &Word) -> IWord {
     use mtl_core::interp::Prim as IPrim;
@@ -46,12 +46,12 @@ pub fn conv(w: &Word) -> IWord {
             Prim::Eq => IPrim::Eq,
             Prim::Lt => IPrim::Lt,
             Prim::If => IPrim::If,
-            // v0.2 recursion/list primitives: parsed by mtl-syntax but not yet
-            // executable — mtl-core's interp variants land in the v02-core PR.
-            // Explicit arms (no wildcard) so the compiler flags any future Prim.
-            Prim::PrimRec | Prim::Times | Prim::LinRec | Prim::Uncons => {
-                unimplemented!("v0.2 recursion primitive not yet executable (mtl-core support pending)")
-            }
+            // v0.2 recursion/list primitives: parsed by mtl-syntax and executed
+            // by mtl-core (both enums list them in the same order).
+            Prim::PrimRec => IPrim::PrimRec,
+            Prim::Times => IPrim::Times,
+            Prim::LinRec => IPrim::LinRec,
+            Prim::Uncons => IPrim::Uncons,
         }),
     }
 }

@@ -29,15 +29,23 @@ from tokcount.tokcount import ENCODINGS, count_file, encoder_error  # noqa: E402
 
 # Hardcoded per task spec — do not call datetime.now (keep report reproducible).
 REPORT_DATE = "2026-07-11"
-CORPUS_VERSION = "T_v0"
+CORPUS_VERSION = "T_v0.2"
 
 # Variant key -> (corpus subdir name, display label, tasks.json files-key)
 VARIANTS = [
-    ("mtl", "mtl", "mtl"),
+    ("mtl", "mtl (v0.1)", "mtl"),
+    ("mtl-v0.2", "mtl-v0.2", "mtl_v0_2"),
     ("python-idiomatic", "python-idiomatic", "python_idiomatic"),
     ("python-minified", "python-minified", "python_minified"),
 ]
 IDIOMATIC = "python-idiomatic"  # ratio baseline
+MTL_V01 = "mtl"                 # frozen v0.1 MTL solution set
+MTL_V02 = "mtl-v0.2"            # validated v0.2 MTL solution set
+
+# The frozen T_v0 tasks carry a v0.1 `mtl` solution; the new v0.2 dev tasks do
+# not. Membership of the "mtl" files-key is the honest discriminator.
+def _is_frozen(task: dict) -> bool:
+    return "mtl" in task.get("files", {})
 
 
 def _tiktoken_version() -> str:
@@ -136,63 +144,96 @@ def build_report() -> str:
         lines.append("- All encoders loaded and encoded successfully.")
         lines.append("")
 
-    # Per-task table.
-    lines.append("## Per-task token counts")
-    lines.append("")
-    header = ("| Task | Category | Variant | o200k_base tok | cl100k_base tok "
-              "| ratio-vs-idiomatic-py (o200k) | ratio (cl100k) |")
-    sep = "| --- | --- | --- | ---: | ---: | ---: | ---: |"
-    lines.append(header)
-    lines.append(sep)
-    for task in tasks:
-        tid = task["id"]
-        cat = task.get("category", "")
-        idi = counts[tid][IDIOMATIC]
-        for variant_key, label, _fk in VARIANTS:
-            c = counts[tid][variant_key]
-            o = c[ENCODINGS[0]]
-            cl = c[ENCODINGS[1]]
-            r_o = _fmt_ratio(idi[ENCODINGS[0]], o)
-            r_cl = _fmt_ratio(idi[ENCODINGS[1]], cl)
-            lines.append(
-                f"| {tid} | {cat} | {label} | {_fmt_tok(o)} | {_fmt_tok(cl)} | {r_o} | {r_cl} |"
-            )
-    lines.append("")
+    frozen = [t for t in tasks if _is_frozen(t)]
+    dev = [t for t in tasks if not _is_frozen(t)]
 
-    # Summary / totals.
-    totals: dict[str, dict[str, int | None]] = {}
-    any_missing: dict[str, bool] = {}
-    for variant_key, _label, _fk in VARIANTS:
-        totals[variant_key] = {}
+    def _agg(task_list: list[dict], variant_key: str, enc: str) -> int | None:
+        vals = [counts[t["id"]][variant_key][enc] for t in task_list]
+        if any(v is None for v in vals):
+            return None
+        return sum(vals)  # type: ignore[arg-type]
+
+    def _emit_task_table(task_list: list[dict], variant_keys: list[str]) -> None:
+        header = ("| Task | Category | Variant | o200k_base tok | cl100k_base tok "
+                  "| ratio-vs-idiomatic-py (o200k) | ratio (cl100k) |")
+        sep = "| --- | --- | --- | ---: | ---: | ---: | ---: |"
+        lines.append(header)
+        lines.append(sep)
+        for task in task_list:
+            tid = task["id"]
+            cat = task.get("category", "")
+            idi = counts[tid][IDIOMATIC]
+            for variant_key in variant_keys:
+                label = next(l for k, l, _ in VARIANTS if k == variant_key)
+                c = counts[tid][variant_key]
+                o = c[ENCODINGS[0]]
+                cl = c[ENCODINGS[1]]
+                r_o = _fmt_ratio(idi[ENCODINGS[0]], o)
+                r_cl = _fmt_ratio(idi[ENCODINGS[1]], cl)
+                lines.append(
+                    f"| {tid} | {cat} | {label} | {_fmt_tok(o)} | {_fmt_tok(cl)} | {r_o} | {r_cl} |"
+                )
+        lines.append("")
+
+    # Per-task table — frozen T_v0 tasks, all four variants (v0.1 mtl AND v0.2).
+    lines.append("## Per-task token counts — frozen T_v0 tasks")
+    lines.append("")
+    lines.append("Both MTL solution sets are shown: `mtl (v0.1)` (the frozen v0.1 "
+                 "solutions, retained for before/after) and `mtl-v0.2` (the "
+                 "interpreter-validated v0.2 solutions). The `mtl-v0.2` unchanged tasks "
+                 "(affine, rev3, is_even) carry over the v0.1 program verbatim.")
+    lines.append("")
+    _emit_task_table(frozen, [MTL_V01, MTL_V02, IDIOMATIC, "python-minified"])
+
+    # DEV-task table — the new v0.2-only recursion tasks (no v0.1 mtl exists).
+    lines.append("## Per-task token counts — new v0.2 dev tasks")
+    lines.append("")
+    lines.append("These recursion tasks are new in v0.2 and have **no v0.1 `mtl` "
+                 "solution** (the v0.2 recursion primitives are what make them "
+                 "expressible); their v0.1 mtl column would be UNAVAIL, so it is omitted.")
+    lines.append("")
+    _emit_task_table(dev, [MTL_V02, IDIOMATIC, "python-minified"])
+
+    # Aggregates over the FROZEN 5 tasks: v0.1 and v0.2 side by side.
+    lines.append("## Aggregate MTL reduction — frozen T_v0 (headline)")
+    lines.append("")
+    lines.append("Aggregate ratio = sum(idiomatic-python tokens) / sum(mtl tokens) over "
+                 "the frozen 5 T_v0 tasks, per encoding. The v0.1 row reproduces the "
+                 "prior 2.11x baseline; the v0.2 row is the validated recursion-primitive "
+                 "solution set.")
+    lines.append("")
+    lines.append("| Solution set | Encoding | idiomatic-py total | mtl total | aggregate ratio | >=3x gate |")
+    lines.append("| --- | --- | ---: | ---: | ---: | :---: |")
+    # gate_status[(set, enc)] = (ratio_or_None, gate_str)
+    gate_status: dict[tuple[str, str], tuple[float | None, str]] = {}
+    for set_key, set_label in [(MTL_V01, "v0.1 (frozen)"), (MTL_V02, "v0.2 (validated)")]:
         for enc in ENCODINGS:
-            vals = [counts[t["id"]][variant_key][enc] for t in tasks]
-            if any(v is None for v in vals):
-                totals[variant_key][enc] = None
-                any_missing[(variant_key, enc)] = True
+            idi_total = _agg(frozen, IDIOMATIC, enc)
+            mtl_total = _agg(frozen, set_key, enc)
+            if idi_total is None or mtl_total is None or mtl_total == 0:
+                ratio = None
+                ratio_str = "n/a"
+                gate = "n/a"
             else:
-                totals[variant_key][enc] = sum(vals)  # type: ignore[arg-type]
-
-    lines.append("## Corpus totals")
-    lines.append("")
-    lines.append("| Variant | o200k_base total | cl100k_base total |")
-    lines.append("| --- | ---: | ---: |")
-    for variant_key, label, _fk in VARIANTS:
-        o = totals[variant_key][ENCODINGS[0]]
-        cl = totals[variant_key][ENCODINGS[1]]
-        lines.append(f"| {label} | {_fmt_tok(o)} | {_fmt_tok(cl)} |")
+                ratio = idi_total / mtl_total
+                ratio_str = f"{ratio:.2f}x"
+                gate = "MET" if ratio >= 3.0 else "NOT MET"
+            gate_status[(set_key, enc)] = (ratio, gate)
+            lines.append(f"| {set_label} | {enc} | {_fmt_tok(idi_total)} | "
+                         f"{_fmt_tok(mtl_total)} | {ratio_str} | {gate} |")
     lines.append("")
 
-    # Aggregate headline ratio = sum(idiomatic py) / sum(mtl), per encoding.
-    lines.append("## Aggregate MTL reduction (headline)")
+    # Aggregate over the new v0.2 dev tasks.
+    lines.append("## Aggregate MTL reduction — new v0.2 dev tasks")
     lines.append("")
-    lines.append("Aggregate ratio = sum(idiomatic-python tokens) / sum(mtl tokens), per encoding.")
+    lines.append("Aggregate ratio = sum(idiomatic-python tokens) / sum(mtl-v0.2 tokens) "
+                 "over the new recursion dev tasks (fib, sum_to, power), per encoding.")
     lines.append("")
-    lines.append("| Encoding | idiomatic-py total | mtl total | aggregate ratio | >=3x gate |")
+    lines.append("| Encoding | idiomatic-py total | mtl-v0.2 total | aggregate ratio | >=3x gate |")
     lines.append("| --- | ---: | ---: | ---: | :---: |")
-    gate_status: dict[str, str] = {}
     for enc in ENCODINGS:
-        idi_total = totals[IDIOMATIC][enc]
-        mtl_total = totals["mtl"][enc]
+        idi_total = _agg(dev, IDIOMATIC, enc)
+        mtl_total = _agg(dev, MTL_V02, enc)
         if idi_total is None or mtl_total is None or mtl_total == 0:
             ratio_str = "n/a"
             gate = "n/a"
@@ -200,31 +241,53 @@ def build_report() -> str:
             ratio = idi_total / mtl_total
             ratio_str = f"{ratio:.2f}x"
             gate = "MET" if ratio >= 3.0 else "NOT MET"
-        gate_status[enc] = gate
-        lines.append(f"| {enc} | {_fmt_tok(idi_total)} | {_fmt_tok(mtl_total)} | {ratio_str} | {gate} |")
+        lines.append(f"| {enc} | {_fmt_tok(idi_total)} | {_fmt_tok(mtl_total)} | "
+                     f"{ratio_str} | {gate} |")
     lines.append("")
 
-    lines.append("### Gate verdict")
+    # GATE VERDICT — plain statement per encoder on the frozen T_v0 v0.2 aggregate.
+    lines.append("## Gate verdict — frozen T_v0, v0.2 solution set")
     lines.append("")
     for enc in ENCODINGS:
-        lines.append(f"- **{enc}: >=3x reduction {gate_status[enc]}** on this seed corpus.")
+        v02_ratio, v02_gate = gate_status[(MTL_V02, enc)]
+        v01_ratio, v01_gate = gate_status[(MTL_V01, enc)]
+        if v02_ratio is None:
+            lines.append(f"- **{enc}: >=3x gate {v02_gate}** (aggregate unavailable).")
+            continue
+        margin = v02_ratio - 3.0
+        margin_str = (f"by +{margin:.2f}x above 3.00x" if margin >= 0
+                      else f"by {margin:.2f}x below 3.00x")
+        lines.append(
+            f"- **{enc}: v0.2 aggregate {v02_ratio:.2f}x -> >=3x gate {v02_gate}** "
+            f"({margin_str}). For contrast, the frozen v0.1 aggregate is "
+            f"{v01_ratio:.2f}x -> {v01_gate}.")
     lines.append("")
+
     lines.append("### Caveats")
     lines.append("")
-    lines.append("- The MTL solutions are now **parse-and-execute validated**: each is run "
-                 "against the merged `mtl-syntax` parser and `mtl-core` interpreter by "
-                 "`bench/validate/tests/corpus.rs`, which checks every task against multiple "
-                 "input/output vectors. Token counts are exact; correctness is executed, not "
-                 "merely structural.")
-    lines.append("- The two **recursion** tasks (factorial, gcd) were originally structural "
-                 "sketches that **faulted (TypeMismatch)** on execution; they have been "
-                 "corrected to interpreter-verified programs. Their token counts rose "
-                 "accordingly (factorial 12->19, gcd 12->15).")
-    lines.append("- This is still **stage 1** (static program tokens) of the full metric. The "
-                 "real north-star is E[total inference tokens x attempts to correct] under a "
-                 "warm/cold agent protocol (spec section 10); stages 2+ add agent success rate.")
+    lines.append("- The **v0.2 MTL solutions are interpreter-validated**: each is loaded "
+                 "from its `corpus/<task>/mtl-v0.2/solution.mtl` file (the same bytes "
+                 "counted here), parsed by `mtl-syntax`, and executed on the `mtl-core` "
+                 "interpreter by `bench/validate/tests/corpus.rs` against multiple "
+                 "input/output vectors. Correctness is executed, not projected; token "
+                 "counts are exact.")
+    lines.append("- The **frozen v0.1 `mtl` solutions are retained unchanged** so the "
+                 "2.11x baseline stays valid and the before/after is honest. They too are "
+                 "interpreter-validated (the `mtl/solution.mtl` tests). The v0.2 gains on "
+                 "the two recursion tasks come from the recursion primitives: factorial "
+                 "19->5 tokens (`&` PrimRec) and gcd 15->10 tokens (`|` LinRec); affine, "
+                 "rev3 and is_even are unchanged (no recursion primitive applies).")
+    lines.append("- The **fib** seed was corrected to the **spaced** form `0 1@[~^+]._`: "
+                 "the unspaced `01@...` lexes `01` as a single Int(1), dropping the 0 "
+                 "seed. The spaced form is what is validated and counted; its **measured** "
+                 "token count is **8** under both encoders (not the design's ~7 "
+                 "projection — this is the measured value).")
+    lines.append("- This is still **stage 1** (static program tokens) of the full metric. "
+                 "The real north-star is E[total inference tokens x attempts to correct] "
+                 "under a warm/cold agent protocol (spec section 10); stages 2+ add agent "
+                 "success rate.")
     lines.append("- Corpus is versioned `" + CORPUS_VERSION + "` and populated only on the "
-                 "`dev` split; `train` and `sealed-eval` are reserved-empty in v0.")
+                 "`dev` split; `train` and `sealed-eval` are reserved-empty.")
     lines.append("")
 
     return "\n".join(lines)
