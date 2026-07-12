@@ -93,6 +93,188 @@
         "python_idiomatic": "corpus/power/python-idiomatic/solution.py",
         "python_minified": "corpus/power/python-minified/solution.py"
       }
+    },
+    {
+      "id": "sum_list",
+      "category": "list-fold",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": true,
+      "description": "Given a list of integers on the stack, compute the sum of its elements (empty list sums to 0).",
+      "files": {
+        "mtl_v0_2": "corpus/sum_list/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/sum_list/python-idiomatic/solution.py",
+        "python_minified": "corpus/sum_list/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "length_list",
+      "category": "list-fold",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": true,
+      "description": "Given a list on the stack, return the number of elements (empty list has length 0).",
+      "files": {
+        "mtl_v0_2": "corpus/length_list/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/length_list/python-idiomatic/solution.py",
+        "python_minified": "corpus/length_list/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "product_list",
+      "category": "list-fold",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": true,
+      "description": "Given a list of integers on the stack, compute the product of its elements (empty list product is 1).",
+      "files": {
+        "mtl_v0_2": "corpus/product_list/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/product_list/python-idiomatic/solution.py",
+        "python_minified": "corpus/product_list/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "max_list",
+      "category": "list-fold",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": true,
+      "description": "Given a non-empty list of integers on the stack, return the maximum element.",
+      "files": {
+        "mtl_v0_2": "corpus/max_list/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/max_list/python-idiomatic/solution.py",
+        "python_minified": "corpus/max_list/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "min_list",
+      "category": "list-fold",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": true,
+      "description": "Given a non-empty list of integers on the stack, return the minimum element.",
+      "files": {
+        "mtl_v0_2": "corpus/min_list/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/min_list/python-idiomatic/solution.py",
+        "python_minified": "corpus/min_list/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "reverse_list",
+      "category": "list-build",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": true,
+      "description": "Given a list on the stack, return a new list with the elements in reverse order.",
+      "files": {
+        "mtl_v0_2": "corpus/reverse_list/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/reverse_list/python-idiomatic/solution.py",
+        "python_minified": "corpus/reverse_list/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "palindrome_number",
+      "category": "numeric",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": true,
+      "description": "Given a non-negative integer on the stack, return 1 if its decimal digits read the same forwards and backwards, else 0.",
+      "files": {
+        "mtl_v0_2": "corpus/palindrome_number/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/palindrome_number/python-idiomatic/solution.py",
+        "python_minified": "corpus/palindrome_number/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "climbing_stairs",
+      "category": "iterative-dp",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": true,
+      "description": "Given non-negative integer n on the stack, return the number of distinct ways to climb n stairs taking 1 or 2 steps at a time.",
+      "files": {
+        "mtl_v0_2": "corpus/climbing_stairs/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/climbing_stairs/python-idiomatic/solution.py",
+        "python_minified": "corpus/climbing_stairs/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "contains",
+      "category": "list-search",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": true,
+      "description": "Given a list and a value x on the stack (x on top), return 1 if x occurs in the list, else 0.",
+      "files": {
+        "mtl_v0_2": "corpus/contains/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/contains/python-idiomatic/solution.py",
+        "python_minified": "corpus/contains/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "count_occurrences",
+      "category": "list-search",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": true,
+      "description": "Given a list and a value x on the stack (x on top), return how many times x occurs in the list.",
+      "files": {
+        "mtl_v0_2": "corpus/count_occurrences/mtl-v0.2/solution.mtl",
+        "python_idiomatic": "corpus/count_occurrences/python-idiomatic/solution.py",
+        "python_minified": "corpus/count_occurrences/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "single_number",
+      "category": "bit-manipulation",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": false,
+      "blocker": "No bitwise primitive (XOR/AND/OR/shift); glyphs &, ^, | are PrimRec, Over, LinRec. Canonical XOR-reduce is inexpressible.",
+      "description": "Given a list where every element appears twice except one, return the single element that appears once.",
+      "files": {
+        "python_idiomatic": "corpus/single_number/python-idiomatic/solution.py",
+        "python_minified": "corpus/single_number/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "two_sum",
+      "category": "indexed-search",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": false,
+      "blocker": "No positional index / enumerate / associative map; a quotation is a sequential cons-list. Returning indices is inexpressible.",
+      "description": "Given a list of integers and a target on the stack, return the indices [i, j] of the two elements that sum to the target.",
+      "files": {
+        "python_idiomatic": "corpus/two_sum/python-idiomatic/solution.py",
+        "python_minified": "corpus/two_sum/python-minified/solution.py"
+      }
+    },
+    {
+      "id": "binary_search",
+      "category": "indexed-search",
+      "split": "dev",
+      "set": "T_tier2-dev",
+      "tier": "tier2",
+      "expressible": false,
+      "blocker": "Quotation is a cons-list with only sequential > uncons; no O(1) random access to xs[mid]. True binary search is impossible (only a linear scan).",
+      "description": "Given a sorted list of integers and a target on the stack, return the index of the target via binary search, or -1 if absent.",
+      "files": {
+        "python_idiomatic": "corpus/binary_search/python-idiomatic/solution.py",
+        "python_minified": "corpus/binary_search/python-minified/solution.py"
+      }
     }
   ]
 }
