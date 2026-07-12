@@ -1,0 +1,1 @@
+binary_search=lambda xs,t,lo=0,hi=None:(lambda h:-1 if lo>h else (lambda m:m if xs[m]==t else binary_search(xs,t,m+1,h) if xs[m]<t else binary_search(xs,t,lo,m-1))((lo+h)//2))(len(xs)-1 if hi is None else hi)

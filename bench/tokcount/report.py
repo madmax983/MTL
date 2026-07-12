@@ -95,7 +95,10 @@ def _fmt_ratio(idi: int | None, variant: int | None) -> str:
 
 
 def build_report() -> str:
-    tasks = load_tasks()
+    # T_v0 baseline report covers only the frozen v0 corpus. Tier-2 dev tasks
+    # (tier == "tier2") live in the same manifest but are reported separately by
+    # report_tier2.py, so they are excluded here to keep BASELINE.md frozen.
+    tasks = [t for t in load_tasks() if t.get("tier") != "tier2"]
     tk_version = _tiktoken_version()
 
     # counts[task_id][variant_key][encoding] = int | None
