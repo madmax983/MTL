@@ -968,9 +968,9 @@ pub fn exec_prim(vm: &mut Vm, p: SpecPrim, n: usize) -> (r: StepResult)
 
 // ============================================================
 // Per-primitive exec helpers. Each refines the matching spec_step_prim arm
-// under deep_view. EASY arms (stack shuffles, quote algebra, If, Xor) are
-// discharged; the re-emission arms (PrimRec/Times/LinRec/Uncons/Fold) remain
-// isolated external_body — TODO(Stage 2b).
+// under deep_view. The EASY arms (stack shuffles, quote algebra, If, Xor) and
+// the re-emission arms (PrimRec/Times/LinRec/Uncons/Fold) are all fully
+// verified now — no external_body.
 // ============================================================
 
 // ---------------- stack shuffling (arity-only faults) ----------------
@@ -1465,10 +1465,9 @@ pub fn exec_xor(vm: &mut Vm, n: usize) -> (r: StepResult)
 }
 
 // ============================================================
-// Re-emission arms — ISOLATED external_body. TODO(Stage 2b): these splice a
-// re-emitted recursive continuation and need the append homomorphism plus a
-// per-arm decreases; a separate pass discharges them. Kept external_body so
-// the file stays 0 errors while the easy arms above are proved.
+// Re-emission arms — FULLY VERIFIED. These splice a re-emitted recursive
+// continuation and needed the append homomorphism plus a per-arm decreases;
+// that pass is complete, so they are proved (no external_body).
 // ============================================================
 
 // ------------------------------------------------------------
