@@ -1188,27 +1188,79 @@ pub fn value_to_exec_word(v: Value) -> (res: Word)
     }
 }
 
-#[verifier::external_body]
-pub fn exec_arith(vm: &mut Vm, p: SpecPrim, n: usize) -> StepResult {
-    if n < 2 { return StepResult::Fault(Error::Underflow); }
+// P2 leaf refinement of the Add/Sub/Mul arms of spec_step_prim (each an
+// application of spec_arith with the +/-/* closure). The single non-view bridge
+// is the checked-op fact, split out below so it is stated per operation:
+//   a.checked_op(b) == Some(v) <=> in_i64(a int OP b int), and then
+//   v as int == a int OP b int; == None <=> !in_i64(a int OP b int).
+// We case on `p` so that inside each arm spec_step_prim reduces to the concrete
+// spec_arith closure and the bridge assertions are well typed.
+pub fn exec_arith(vm: &mut Vm, p: SpecPrim, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+        p is Add || p is Sub || p is Mul,
+        view_word(old(vm).cont@[0]) == SpecWord::Prim(p),
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), p, rest) {
+            SpecStep::Next(s2) => r is Next && vm.deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
+    if n < 2 {
+        return StepResult::Fault(Error::Underflow);
+    }
     let (a, b) = match (&vm.stack[n - 2], &vm.stack[n - 1]) {
         (Value::Int(a), Value::Int(b)) => (*a, *b),
-        _ => return StepResult::Fault(Error::TypeMismatch),
+        _ => {
+            proof {
+                lemma_view_stack_index(s0, n - 2);
+                lemma_view_stack_index(s0, n - 1);
+            }
+            return StepResult::Fault(Error::TypeMismatch);
+        }
     };
-    let r = match p {
+    proof {
+        lemma_view_stack_index(s0, n - 2);
+        lemma_view_stack_index(s0, n - 1);
+    }
+    let res = match p {
         SpecPrim::Add => a.checked_add(b),
         SpecPrim::Sub => a.checked_sub(b),
         _ => a.checked_mul(b),
     };
-    match r {
+    match res {
         Some(v) => {
+            proof {
+                // TODO(verify): checked-op bridge — Some(v) established here means
+                // in_i64(a int OP b int) and v as int == a int OP b int for the OP
+                // selected by `p`. Verus models i64::checked_{add,sub,mul}; the arm
+                // context fixes OP so spec_arith's closure reduces to the same OP.
+            }
             vm.cont.remove(0);
             vm.stack.pop();
             vm.stack.pop();
             vm.stack.push(Value::Int(v));
+            proof {
+                assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+                lemma_view_stack_pop2_push(s0, Value::Int(v));
+                // TODO(verify): close vm.deep_view() == s2 (Next arm of spec_arith).
+            }
             StepResult::Next
         }
-        None => StepResult::Fault(Error::Overflow),
+        None => {
+            proof {
+                // TODO(verify): None <=> !in_i64(a int OP b int); spec_arith then
+                // takes the Overflow arm, matching this fault.
+            }
+            StepResult::Fault(Error::Overflow)
+        }
     }
 }
 
