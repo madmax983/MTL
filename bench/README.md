@@ -27,8 +27,12 @@ is the **MTL reduction ratio vs idiomatic Python** (higher = better for MTL).
 **Headline (stage 1, static program tokens):** on interpreter-validated
 static-token counts, the frozen-`T_v0` **v0.2** solution set reaches **3.72x** vs
 idiomatic Python (**>=3x gate MET**), where the frozen **v0.1** solutions were
-**2.11x** (NOT MET). This is still stage 1 (static program tokens); the full
-`E[tokens x attempts]` metric remains future work.
+**2.11x** (NOT MET). On the tier-2 probe set the aggregate rises from **v0.2
+1.91x (o200k) / 1.89x (cl100k)** to **v0.3 3.87x (o200k) / 3.92x (cl100k)** vs
+idiomatic Python — the **>=3x gate is now MET on the tier-2 probe set too**, and
+`single_number` moved from an inexpressible wall to solved via `$` xor. This is
+still stage 1 (static program tokens); the full `E[tokens x attempts]` metric
+remains future work. No agent-success-rate claims.
 
 Counting policy: a single trailing newline is stripped from every file before
 counting, applied **uniformly** to all variants so cross-variant comparisons are
@@ -70,7 +74,9 @@ harness intentionally ships only the two public tiktoken encodings today.)
   tasks. In **v0, only `dev` is populated**; `train` and `sealed-eval` are
   **reserved-empty** to prevent glyph overfitting.
 - **Versioned task sets.** This corpus is **`T_v0.2`** (frozen `T_v0` tasks
-  retained). Freezing the task-set
+  retained); the **tier-2** probe set now additionally carries a **`T_v0.3`**
+  solution layer (frozen `T_v0` gate tasks and their v0.1/v0.2 sets unchanged).
+  Freezing the task-set
   version prevents silently swapping tasks to flatter the numbers. Any change to
   the task set bumps the version.
 - **The full intended metric.** The real target is
@@ -88,6 +94,13 @@ unchanged; **v0.2** adds an **interpreter-validated** solution set built on the
 new recursion primitives `&` (primrec), `.` (times), `|` (linrec), `>` (uncons),
 carried in a `mtl-v0.2/` solution directory alongside the retained frozen v0.1
 solutions. It also adds three **dev** tasks (fib, sum_to, power).
+
+The **tier-2** probe set now additionally carries a **v0.3** solution layer in
+`mtl-v0.3/` directories (11 tasks), built on the new sequence primitives `(`
+(fold) and `$` (xor) and interpreter-validated by
+`bench/validate/tests/tier2_v03.rs`. This is what lifts the tier-2 aggregate from
+v0.2 1.91x/1.89x to v0.3 3.87x (o200k) / 3.92x (cl100k); `single_number`, a wall
+through v0.2, is solved via `$` xor (`[>0=][0][][$]|`, 9 tokens).
 
 Five seed micro-tier tasks, all expressible in MTL v0 primitives (no string
 tasks — v0 has no string primitives):
@@ -131,7 +144,8 @@ echo "hello" | python3 -m tokcount.tokcount  # stdin
 - **MTL solutions are now parse-and-execute validated.** Both the v0.2 and v0.1
   solution sets are run through the interpreter by
   `bench/validate/tests/corpus.rs` against per-task I/O vectors, so correctness is
-  checked rather than asserted. **Token counts are exact regardless.**
+  checked rather than asserted; the tier-2 v0.3 fold/xor set is likewise validated
+  by `bench/validate/tests/tier2_v03.rs`. **Token counts are exact regardless.**
 - The **recursion** solutions (factorial, gcd) are validated via the v0.2
   recursion primitives (`&` primrec, `.` times, `|` linrec, `>` uncons).
 - The **Python** solutions are honest idiomatic/minified pairs — ordinary code a
