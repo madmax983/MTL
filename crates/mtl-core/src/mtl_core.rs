@@ -1224,7 +1224,6 @@ pub fn exec_cat(vm: &mut Vm, n: usize) -> (r: StepResult)
     StepResult::Next
 }
 
-#[verifier::external_body]
 pub fn exec_cons(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1238,26 +1237,47 @@ pub fn exec_cons(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 2 { return StepResult::Fault(Error::Underflow); }
     if !matches!(vm.stack[n - 1], Value::Quote(_)) {
+        proof { lemma_view_stack_index(s0, n as int - 1); }
         return StepResult::Fault(Error::TypeMismatch);
     }
     vm.cont.remove(0);
-    let qv = vm.stack.pop();
-    let v = vm.stack.pop();
-    if let Some(Value::Quote(q)) = qv {
-        let mut newq: Vec<Word> = Vec::new();
-        if let Some(vv) = v {
-            newq.push(value_to_exec_word(vv));
+    let qv = vm.stack.pop();  // Some(s0[n-1]) = Quote(q)
+    let v = vm.stack.pop();   // Some(s0[n-2]) = any value
+    match (v, qv) {
+        (Some(vv), Some(Value::Quote(q))) => {
+            let ghost gq = q@;
+            let w = value_to_exec_word(vv);  // view_word(w) == value_to_word(view_value(vv))
+            let ghost gw = w;
+            let mut newq: Vec<Word> = Vec::new();
+            newq.push(w);
+            let mut q2 = q;
+            newq.append(&mut q2);  // newq@ == seq![gw] + gq
+            let qval = Value::Quote(newq);
+            let ghost gqval = qval;
+            vm.stack.push(qval);
+            proof {
+                lemma_view_stack_index(s0, n as int - 2);
+                lemma_view_stack_index(s0, n as int - 1);
+                lemma_view_stack_pop2_push(s0, gqval);
+                reveal_with_fuel(view_words, 2);
+                assert(seq![gw].subrange(1, 1) =~= Seq::<Word>::empty());
+                assert(view_words(seq![gw]) =~= seq![view_word(gw)]);
+                lemma_view_words_append(seq![gw], gq);
+                assert(newq@ =~= seq![gw] + gq);
+                assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= s0.subrange(0, n as int - 2).push(gqval));
+            }
         }
-        let mut q2 = q;
-        newq.append(&mut q2);
-        vm.stack.push(Value::Quote(newq));
+        _ => { assert(false); }
     }
     StepResult::Next
 }
 
-#[verifier::external_body]
 pub fn exec_dip(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1271,19 +1291,40 @@ pub fn exec_dip(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 2 { return StepResult::Fault(Error::Underflow); }
     if !matches!(vm.stack[n - 1], Value::Quote(_)) {
+        proof { lemma_view_stack_index(s0, n as int - 1); }
         return StepResult::Fault(Error::TypeMismatch);
     }
     vm.cont.remove(0);
-    let qv = vm.stack.pop();
-    let a = vm.stack.pop();
-    if let Some(Value::Quote(mut q)) = qv {
-        if let Some(av) = a {
-            q.push(value_to_exec_word(av));
+    let qv = vm.stack.pop();  // Some(s0[n-1]) = Quote(q)
+    let a = vm.stack.pop();   // Some(s0[n-2]) = the set-aside value
+    match (a, qv) {
+        (Some(av), Some(Value::Quote(mut q))) => {
+            let ghost gq = q@;
+            let w = value_to_exec_word(av);  // view_word(w) == value_to_word(view_value(av))
+            let ghost gw = w;
+            q.push(w);               // q@ == gq.push(gw)
+            q.append(&mut vm.cont);  // q@ == gq.push(gw) + rest
+            vm.cont = q;
+            proof {
+                lemma_view_stack_index(s0, n as int - 2);
+                lemma_view_stack_index(s0, n as int - 1);
+                lemma_view_stack_prefix(s0, n as int - 2);
+                assert(gq.push(gw) =~= gq + seq![gw]);
+                reveal_with_fuel(view_words, 2);
+                assert(seq![gw].subrange(1, 1) =~= Seq::<Word>::empty());
+                assert(view_words(seq![gw]) =~= seq![view_word(gw)]);
+                lemma_view_words_append(gq, seq![gw]);
+                lemma_view_words_append(gq.push(gw), c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= s0.subrange(0, n as int - 2));
+                assert(vm.cont@ =~= gq.push(gw) + c0.subrange(1, c0.len() as int));
+            }
         }
-        q.append(&mut vm.cont);
-        vm.cont = q;
+        _ => { assert(false); }
     }
     StepResult::Next
 }
