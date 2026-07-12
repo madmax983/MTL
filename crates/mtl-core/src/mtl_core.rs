@@ -1445,8 +1445,53 @@ pub fn exec_xor(vm: &mut Vm, n: usize) -> (r: StepResult)
 // the file stays 0 errors while the easy arms above are proved.
 // ============================================================
 
-// TODO(Stage 2b): PrimRec re-emission.
-#[verifier::external_body]
+// ------------------------------------------------------------
+// Arm-specific helper lemmas for exec_primrec (disjoint region).
+// ------------------------------------------------------------
+
+// view_words of a singleton peels to the singleton view (same inline idiom
+// exec_cons/exec_dip use; hoisted so the 5-element PrimRec prefix can be
+// decomposed word-by-word via the append homomorphism).
+pub proof fn lemma_view_words_singleton(w: Word)
+    ensures
+        view_words(seq![w]) == seq![view_word(w)],
+{
+    reveal_with_fuel(view_words, 2);
+    assert(seq![w].subrange(1, 1) =~= Seq::<Word>::empty());
+    assert(view_words(seq![w]) =~= seq![view_word(w)]);
+}
+
+// view_words respects pointwise view_word equality. This is exactly what a
+// `Vec::clone` of a `Vec<Word>` delivers (`cloned(a[i], b[i])` ==> view_word
+// preserved, via the trusted `Word::clone` ensures), letting the re-pushed
+// `qc.clone()` inside the PrimRec prefix carry the same view as the original.
+pub proof fn lemma_view_words_pointwise(a: Seq<Word>, b: Seq<Word>)
+    requires
+        a.len() == b.len(),
+        forall|i: int| 0 <= i < a.len() ==> view_word(a[i]) == view_word(b[i]),
+    ensures
+        view_words(a) == view_words(b),
+    decreases a.len(),
+{
+    if a.len() == 0 {
+        assert(view_words(a) =~= view_words(b));
+    } else {
+        let at = a.subrange(1, a.len() as int);
+        let bt = b.subrange(1, b.len() as int);
+        assert forall|i: int| 0 <= i < at.len() implies view_word(at[i]) == view_word(bt[i]) by {
+            assert(at[i] == a[i + 1]);
+            assert(bt[i] == b[i + 1]);
+        }
+        lemma_view_words_pointwise(at, bt);
+        assert(view_word(a[0]) == view_word(b[0]));
+        assert(view_words(a) =~= seq![view_word(a[0])] + view_words(at));
+        assert(view_words(b) =~= seq![view_word(b[0])] + view_words(bt));
+    }
+}
+
+// PrimRec re-emission ( n [I] [C] -- r ). Discharged: mirrors the PrimRec arm of
+// spec_step_prim across deep_view exactly. k<=0 splices I; k>0 re-emits the
+// 5-word recursion prefix + C.
 pub fn exec_primrec(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1460,30 +1505,113 @@ pub fn exec_primrec(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    let ghost rest_exec = c0.subrange(1, c0.len() as int);
+    let ghost rest = view_words(rest_exec);
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 3 { return StepResult::Fault(Error::Underflow); }
     let ok = matches!(vm.stack[n - 3], Value::Int(_))
         && matches!(vm.stack[n - 2], Value::Quote(_))
         && matches!(vm.stack[n - 1], Value::Quote(_));
-    if !ok { return StepResult::Fault(Error::TypeMismatch); }
+    if !ok {
+        proof {
+            lemma_view_stack_index(s0, n as int - 3);
+            lemma_view_stack_index(s0, n as int - 2);
+            lemma_view_stack_index(s0, n as int - 1);
+        }
+        return StepResult::Fault(Error::TypeMismatch);
+    }
+    proof {
+        lemma_view_stack_index(s0, n as int - 3);
+        lemma_view_stack_index(s0, n as int - 2);
+        lemma_view_stack_index(s0, n as int - 1);
+        lemma_view_stack_prefix(s0, n as int - 3);
+    }
     vm.cont.remove(0);
-    let qc = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-    let qi = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-    let k = match vm.stack.pop() { Some(Value::Int(k)) => k, _ => 0 };
-    if k <= 0 {
-        let mut recur = qi;
-        recur.append(&mut vm.cont);
-        vm.cont = recur;
-    } else {
-        let mut recur = vec![
-            Word::PushInt(k),
-            Word::PushInt(k - 1),
-            Word::PushQuote(qi),
-            Word::PushQuote(qc.clone()),
-            Word::Prim(SpecPrim::PrimRec),
-        ];
-        recur.extend(qc);
-        recur.append(&mut vm.cont);
-        vm.cont = recur;
+    let qcv = vm.stack.pop();  // Some(s0[n-1]) = Quote(qc)
+    let qiv = vm.stack.pop();  // Some(s0[n-2]) = Quote(qi)
+    let kv = vm.stack.pop();   // Some(s0[n-3]) = Int(k)
+    match (kv, qiv, qcv) {
+        (Some(Value::Int(k)), Some(Value::Quote(qi)), Some(Value::Quote(mut qc))) => {
+            let ghost gqi = qi@;
+            let ghost gqc = qc@;
+            if k <= 0 {
+                let mut recur = qi;              // recur@ == gqi
+                recur.append(&mut vm.cont);      // recur@ == gqi + rest_exec
+                vm.cont = recur;
+                proof {
+                    lemma_view_words_append(gqi, rest_exec);
+                    assert(vm.stack@ =~= s0.subrange(0, n as int - 3));
+                    assert(vm.cont@ =~= gqi + rest_exec);
+                    assert(view_stack(vm.stack@) =~= view_stack(s0).subrange(0, n as int - 3));
+                    assert(view_words(vm.cont@) =~= view_words(gqi) + rest);
+                }
+            } else {
+                let qc_clone = qc.clone();
+                let ghost gqc_clone = qc_clone@;
+                let mut recur: Vec<Word> = Vec::new();
+                recur.push(Word::PushInt(k));
+                recur.push(Word::PushInt(k - 1));
+                recur.push(Word::PushQuote(qi));
+                recur.push(Word::PushQuote(qc_clone));
+                recur.push(Word::Prim(SpecPrim::PrimRec));
+                let ghost five = recur@;
+                recur.append(&mut qc);           // recur@ == five + gqc
+                recur.append(&mut vm.cont);       // recur@ == (five + gqc) + rest_exec
+                vm.cont = recur;
+                proof {
+                    // qc.clone() preserves the view of every word, so the
+                    // re-pushed C-quote has the same deep view as the original.
+                    assert forall|i: int| 0 <= i < gqc.len()
+                        implies view_word(gqc_clone[i]) == view_word(gqc[i]) by {
+                        assert(cloned::<Word>(gqc[i], gqc_clone[i]));
+                    }
+                    lemma_view_words_pointwise(gqc_clone, gqc);
+                    // Per-word views of the 5-word prefix.
+                    assert(view_word(five[0]) == SpecWord::PushInt(k as int));
+                    assert(view_word(five[1]) == SpecWord::PushInt(k as int - 1));
+                    assert(view_word(five[2]) == SpecWord::PushQuote(view_words(gqi)));
+                    assert(view_word(five[3]) == SpecWord::PushQuote(view_words(gqc))) by {
+                        lemma_view_words_pointwise(gqc_clone, gqc);
+                    }
+                    assert(view_word(five[4]) == SpecWord::Prim(SpecPrim::PrimRec));
+                    // Decompose the 5-word prefix through the append homomorphism,
+                    // right-associated so the lemma grouping matches `five`.
+                    let t4 = seq![five[4]];
+                    let t3 = seq![five[3]] + t4;
+                    let t2 = seq![five[2]] + t3;
+                    let t1 = seq![five[1]] + t2;
+                    let t0 = seq![five[0]] + t1;
+                    assert(five =~= t0);
+                    lemma_view_words_singleton(five[0]);
+                    lemma_view_words_singleton(five[1]);
+                    lemma_view_words_singleton(five[2]);
+                    lemma_view_words_singleton(five[3]);
+                    lemma_view_words_singleton(five[4]);
+                    lemma_view_words_append(seq![five[3]], t4);
+                    lemma_view_words_append(seq![five[2]], t3);
+                    lemma_view_words_append(seq![five[1]], t2);
+                    lemma_view_words_append(seq![five[0]], t1);
+                    // Splice: view_words((five + gqc) + rest_exec).
+                    lemma_view_words_append(five, gqc);
+                    lemma_view_words_append(five + gqc, rest_exec);
+                    assert(vm.stack@ =~= s0.subrange(0, n as int - 3));
+                    assert(vm.cont@ =~= (five + gqc) + rest_exec);
+                    let five_spec = seq![
+                        SpecWord::PushInt(k as int),
+                        SpecWord::PushInt(k as int - 1),
+                        SpecWord::PushQuote(view_words(gqi)),
+                        SpecWord::PushQuote(view_words(gqc)),
+                        SpecWord::Prim(SpecPrim::PrimRec)
+                    ];
+                    assert(view_words(five) =~= five_spec);
+                    assert(view_stack(vm.stack@) =~= view_stack(s0).subrange(0, n as int - 3));
+                    assert(view_words(vm.cont@) =~= (five_spec + view_words(gqc)) + rest);
+                }
+            }
+        }
+        _ => { assert(false); }
     }
     StepResult::Next
 }
