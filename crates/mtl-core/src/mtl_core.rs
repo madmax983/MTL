@@ -1175,8 +1175,13 @@ pub fn exec_prim(vm: &mut Vm, p: SpecPrim, n: usize) -> StepResult {
 }
 
 // exec-side value_to_word (the interp twin of the spec `value_to_word`).
-#[verifier::external_body]
-pub fn value_to_exec_word(v: Value) -> Word {
+// P2 leaf refinement: the exec map refines the ghost `value_to_word` under
+// the deep view. Both arms are definitional (view_word / view_value / the
+// spec value_to_word agree structurally), so no proof body is needed.
+pub fn value_to_exec_word(v: Value) -> (res: Word)
+    ensures
+        view_word(res) == value_to_word(view_value(v)),
+{
     match v {
         Value::Int(k) => Word::PushInt(k),
         Value::Quote(q) => Word::PushQuote(q),
