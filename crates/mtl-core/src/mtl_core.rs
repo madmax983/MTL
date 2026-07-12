@@ -1620,15 +1620,20 @@ pub fn exec_primrec(vm: &mut Vm, n: usize) -> (r: StepResult)
 
 // view_words distributes over a single push (the exec `Vec::push`): the head-peel
 // analogue of lemma_view_words_append specialised to a one-element suffix.
+// Both surface forms are provided (consolidated from two sibling arms): the
+// `+ seq![..]` append form and the `.push(..)` form are extensionally equal, so
+// callers of either arm see the fact they need.
 pub proof fn lemma_view_words_push(s: Seq<Word>, w: Word)
     ensures
         view_words(s.push(w)) == view_words(s) + seq![view_word(w)],
+        view_words(s.push(w)) == view_words(s).push(view_word(w)),
 {
     assert(s.push(w) =~= s + seq![w]);
     reveal_with_fuel(view_words, 2);
     assert(seq![w].subrange(1, 1) =~= Seq::<Word>::empty());
     assert(view_words(seq![w]) =~= seq![view_word(w)]);
     lemma_view_words_append(s, seq![w]);
+    assert(view_words(s) + seq![view_word(w)] =~= view_words(s).push(view_word(w)));
 }
 
 // A single clone (`Word::clone`, external_body) preserves the deep view.
@@ -1813,30 +1818,6 @@ pub proof fn lemma_view_words_tail(s: Seq<Word>)
         =~= view_words(t));
 }
 
-// view_words commutes with push (single-word extension of a continuation).
-pub proof fn lemma_view_words_push(s: Seq<Word>, w: Word)
-    ensures
-        view_words(s.push(w)) == view_words(s).push(view_word(w)),
-    decreases s.len(),
-{
-    if s.len() == 0 {
-        let sw = s.push(w);
-        assert(sw =~= seq![w]);
-        assert(sw.subrange(1, sw.len() as int) =~= Seq::<Word>::empty());
-        assert(view_words(sw) == seq![view_word(sw[0])]
-            + view_words(sw.subrange(1, sw.len() as int)));  // unfold
-        assert(view_words(s) =~= Seq::<SpecWord>::empty());
-        assert(view_words(sw) =~= view_words(s).push(view_word(w)));
-    } else {
-        let t = s.subrange(1, s.len() as int);
-        let sw = s.push(w);
-        assert(sw[0] == s[0]);
-        assert(sw.subrange(1, sw.len() as int) =~= t.push(w));
-        lemma_view_words_push(t, w);
-        assert(view_words(sw) =~= view_words(s).push(view_word(w)));
-    }
-}
-
 // Elementwise-equal word-seqs have equal views.
 pub proof fn lemma_view_words_eq(a: Seq<Word>, b: Seq<Word>)
     requires
@@ -2004,55 +1985,6 @@ pub fn exec_linrec(vm: &mut Vm, n: usize) -> (r: StepResult)
         _ => { assert(false); }
     }
     StepResult::Next
-}
-
-// ---- Uncons-arm helper lemmas (disjoint region; see integration note) ----
-
-// view_words preserves length (head-peel; mirrors lemma_view_stack_len).
-pub proof fn lemma_view_words_len(ws: Seq<Word>)
-    ensures
-        view_words(ws).len() == ws.len(),
-    decreases ws.len(),
-{
-    if ws.len() == 0 {
-    } else {
-        lemma_view_words_len(ws.subrange(1, ws.len() as int));
-    }
-}
-
-// view_words commutes with indexing (mirrors lemma_view_stack_index).
-pub proof fn lemma_view_words_index(ws: Seq<Word>, i: int)
-    requires
-        0 <= i < ws.len(),
-    ensures
-        view_words(ws)[i] == view_word(ws[i]),
-    decreases ws.len(),
-{
-    let head = seq![view_word(ws[0])];
-    let t = ws.subrange(1, ws.len() as int);
-    assert(view_words(ws) == head + view_words(t));  // unfold (fuel)
-    if i == 0 {
-    } else {
-        lemma_view_words_len(t);
-        assert(t[i - 1] == ws[i]);
-        lemma_view_words_index(t, i - 1);
-    }
-}
-
-// view_words commutes with tail (drop the head): the uncons split.
-pub proof fn lemma_view_words_tail(ws: Seq<Word>)
-    requires
-        ws.len() >= 1,
-    ensures
-        view_words(ws).subrange(1, view_words(ws).len() as int)
-            == view_words(ws.subrange(1, ws.len() as int)),
-{
-    let head = seq![view_word(ws[0])];
-    let t = ws.subrange(1, ws.len() as int);
-    assert(view_words(ws) == head + view_words(t));  // unfold (fuel)
-    lemma_view_words_len(t);
-    assert((head + view_words(t)).subrange(1, (head + view_words(t)).len() as int)
-        =~= view_words(t));
 }
 
 // Uncons ( [w..] -- w [..] 1 | [] -- 0 ): inspects the quote head WITHOUT
