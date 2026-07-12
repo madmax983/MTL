@@ -47,6 +47,8 @@ pub enum Prim {
     Times,
     LinRec,
     Uncons,
+    Fold,
+    Xor,
 }
 
 /// A single MTL word. Mirrors the exec `Word` in mtl-core.
@@ -93,6 +95,8 @@ pub const GLYPHS: &[(char, Prim)] = &[
     ('.', Prim::Times),
     ('|', Prim::LinRec),
     ('>', Prim::Uncons),
+    ('(', Prim::Fold),
+    ('$', Prim::Xor),
 ];
 
 /// Map a glyph character to its primitive, if any.
@@ -106,7 +110,7 @@ pub fn prim_to_glyph(p: Prim) -> char {
         .iter()
         .find(|&&(_, q)| q == p)
         .map(|&(g, _)| g)
-        // Unreachable: GLYPHS covers all 21 primitives. Total fallback keeps
+        // Unreachable: GLYPHS covers all 23 primitives. Total fallback keeps
         // this panic-free regardless.
         .unwrap_or('\u{FFFD}')
 }
