@@ -948,7 +948,6 @@ pub fn exec_prim(vm: &mut Vm, p: SpecPrim, n: usize) -> (r: StepResult)
 // ============================================================
 
 // ---------------- stack shuffling (arity-only faults) ----------------
-#[verifier::external_body]
 pub fn exec_dup(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -962,14 +961,24 @@ pub fn exec_dup(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 1 { return StepResult::Fault(Error::Underflow); }
-    vm.cont.remove(0);
     let top = vm.stack[n - 1].clone();
+    let ghost gtop = top;
+    vm.cont.remove(0);
     vm.stack.push(top);
+    proof {
+        lemma_view_stack_index(s0, n as int - 1);
+        lemma_view_stack_push(s0, gtop);
+        assert(view_value(gtop) == view_stack(s0)[n as int - 1]);
+        assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+        assert(vm.stack@ =~= s0.push(gtop));
+    }
     StepResult::Next
 }
 
-#[verifier::external_body]
 pub fn exec_drop(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -983,9 +992,17 @@ pub fn exec_drop(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 1 { return StepResult::Fault(Error::Underflow); }
     vm.cont.remove(0);
     vm.stack.pop();
+    proof {
+        lemma_view_stack_prefix(s0, n as int - 1);
+        assert(vm.stack@ =~= s0.subrange(0, n as int - 1));
+        assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+    }
     StepResult::Next
 }
 
@@ -1030,7 +1047,6 @@ pub fn exec_rot(vm: &mut Vm, n: usize) -> (r: StepResult)
     StepResult::Next
 }
 
-#[verifier::external_body]
 pub fn exec_over(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1044,10 +1060,21 @@ pub fn exec_over(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 2 { return StepResult::Fault(Error::Underflow); }
-    vm.cont.remove(0);
     let a = vm.stack[n - 2].clone();
+    let ghost ga = a;
+    vm.cont.remove(0);
     vm.stack.push(a);
+    proof {
+        lemma_view_stack_index(s0, n as int - 2);
+        lemma_view_stack_push(s0, ga);
+        assert(view_value(ga) == view_stack(s0)[n as int - 2]);
+        assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+        assert(vm.stack@ =~= s0.push(ga));
+    }
     StepResult::Next
 }
 
