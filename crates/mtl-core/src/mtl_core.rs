@@ -1488,8 +1488,57 @@ pub fn exec_primrec(vm: &mut Vm, n: usize) -> (r: StepResult)
     StepResult::Next
 }
 
-// TODO(Stage 2b): Times re-emission.
-#[verifier::external_body]
+// ---- Times-arm helper lemmas (disjoint region; see integration note) ----
+
+// view_words distributes over a single push (the exec `Vec::push`): the head-peel
+// analogue of lemma_view_words_append specialised to a one-element suffix.
+pub proof fn lemma_view_words_push(s: Seq<Word>, w: Word)
+    ensures
+        view_words(s.push(w)) == view_words(s) + seq![view_word(w)],
+{
+    assert(s.push(w) =~= s + seq![w]);
+    reveal_with_fuel(view_words, 2);
+    assert(seq![w].subrange(1, 1) =~= Seq::<Word>::empty());
+    assert(view_words(seq![w]) =~= seq![view_word(w)]);
+    lemma_view_words_append(s, seq![w]);
+}
+
+// A single clone (`Word::clone`, external_body) preserves the deep view.
+pub proof fn lemma_cloned_word(a: Word, b: Word)
+    requires
+        cloned::<Word>(a, b),
+    ensures
+        view_word(a) == view_word(b),
+{
+}
+
+// view_words is congruent under element-wise view equality: two word-seqs whose
+// elements agree under view_word have the same view_words. Bridges `Vec::clone`
+// (element-wise `cloned`) to sequence-level view equality.
+pub proof fn lemma_view_words_congr(a: Seq<Word>, b: Seq<Word>)
+    requires
+        a.len() == b.len(),
+        forall|i: int| 0 <= i < a.len() ==> view_word(a[i]) == view_word(b[i]),
+    ensures
+        view_words(a) == view_words(b),
+    decreases a.len(),
+{
+    if a.len() == 0 {
+        assert(view_words(a) =~= view_words(b));
+    } else {
+        let at = a.subrange(1, a.len() as int);
+        let bt = b.subrange(1, b.len() as int);
+        assert forall|i: int| 0 <= i < at.len() implies view_word(at[i]) == view_word(bt[i]) by {
+            assert(at[i] == a[i + 1]);
+            assert(bt[i] == b[i + 1]);
+        }
+        lemma_view_words_congr(at, bt);
+        assert(view_words(a) == seq![view_word(a[0])] + view_words(at));
+        assert(view_words(b) == seq![view_word(b[0])] + view_words(bt));
+    }
+}
+
+// Times ( n [Q] -- ): k>0 re-emits `q ++ [k-1, [q], Times] ++ rest`; k<=0 no-op.
 pub fn exec_times(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1503,20 +1552,78 @@ pub fn exec_times(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 2 { return StepResult::Fault(Error::Underflow); }
     let ok = matches!(vm.stack[n - 2], Value::Int(_))
         && matches!(vm.stack[n - 1], Value::Quote(_));
-    if !ok { return StepResult::Fault(Error::TypeMismatch); }
+    if !ok {
+        proof {
+            lemma_view_stack_index(s0, n as int - 2);
+            lemma_view_stack_index(s0, n as int - 1);
+        }
+        return StepResult::Fault(Error::TypeMismatch);
+    }
+    proof {
+        lemma_view_stack_index(s0, n as int - 2);
+        lemma_view_stack_index(s0, n as int - 1);
+    }
     vm.cont.remove(0);
-    let q = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-    let k = match vm.stack.pop() { Some(Value::Int(k)) => k, _ => 0 };
-    if k > 0 {
-        let mut recur = q.clone();
-        recur.push(Word::PushInt(k - 1));
-        recur.push(Word::PushQuote(q));
-        recur.push(Word::Prim(SpecPrim::Times));
-        recur.append(&mut vm.cont);
-        vm.cont = recur;
+    let qv = vm.stack.pop();  // Some(s0[n-1]) = Quote(q)
+    let kv = vm.stack.pop();  // Some(s0[n-2]) = Int(k)
+    match (kv, qv) {
+        (Some(Value::Int(k)), Some(Value::Quote(q))) => {
+            let ghost gq = q@;
+            let ghost grest = c0.subrange(1, c0.len() as int);
+            proof { lemma_view_stack_prefix(s0, n as int - 2); }
+            if k > 0 {
+                let km1: i64 = k - 1;
+                let mut recur = q.clone();
+                let ghost g0 = recur@;
+                recur.push(Word::PushInt(km1));
+                let ghost g1 = recur@;
+                recur.push(Word::PushQuote(q));
+                let ghost g2 = recur@;
+                recur.push(Word::Prim(SpecPrim::Times));
+                let ghost g3 = recur@;
+                recur.append(&mut vm.cont);  // recur@ == g3 + grest
+                vm.cont = recur;
+                proof {
+                    // clone preserves the deep view element-wise -> seq-wise.
+                    assert forall|i: int| 0 <= i < gq.len() implies
+                        view_word(g0[i]) == view_word(gq[i]) by {
+                        lemma_cloned_word(gq[i], g0[i]);
+                    }
+                    lemma_view_words_congr(g0, gq);
+                    // Peel the three re-emitted words.
+                    lemma_view_words_push(g0, g1[g0.len() as int]);
+                    lemma_view_words_push(g1, g2[g1.len() as int]);
+                    lemma_view_words_push(g2, g3[g2.len() as int]);
+                    // The three pushed words, identified by their view.
+                    assert(g1[g0.len() as int] == Word::PushInt(km1));
+                    assert(g2[g1.len() as int] == Word::PushQuote(q));
+                    assert(g3[g2.len() as int] == Word::Prim(SpecPrim::Times));
+                    assert(km1 as int == (k as int) - 1);
+                    // Splice with rest.
+                    lemma_view_words_append(g3, grest);
+                    // Stack: two pops leave base = s0[0..n-2].
+                    assert(vm.stack@ =~= s0.subrange(0, n as int - 2));
+                    assert(view_words(vm.cont@) =~= view_words(gq)
+                        + seq![
+                            SpecWord::PushInt((k as int) - 1),
+                            SpecWord::PushQuote(view_words(gq)),
+                            SpecWord::Prim(SpecPrim::Times)
+                        ] + view_words(grest));
+                }
+            } else {
+                proof {
+                    assert(vm.stack@ =~= s0.subrange(0, n as int - 2));
+                    assert(vm.cont@ =~= grest);
+                }
+            }
+        }
+        _ => { assert(false); }
     }
     StepResult::Next
 }
