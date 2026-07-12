@@ -692,6 +692,135 @@ impl Vm {
     }
 }
 
+// ============================================================
+// Stage-0 view-homomorphism lemmas (P2 refinement helpers).
+//
+// view_words / view_stack are structure-preserving maps from the exec AST
+// into the ghost model. The leaf and splicing refinement proofs need them to
+// commute with the seq operations exec performs: append (cont splicing), push
+// (stack push), prefix truncation (the two pops of a binop), and indexing
+// (operand reads). All proved by head-peel induction mirroring the spec-fn
+// definitions above, `decreases` on the seq length.
+//
+// STATUS: UNVERIFIED (no local Verus). Statements are believed exactly right;
+// some proof bodies carry `// TODO(verify)` where an unfold or seq-lemma nudge
+// may still be needed for Verus to close the step.
+// ============================================================
+
+// view_words is a monoid homomorphism: it distributes over concatenation.
+// Every exec_prim arm that splices `q ++ rest` into the continuation needs this.
+pub proof fn lemma_view_words_append(a: Seq<Word>, b: Seq<Word>)
+    ensures
+        view_words(a + b) == view_words(a) + view_words(b),
+    decreases a.len(),
+{
+    if a.len() == 0 {
+        assert(a + b =~= b);
+        assert(view_words(a) =~= Seq::<SpecWord>::empty());
+    } else {
+        let a_tail = a.subrange(1, a.len() as int);
+        let ab = a + b;
+        assert(ab.len() == a.len() + b.len());
+        assert(ab[0] == a[0]);
+        assert(ab.subrange(1, ab.len() as int) =~= a_tail + b);
+        lemma_view_words_append(a_tail, b);
+        // view_words(ab) unfolds via ab[0]==a[0] and the tail IH; view_words(a)
+        // unfolds via a[0] and a_tail; the rest is associativity of Seq `+`.
+        // TODO(verify): may need an explicit one-level unfold of view_words(ab).
+        assert(view_words(ab) =~= view_words(a) + view_words(b));
+    }
+}
+
+// view_stack preserves length (aligns the spec `subrange(0, n-2)` index with
+// the exec stack after two pops).
+pub proof fn lemma_view_stack_len(s: Seq<Value>)
+    ensures
+        view_stack(s).len() == s.len(),
+    decreases s.len(),
+{
+    if s.len() == 0 {
+    } else {
+        lemma_view_stack_len(s.subrange(1, s.len() as int));
+    }
+}
+
+// view_stack commutes with indexing: the ghost operand equals the view of the
+// exec operand. Drives the spec `(Int, Int)` match from the exec match.
+pub proof fn lemma_view_stack_index(s: Seq<Value>, i: int)
+    requires
+        0 <= i < s.len(),
+    ensures
+        view_stack(s)[i] == view_value(s[i]),
+    decreases s.len(),
+{
+    if i == 0 {
+        assert(view_stack(s)[0] == view_value(s[0]));
+    } else {
+        let t = s.subrange(1, s.len() as int);
+        assert(t[i - 1] == s[i]);
+        // (seq![vv] + view_stack(t))[i] == view_stack(t)[i-1] for i >= 1.
+        assert(view_stack(s)[i] == view_stack(t)[i - 1]);
+        lemma_view_stack_index(t, i - 1);
+    }
+}
+
+// view_stack commutes with prefix truncation (the two pops of a binop).
+pub proof fn lemma_view_stack_prefix(s: Seq<Value>, k: int)
+    requires
+        0 <= k <= s.len(),
+    ensures
+        view_stack(s.subrange(0, k)) == view_stack(s).subrange(0, k),
+    decreases s.len(),
+{
+    if k == 0 {
+        assert(s.subrange(0, 0) =~= Seq::<Value>::empty());
+        assert(view_stack(s).subrange(0, 0) =~= Seq::<SpecValue>::empty());
+    } else {
+        let t = s.subrange(1, s.len() as int);
+        assert(s.subrange(0, k)[0] == s[0]);
+        assert(s.subrange(0, k).subrange(1, k) =~= t.subrange(0, k - 1));
+        lemma_view_stack_prefix(t, k - 1);
+        // (seq![vv] + view_stack(t)).subrange(0,k) == seq![vv] + view_stack(t).subrange(0,k-1).
+        // TODO(verify): may need assert_seqs_equal! on the concat/subrange identity.
+        assert(view_stack(s.subrange(0, k)) =~= view_stack(s).subrange(0, k));
+    }
+}
+
+// view_stack commutes with push (the single result push of a binop / cmp).
+pub proof fn lemma_view_stack_push(s: Seq<Value>, v: Value)
+    ensures
+        view_stack(s.push(v)) == view_stack(s).push(view_value(v)),
+    decreases s.len(),
+{
+    if s.len() == 0 {
+        assert(s.push(v) =~= seq![v]);
+        assert(view_stack(s) =~= Seq::<SpecValue>::empty());
+        assert(view_stack(s.push(v)) =~= view_stack(s).push(view_value(v)));
+    } else {
+        let t = s.subrange(1, s.len() as int);
+        let sv = s.push(v);
+        assert(sv[0] == s[0]);
+        assert(sv.subrange(1, sv.len() as int) =~= t.push(v));
+        lemma_view_stack_push(t, v);
+        // seq![vv] + (view_stack(t).push(x)) == (seq![vv] + view_stack(t)).push(x).
+        assert(view_stack(sv) =~= view_stack(s).push(view_value(v)));
+    }
+}
+
+// Convenience combinator: the exact stack transform every binop / cmp leaf
+// performs — pop two operands, push one result — pushed through view_stack.
+pub proof fn lemma_view_stack_pop2_push(s: Seq<Value>, w: Value)
+    requires
+        s.len() >= 2,
+    ensures
+        view_stack(s.subrange(0, s.len() as int - 2).push(w))
+            == view_stack(s).subrange(0, s.len() as int - 2).push(view_value(w)),
+{
+    let k = s.len() as int - 2;
+    lemma_view_stack_push(s.subrange(0, k), w);
+    lemma_view_stack_prefix(s, k);
+}
+
 // Terminal outcome of the fuel-bounded driver.
 pub enum Outcome {
     Halt(Vec<Value>),
