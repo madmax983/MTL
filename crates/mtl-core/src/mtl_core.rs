@@ -1670,8 +1670,58 @@ pub fn exec_linrec(vm: &mut Vm, n: usize) -> (r: StepResult)
     StepResult::Next
 }
 
-// TODO(Stage 2b): Uncons deconstruction.
-#[verifier::external_body]
+// ---- Uncons-arm helper lemmas (disjoint region; see integration note) ----
+
+// view_words preserves length (head-peel; mirrors lemma_view_stack_len).
+pub proof fn lemma_view_words_len(ws: Seq<Word>)
+    ensures
+        view_words(ws).len() == ws.len(),
+    decreases ws.len(),
+{
+    if ws.len() == 0 {
+    } else {
+        lemma_view_words_len(ws.subrange(1, ws.len() as int));
+    }
+}
+
+// view_words commutes with indexing (mirrors lemma_view_stack_index).
+pub proof fn lemma_view_words_index(ws: Seq<Word>, i: int)
+    requires
+        0 <= i < ws.len(),
+    ensures
+        view_words(ws)[i] == view_word(ws[i]),
+    decreases ws.len(),
+{
+    let head = seq![view_word(ws[0])];
+    let t = ws.subrange(1, ws.len() as int);
+    assert(view_words(ws) == head + view_words(t));  // unfold (fuel)
+    if i == 0 {
+    } else {
+        lemma_view_words_len(t);
+        assert(t[i - 1] == ws[i]);
+        lemma_view_words_index(t, i - 1);
+    }
+}
+
+// view_words commutes with tail (drop the head): the uncons split.
+pub proof fn lemma_view_words_tail(ws: Seq<Word>)
+    requires
+        ws.len() >= 1,
+    ensures
+        view_words(ws).subrange(1, view_words(ws).len() as int)
+            == view_words(ws.subrange(1, ws.len() as int)),
+{
+    let head = seq![view_word(ws[0])];
+    let t = ws.subrange(1, ws.len() as int);
+    assert(view_words(ws) == head + view_words(t));  // unfold (fuel)
+    lemma_view_words_len(t);
+    assert((head + view_words(t)).subrange(1, (head + view_words(t)).len() as int)
+        =~= view_words(t));
+}
+
+// Uncons ( [w..] -- w [..] 1 | [] -- 0 ): inspects the quote head WITHOUT
+// consuming; a non-value head (bare Prim/Call) or non-Quote operand faults
+// TypeMismatch leaving the machine untouched (fault is decided before any mutation).
 pub fn exec_uncons(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1685,34 +1735,73 @@ pub fn exec_uncons(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 1 { return StepResult::Fault(Error::Underflow); }
-    match &vm.stack[n - 1] {
-        Value::Quote(q) => {
-            if !q.is_empty() {
-                match &q[0] {
-                    Word::PushInt(_) | Word::PushQuote(_) => {}
-                    _ => return StepResult::Fault(Error::TypeMismatch),
+    // (a) top must be a Quote.
+    if !matches!(vm.stack[n - 1], Value::Quote(_)) {
+        proof { lemma_view_stack_index(s0, n as int - 1); }
+        return StepResult::Fault(Error::TypeMismatch);
+    }
+    proof { lemma_view_stack_index(s0, n as int - 1); }
+    let ghost gq = s0[n - 1]->Quote_0@;
+    // (b) a non-empty quote's head must itself be a value; else TypeMismatch,
+    // machine untouched (we return before removing the cont head / popping).
+    if let Value::Quote(q) = &vm.stack[n - 1] {
+        assert(q@ == gq);
+        if q.len() >= 1 {
+            match &q[0] {
+                Word::PushInt(_) | Word::PushQuote(_) => {}
+                _ => {
+                    proof {
+                        lemma_view_words_len(gq);
+                        lemma_view_words_index(gq, 0);
+                    }
+                    return StepResult::Fault(Error::TypeMismatch);
                 }
             }
         }
-        _ => return StepResult::Fault(Error::TypeMismatch),
+    }
+    // Past the guard: gq is a value-headed (or empty) quote.
+    assert(gq.len() >= 1 ==> (gq[0] is PushInt || gq[0] is PushQuote));
+    proof {
+        lemma_view_words_len(gq);
+        lemma_view_stack_prefix(s0, n as int - 1);
     }
     vm.cont.remove(0);
     let q = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+    assert(q@ == gq);
+    assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
     if q.is_empty() {
         vm.stack.push(Value::Int(0));
+        proof {
+            lemma_view_stack_push(s0.subrange(0, n as int - 1), Value::Int(0));
+        }
     } else {
-        let mut it = q.into_iter();
-        let head = it.next().unwrap();
-        let tail: Vec<Word> = it.collect();
+        let mut q = q;
+        let head = q.remove(0);  // head == gq[0]; q@ == gq.subrange(1, gq.len())
         let head_val = match head {
             Word::PushInt(i) => Value::Int(i),
             Word::PushQuote(s) => Value::Quote(s),
-            _ => Value::Int(0), // unreachable: guarded above
+            _ => { assert(false); Value::Int(0) },  // unreachable by guard
         };
+        let ghost ghv = head_val;
+        let tail_val = Value::Quote(q);
+        let ghost gtv = tail_val;
         vm.stack.push(head_val);
-        vm.stack.push(Value::Quote(tail));
+        let ghost g_after_head = vm.stack@;
+        vm.stack.push(tail_val);
+        let ghost g_after_tail = vm.stack@;
         vm.stack.push(Value::Int(1));
+        proof {
+            lemma_view_words_index(gq, 0);
+            lemma_view_words_tail(gq);
+            let base = s0.subrange(0, n as int - 1);
+            lemma_view_stack_push(base, ghv);
+            lemma_view_stack_push(g_after_head, gtv);
+            lemma_view_stack_push(g_after_tail, Value::Int(1));
+        }
     }
     StepResult::Next
 }
