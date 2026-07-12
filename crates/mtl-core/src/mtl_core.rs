@@ -576,7 +576,6 @@ pub open spec fn spec_divmod(
 // 3. Exec side (GREEN phase implements; deep view is the bridge)
 // ============================================================
 
-#[derive(Clone)]
 pub enum Word {
     PushInt(i64),
     PushQuote(Vec<Word>),
@@ -584,10 +583,50 @@ pub enum Word {
     Call(Vec<char>),
 }
 
-#[derive(Clone)]
+// `Word` is RECURSIVE (`PushQuote(Vec<Word>)`), so an auto-`#[derive(Clone)]`
+// is rejected by Verus as a cyclic self-reference in the derived impl. We hand
+// off a trusted, hand-written impl marked `#[verifier::external_body]` — the
+// exact discipline the exec twins (`exec_step`/`exec_prim`/…) already use — so
+// Verus treats it as a trusted exec item and does NOT analyze the body for the
+// cycle. The body is real deep-cloning Rust (recursing through the nested
+// `Vec<Word>` via its own `Clone`). The `ensures` records clone-preserves-view
+// (`view_word` is invariant under clone), matching this file's view-based
+// equality idiom (cf. `deep_view() == s2` in `exec_step`).
+impl Clone for Word {
+    #[verifier::external_body]
+    fn clone(&self) -> (res: Self)
+        ensures
+            view_word(res) == view_word(*self),
+    {
+        match self {
+            Word::PushInt(n) => Word::PushInt(*n),
+            Word::PushQuote(q) => Word::PushQuote(q.clone()),
+            Word::Prim(p) => Word::Prim(*p),
+            Word::Call(cs) => Word::Call(cs.clone()),
+        }
+    }
+}
+
 pub enum Value {
     Int(i64),
     Quote(Vec<Word>),
+}
+
+// `Value::Quote(Vec<Word>)` transitively embeds recursive `Word`, so its
+// derived `Clone` is rejected for the same cyclic-self-reference reason. Same
+// trusted external_body treatment; `ensures` records clone-preserves-view via
+// `view_value`.
+impl Clone for Value {
+    #[verifier::external_body]
+    fn clone(&self) -> (res: Self)
+        ensures
+            view_value(res) == view_value(*self),
+    {
+        match self {
+            Value::Int(n) => Value::Int(*n),
+            Value::Quote(q) => Value::Quote(q.clone()),
+        }
+    }
 }
 
 // Deep view: exec AST -> ghost model. Mutual recursion through the
