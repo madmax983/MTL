@@ -1,0 +1,374 @@
+{
+  "meta": {
+    "arms": [
+      "mtl",
+      "python"
+    ],
+    "attempts_found": 67,
+    "cells_found": 60,
+    "expected_trials_per_task_arm": 3,
+    "in_progress_cells": [],
+    "load_errors": [],
+    "max_attempts": 5,
+    "payload_missing": false,
+    "quickref_tokens_cl100k": 2148,
+    "quickref_tokens_o200k": 2157,
+    "underfilled_task_arms": []
+  },
+  "per_arm": {
+    "mtl": {
+      "attempts_to_first_correct_distribution": {
+        "1": 24,
+        "2": 5,
+        "3": 1,
+        "4": 0,
+        "5": 0
+      },
+      "attempts_to_first_correct_mean": 1.2333333333333334,
+      "attempts_to_first_correct_median": 1.0,
+      "correct_solutions_per_million_tokens": 67873.3031674208,
+      "error_type_distribution": {
+        "TypeMismatch": 1,
+        "parse": 6
+      },
+      "output_tokens_to_first_correct_mean": 14.733333333333333,
+      "output_tokens_to_first_correct_median": 10.0,
+      "p_correct_within_5": 1.0,
+      "parse_fault_count": 6,
+      "program_only_first_correct_mean": 11.466666666666667,
+      "program_only_first_correct_median": 9.0,
+      "repair": {
+        "failed_attempt1_cells": 6,
+        "failed_attempt1_then_solved": 6,
+        "mean_attempts_among_repaired": 2.1666666666666665,
+        "repair_success_rate": 1.0
+      },
+      "solved_cells": 30,
+      "stack_tracking_fault_count": 1,
+      "total_cells": 30,
+      "total_output_tokens_all_cells": 442,
+      "unsolved_cells": 0,
+      "wrong_output_fault_count": 0
+    },
+    "python": {
+      "attempts_to_first_correct_distribution": {
+        "1": 30,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      },
+      "attempts_to_first_correct_mean": 1.0,
+      "attempts_to_first_correct_median": 1.0,
+      "correct_solutions_per_million_tokens": 53285.96802841918,
+      "error_type_distribution": {},
+      "output_tokens_to_first_correct_mean": 18.766666666666666,
+      "output_tokens_to_first_correct_median": 17.0,
+      "p_correct_within_5": 1.0,
+      "parse_fault_count": 0,
+      "program_only_first_correct_mean": 18.766666666666666,
+      "program_only_first_correct_median": 17.0,
+      "repair": {
+        "failed_attempt1_cells": 0,
+        "failed_attempt1_then_solved": 0,
+        "mean_attempts_among_repaired": null,
+        "repair_success_rate": null
+      },
+      "solved_cells": 30,
+      "stack_tracking_fault_count": 0,
+      "total_cells": 30,
+      "total_output_tokens_all_cells": 563,
+      "unsolved_cells": 0,
+      "wrong_output_fault_count": 0
+    }
+  },
+  "per_task": {
+    "affine": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 250000.0,
+        "output_tokens_to_first_correct_median": 4,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 85714.28571428571,
+        "output_tokens_to_first_correct_median": 11,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "climbing_stairs": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 125000.0,
+        "output_tokens_to_first_correct_median": 8,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 27777.777777777777,
+        "output_tokens_to_first_correct_median": 36,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "contains": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 35714.28571428571,
+        "output_tokens_to_first_correct_median": 28,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 62500.0,
+        "output_tokens_to_first_correct_median": 16,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "factorial": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 93750.0,
+        "output_tokens_to_first_correct_median": 12,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 32258.06451612903,
+        "output_tokens_to_first_correct_median": 31,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "gcd": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 100000.0,
+        "output_tokens_to_first_correct_median": 10,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 41666.666666666664,
+        "output_tokens_to_first_correct_median": 24,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "is_even": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 250000.0,
+        "output_tokens_to_first_correct_median": 4,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 66666.66666666667,
+        "output_tokens_to_first_correct_median": 14,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "palindrome_number": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 51724.137931034486,
+        "output_tokens_to_first_correct_median": 19,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 55555.555555555555,
+        "output_tokens_to_first_correct_median": 18,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "rev3": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 500000.0,
+        "output_tokens_to_first_correct_median": 2,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 58823.529411764706,
+        "output_tokens_to_first_correct_median": 17,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "reverse_list": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 25000.0,
+        "output_tokens_to_first_correct_median": 40,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 100000.0,
+        "output_tokens_to_first_correct_median": 10,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "sum_list": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 46875.0,
+        "output_tokens_to_first_correct_median": 17,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 111111.11111111111,
+        "output_tokens_to_first_correct_median": 9,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    }
+  },
+  "token_accounting": {
+    "mtl": {
+      "amortized_over_10_tasks": 225.7,
+      "cold_instruction_cost_o200k": 2157,
+      "cold_total_per_solve": 2167.0,
+      "generation_plus_repair_median": 10.0,
+      "program_only_median": 9.0
+    },
+    "python": {
+      "amortized_over_10_tasks": 17.0,
+      "cold_instruction_cost_o200k": 0,
+      "cold_total_per_solve": 17.0,
+      "generation_plus_repair_median": 17.0,
+      "program_only_median": 17.0
+    }
+  },
+  "verdict": {
+    "cold_total_per_solve_mtl": 2167.0,
+    "cold_total_per_solve_python": 17.0,
+    "cspm_mtl": 67873.3031674208,
+    "cspm_python": 53285.96802841918,
+    "cspm_ratio_mtl_over_python": 1.2737556561085972,
+    "static_edge_favors_mtl": true,
+    "static_edge_survives_total_accounting": true,
+    "static_program_median_mtl": 9.0,
+    "static_program_median_python": 17.0
+  }
+}

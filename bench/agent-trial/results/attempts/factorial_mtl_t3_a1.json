@@ -1,0 +1,16 @@
+{
+  "task": "factorial",
+  "arm": "mtl",
+  "program_tokens_o200k": 7,
+  "program_tokens_cl100k": 7,
+  "program": "`[1][*]&`\n",
+  "ok": false,
+  "error_type": "parse",
+  "error_detail": "PARSE ERROR: parse error at byte 2: unexpected character ```; expected a digit, glyph, name, `[`, or `]`",
+  "failing_vector": {
+    "input_prefix": "0 ",
+    "expected_halt": "1"
+  },
+  "trial": 3,
+  "attempt": 1
+}

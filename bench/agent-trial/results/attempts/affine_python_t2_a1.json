@@ -1,0 +1,13 @@
+{
+  "task": "affine",
+  "arm": "python",
+  "program_tokens_o200k": 13,
+  "program_tokens_cl100k": 13,
+  "program": "def solve(n):\n    return 3 * n + 7\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 2,
+  "attempt": 1
+}

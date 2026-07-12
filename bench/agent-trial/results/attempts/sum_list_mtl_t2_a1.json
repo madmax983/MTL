@@ -1,0 +1,16 @@
+{
+  "task": "sum_list",
+  "arm": "mtl",
+  "program_tokens_o200k": 18,
+  "program_tokens_cl100k": 17,
+  "program": "`[>[;0][[]1]?][_0][>_][+]|`\n",
+  "ok": false,
+  "error_type": "parse",
+  "error_detail": "PARSE ERROR: parse error at byte 8: unexpected character ```; expected a digit, glyph, name, `[`, or `]`",
+  "failing_vector": {
+    "input_prefix": "[1 2 3] ",
+    "expected_halt": "6"
+  },
+  "trial": 2,
+  "attempt": 1
+}

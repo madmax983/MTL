@@ -1,0 +1,13 @@
+{
+  "task": "is_even",
+  "arm": "python",
+  "program_tokens_o200k": 14,
+  "program_tokens_cl100k": 14,
+  "program": "solve = lambda n: 1 - (n % 2)\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 3,
+  "attempt": 1
+}

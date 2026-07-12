@@ -1,0 +1,13 @@
+{
+  "task": "climbing_stairs",
+  "arm": "mtl",
+  "program_tokens_o200k": 8,
+  "program_tokens_cl100k": 8,
+  "program": "1 1@[:@+]._\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 2,
+  "attempt": 1
+}

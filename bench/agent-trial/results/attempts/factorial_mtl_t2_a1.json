@@ -1,0 +1,16 @@
+{
+  "task": "factorial",
+  "arm": "mtl",
+  "program_tokens_o200k": 3,
+  "program_tokens_cl100k": 3,
+  "program": "1[*]&\n",
+  "ok": false,
+  "error_type": "TypeMismatch",
+  "error_detail": "FAULT: TypeMismatch\n  stack: 0 1 [Mul]\n  next:  [PrimRec]",
+  "failing_vector": {
+    "input_prefix": "0 ",
+    "expected_halt": "1"
+  },
+  "trial": 2,
+  "attempt": 1
+}

@@ -1,0 +1,13 @@
+{
+  "task": "factorial",
+  "arm": "mtl",
+  "program_tokens_o200k": 5,
+  "program_tokens_cl100k": 5,
+  "program": "[1][*]&\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 1,
+  "attempt": 2
+}

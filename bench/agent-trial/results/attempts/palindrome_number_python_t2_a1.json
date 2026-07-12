@@ -1,0 +1,13 @@
+{
+  "task": "palindrome_number",
+  "arm": "python",
+  "program_tokens_o200k": 18,
+  "program_tokens_cl100k": 18,
+  "program": "solve=lambda n:1 if str(n)==str(n)[::-1] else 0\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 2,
+  "attempt": 1
+}
