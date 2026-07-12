@@ -1233,18 +1233,68 @@ pub fn exec_divmod(vm: &mut Vm, is_div: bool, n: usize) -> StepResult {
     }
 }
 
-#[verifier::external_body]
-pub fn exec_cmp(vm: &mut Vm, is_eq: bool, n: usize) -> StepResult {
-    if n < 2 { return StepResult::Fault(Error::Underflow); }
+// P2 leaf refinement of the Eq/Lt arms of spec_step_prim. The comparison
+// leaves are the simplest binop shape: TOTAL (arity -> type ordering only, no
+// Overflow/DivByZero arm), so the only bridge needed is the view plumbing.
+// Precondition: `n` is the (un-mutated) operand-stack height and cont[0] is the
+// matching Prim, so spec_step_prim(view_stack(stack), p, rest) is what
+// spec_step dispatches to.
+pub fn exec_cmp(vm: &mut Vm, is_eq: bool, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+        view_word(old(vm).cont@[0])
+            == SpecWord::Prim(if is_eq { SpecPrim::Eq } else { SpecPrim::Lt }),
+    ensures ({
+        let p = if is_eq { SpecPrim::Eq } else { SpecPrim::Lt };
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), p, rest) {
+            SpecStep::Next(s2) => r is Next && vm.deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
+    // (1) arity: spec n == view_stack(stack).len() == stack.len() == n.
+    if n < 2 {
+        return StepResult::Fault(Error::Underflow);
+    }
     let (a, b) = match (&vm.stack[n - 2], &vm.stack[n - 1]) {
         (Value::Int(a), Value::Int(b)) => (*a, *b),
-        _ => return StepResult::Fault(Error::TypeMismatch),
+        _ => {
+            // (2) type: a non-Int exec operand views to a non-Int SpecValue, so
+            // the spec `(Int, Int)` match also falls through to TypeMismatch.
+            proof {
+                lemma_view_stack_index(s0, n - 2);
+                lemma_view_stack_index(s0, n - 1);
+            }
+            return StepResult::Fault(Error::TypeMismatch);
+        }
     };
+    proof {
+        lemma_view_stack_index(s0, n - 2);
+        lemma_view_stack_index(s0, n - 1);
+        // exec Int match ==> view_stack(s0)[n-2] == Int(a as int), likewise n-1;
+        // and (a == b as i64) <=> (a as int == b as int), (a < b) <=> (a as int < b as int).
+    }
     let v: i64 = if is_eq { if a == b { 1 } else { 0 } } else { if a < b { 1 } else { 0 } };
     vm.cont.remove(0);
     vm.stack.pop();
     vm.stack.pop();
     vm.stack.push(Value::Int(v));
+    proof {
+        // final cont@ == c0.subrange(1, len) so view_words(final cont) == rest.
+        assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+        // final stack@ == s0.subrange(0, n-2).push(Int v); push it through view_stack.
+        lemma_view_stack_pop2_push(s0, Value::Int(v));
+        // view_value(Int v) == Int(v as int) == Int(if a==b {1} else {0}) matches
+        // the spec Eq/Lt arm's pushed value.
+        // TODO(verify): may need to assert deep_view fields with =~= to close
+        // the struct equality vm.deep_view() == s2.
+    }
     StepResult::Next
 }
 
