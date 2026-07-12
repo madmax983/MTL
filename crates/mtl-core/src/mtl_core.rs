@@ -1253,7 +1253,6 @@ pub fn exec_dip(vm: &mut Vm, n: usize) -> (r: StepResult)
 }
 
 // ---------------- branch ----------------
-#[verifier::external_body]
 pub fn exec_if(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1267,27 +1266,49 @@ pub fn exec_if(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 3 { return StepResult::Fault(Error::Underflow); }
     let ok = matches!(vm.stack[n - 3], Value::Int(_))
         && matches!(vm.stack[n - 2], Value::Quote(_))
         && matches!(vm.stack[n - 1], Value::Quote(_));
-    if !ok { return StepResult::Fault(Error::TypeMismatch); }
+    if !ok {
+        proof {
+            lemma_view_stack_index(s0, n as int - 3);
+            lemma_view_stack_index(s0, n as int - 2);
+            lemma_view_stack_index(s0, n as int - 1);
+        }
+        return StepResult::Fault(Error::TypeMismatch);
+    }
+    proof {
+        lemma_view_stack_index(s0, n as int - 3);
+        lemma_view_stack_index(s0, n as int - 2);
+        lemma_view_stack_index(s0, n as int - 1);
+    }
     vm.cont.remove(0);
-    let fv = vm.stack.pop();
-    let tv = vm.stack.pop();
-    let cv = vm.stack.pop();
-    if let (Some(Value::Int(c)), Some(Value::Quote(t)), Some(Value::Quote(f))) =
-        (cv, tv, fv)
-    {
-        let mut branch = if c != 0 { t } else { f };
-        branch.append(&mut vm.cont);
-        vm.cont = branch;
+    let fv = vm.stack.pop();  // Some(s0[n-1]) = Quote(f)
+    let tv = vm.stack.pop();  // Some(s0[n-2]) = Quote(t)
+    let cv = vm.stack.pop();  // Some(s0[n-3]) = Int(c)
+    match (cv, tv, fv) {
+        (Some(Value::Int(c)), Some(Value::Quote(t)), Some(Value::Quote(f))) => {
+            let mut branch = if c != 0 { t } else { f };
+            let ghost gbranch = branch@;
+            branch.append(&mut vm.cont);
+            vm.cont = branch;
+            proof {
+                lemma_view_stack_prefix(s0, n as int - 3);
+                lemma_view_words_append(gbranch, c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= s0.subrange(0, n as int - 3));
+                assert(vm.cont@ =~= gbranch + c0.subrange(1, c0.len() as int));
+            }
+        }
+        _ => { assert(false); }
     }
     StepResult::Next
 }
 
 // ---------------- total bitwise xor (cmp-shaped: NO Overflow arm) ----------------
-#[verifier::external_body]
 pub fn exec_xor(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1301,15 +1322,42 @@ pub fn exec_xor(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 2 { return StepResult::Fault(Error::Underflow); }
     let (a, b) = match (&vm.stack[n - 2], &vm.stack[n - 1]) {
         (Value::Int(a), Value::Int(b)) => (*a, *b),
-        _ => return StepResult::Fault(Error::TypeMismatch),
+        _ => {
+            proof {
+                lemma_view_stack_index(s0, n as int - 2);
+                lemma_view_stack_index(s0, n as int - 1);
+            }
+            return StepResult::Fault(Error::TypeMismatch);
+        }
     };
+    proof {
+        lemma_view_stack_index(s0, n as int - 2);
+        lemma_view_stack_index(s0, n as int - 1);
+    }
     vm.cont.remove(0);
     vm.stack.pop();
     vm.stack.pop();
     vm.stack.push(Value::Int(a ^ b));
+    proof {
+        assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+        assert(vm.stack@ =~= s0.subrange(0, n as int - 2).push(Value::Int(a ^ b)));
+        lemma_view_stack_pop2_push(s0, Value::Int(a ^ b));
+        assert(view_stack(vm.stack@)
+            == view_stack(s0).subrange(0, n as int - 2).push(SpecValue::Int((a ^ b) as int)));
+        assert(view_stack(s0)[n as int - 2] == SpecValue::Int(a as int));
+        assert(view_stack(s0)[n as int - 1] == SpecValue::Int(b as int));
+        // total: exec pushes Int(a^b); spec pushes Int(i64_bitxor(a int, b int)).
+        // i64_bitxor casts int->i64 (round-trips for in-range a, b), so agree.
+        assert((a as int) as i64 == a) by (bit_vector);
+        assert((b as int) as i64 == b) by (bit_vector);
+        assert((a ^ b) as int == i64_bitxor(a as int, b as int));
+    }
     StepResult::Next
 }
 
