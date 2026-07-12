@@ -1132,7 +1132,6 @@ pub fn exec_over(vm: &mut Vm, n: usize) -> (r: StepResult)
 }
 
 // ---------------- quotation algebra ----------------
-#[verifier::external_body]
 pub fn exec_apply(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1146,21 +1145,34 @@ pub fn exec_apply(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 1 { return StepResult::Fault(Error::Underflow); }
-    match vm.stack[n - 1] {
-        Value::Quote(_) => {
-            vm.cont.remove(0);
-            if let Some(Value::Quote(mut q)) = vm.stack.pop() {
-                q.append(&mut vm.cont);
-                vm.cont = q;
-            }
-            StepResult::Next
-        }
-        _ => StepResult::Fault(Error::TypeMismatch),
+    if !matches!(vm.stack[n - 1], Value::Quote(_)) {
+        proof { lemma_view_stack_index(s0, n as int - 1); }
+        return StepResult::Fault(Error::TypeMismatch);
     }
+    vm.cont.remove(0);
+    let qv = vm.stack.pop();  // Some(s0[n-1]) = Quote(q)
+    match qv {
+        Some(Value::Quote(mut q)) => {
+            let ghost gq = q@;
+            q.append(&mut vm.cont);  // q@ == gq + rest
+            vm.cont = q;
+            proof {
+                lemma_view_stack_index(s0, n as int - 1);
+                lemma_view_stack_prefix(s0, n as int - 1);
+                lemma_view_words_append(gq, c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= s0.subrange(0, n as int - 1));
+                assert(vm.cont@ =~= gq + c0.subrange(1, c0.len() as int));
+            }
+        }
+        _ => { assert(false); }
+    }
+    StepResult::Next
 }
 
-#[verifier::external_body]
 pub fn exec_cat(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1174,16 +1186,40 @@ pub fn exec_cat(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 2 { return StepResult::Fault(Error::Underflow); }
     let ok = matches!(vm.stack[n - 2], Value::Quote(_))
         && matches!(vm.stack[n - 1], Value::Quote(_));
-    if !ok { return StepResult::Fault(Error::TypeMismatch); }
+    if !ok {
+        proof {
+            lemma_view_stack_index(s0, n as int - 2);
+            lemma_view_stack_index(s0, n as int - 1);
+        }
+        return StepResult::Fault(Error::TypeMismatch);
+    }
     vm.cont.remove(0);
-    let vb = vm.stack.pop();
-    let va = vm.stack.pop();
-    if let (Some(Value::Quote(mut a)), Some(Value::Quote(mut b))) = (va, vb) {
-        a.append(&mut b);
-        vm.stack.push(Value::Quote(a));
+    let vb = vm.stack.pop();  // Some(s0[n-1]) = Quote(b)
+    let va = vm.stack.pop();  // Some(s0[n-2]) = Quote(a)
+    match (va, vb) {
+        (Some(Value::Quote(mut a)), Some(Value::Quote(mut b))) => {
+            let ghost ga = a@;
+            let ghost gb = b@;
+            a.append(&mut b);  // a@ == ga + gb
+            let qval = Value::Quote(a);
+            let ghost gqval = qval;
+            vm.stack.push(qval);
+            proof {
+                lemma_view_stack_index(s0, n as int - 2);
+                lemma_view_stack_index(s0, n as int - 1);
+                lemma_view_stack_pop2_push(s0, gqval);
+                lemma_view_words_append(ga, gb);
+                assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= s0.subrange(0, n as int - 2).push(gqval));
+            }
+        }
+        _ => { assert(false); }
     }
     StepResult::Next
 }
