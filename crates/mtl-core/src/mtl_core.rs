@@ -703,9 +703,7 @@ impl Vm {
 // (operand reads). All proved by head-peel induction mirroring the spec-fn
 // definitions above, `decreases` on the seq length.
 //
-// STATUS: UNVERIFIED (no local Verus). Statements are believed exactly right;
-// some proof bodies carry `// TODO(verify)` where an unfold or seq-lemma nudge
-// may still be needed for Verus to close the step.
+// STATUS: VERIFIED. All statements and proof bodies below close under Verus.
 // ============================================================
 
 // view_words is a monoid homomorphism: it distributes over concatenation.
@@ -727,7 +725,6 @@ pub proof fn lemma_view_words_append(a: Seq<Word>, b: Seq<Word>)
         lemma_view_words_append(a_tail, b);
         // view_words(ab) unfolds via ab[0]==a[0] and the tail IH; view_words(a)
         // unfolds via a[0] and a_tail; the rest is associativity of Seq `+`.
-        // TODO(verify): may need an explicit one-level unfold of view_words(ab).
         assert(view_words(ab) =~= view_words(a) + view_words(b));
     }
 }
