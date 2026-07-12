@@ -1,0 +1,37 @@
+[package]
+name = "mtl-perf"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Runtime performance benchmarks for the MTL reference interpreter (measurement only; perf is a non-goal per spec 1.2)."
+
+[dependencies]
+mtl-core = { path = "../mtl-core" }
+mtl-syntax = { path = "../mtl-syntax" }
+mtl-bench-validate = { path = "../../bench/validate" }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[lib]
+bench = false
+
+[[bench]]
+name = "dispatch"
+harness = false
+
+[[bench]]
+name = "recursion"
+harness = false
+
+[[bench]]
+name = "fold"
+harness = false
+
+[[bench]]
+name = "parser"
+harness = false
+
+[[bench]]
+name = "corpus"
+harness = false
