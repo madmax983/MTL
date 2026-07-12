@@ -1,0 +1,13 @@
+{
+  "task": "sum_list",
+  "arm": "python",
+  "program_tokens_o200k": 9,
+  "program_tokens_cl100k": 9,
+  "program": "def solve(xs):\n    return sum(xs)\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 2,
+  "attempt": 1
+}

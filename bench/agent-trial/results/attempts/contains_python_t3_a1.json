@@ -1,0 +1,13 @@
+{
+  "task": "contains",
+  "arm": "python",
+  "program_tokens_o200k": 16,
+  "program_tokens_cl100k": 16,
+  "program": "solve = lambda xs, x: 1 if x in xs else 0\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 3,
+  "attempt": 1
+}

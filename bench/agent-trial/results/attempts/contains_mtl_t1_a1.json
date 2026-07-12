@@ -1,0 +1,13 @@
+{
+  "task": "contains",
+  "arm": "mtl",
+  "program_tokens_o200k": 27,
+  "program_tokens_cl100k": 27,
+  "program": "0@[~]'[>[;0][[]1]?][__0~<][>_[^=@+~]'][]|\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 1,
+  "attempt": 1
+}

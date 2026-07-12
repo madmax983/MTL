@@ -1,0 +1,13 @@
+{
+  "task": "palindrome_number",
+  "arm": "mtl",
+  "program_tokens_o200k": 19,
+  "program_tokens_cl100k": 18,
+  "program": ":0~[:0=][_][:10%@10*+~10/][]|=\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 3,
+  "attempt": 1
+}

@@ -1,0 +1,13 @@
+{
+  "task": "reverse_list",
+  "arm": "mtl",
+  "program_tokens_o200k": 19,
+  "program_tokens_cl100k": 19,
+  "program": "[]~[>[;0][[]1]?][_][>_[~;]'][]|\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 1,
+  "attempt": 1
+}

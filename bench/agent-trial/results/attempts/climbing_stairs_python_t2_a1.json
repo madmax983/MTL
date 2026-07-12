@@ -1,0 +1,13 @@
+{
+  "task": "climbing_stairs",
+  "arm": "python",
+  "program_tokens_o200k": 36,
+  "program_tokens_cl100k": 36,
+  "program": "def solve(n):\n    a, b = 1, 1\n    for _ in range(n):\n        a, b = b, a + b\n    return a\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 2,
+  "attempt": 1
+}

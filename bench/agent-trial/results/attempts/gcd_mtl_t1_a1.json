@@ -1,0 +1,13 @@
+{
+  "task": "gcd",
+  "arm": "mtl",
+  "program_tokens_o200k": 10,
+  "program_tokens_cl100k": 10,
+  "program": "[:0=][_][~^%][]|\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 1,
+  "attempt": 1
+}

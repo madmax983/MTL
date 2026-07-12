@@ -1,0 +1,13 @@
+{
+  "task": "sum_list",
+  "arm": "mtl",
+  "program_tokens_o200k": 13,
+  "program_tokens_cl100k": 13,
+  "program": "0~[:>0=][_][@_[+]'][]|\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 2,
+  "attempt": 2
+}

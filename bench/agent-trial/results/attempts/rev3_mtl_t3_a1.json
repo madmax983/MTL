@@ -1,0 +1,13 @@
+{
+  "task": "rev3",
+  "arm": "mtl",
+  "program_tokens_o200k": 2,
+  "program_tokens_cl100k": 2,
+  "program": "~@\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 3,
+  "attempt": 1
+}

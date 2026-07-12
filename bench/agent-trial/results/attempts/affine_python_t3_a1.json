@@ -1,0 +1,13 @@
+{
+  "task": "affine",
+  "arm": "python",
+  "program_tokens_o200k": 11,
+  "program_tokens_cl100k": 11,
+  "program": "solve = lambda n: 3*n + 7\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 3,
+  "attempt": 1
+}

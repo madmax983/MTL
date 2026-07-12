@@ -1,0 +1,233 @@
+{
+  "set": "T_agent-trial",
+  "tasks": [
+    {
+      "id": "affine",
+      "arm_common_desc": "Given an integer n, compute 3*n + 7.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "0 ", "expected_halt": "7"},
+          {"input_prefix": "1 ", "expected_halt": "10"},
+          {"input_prefix": "5 ", "expected_halt": "22"},
+          {"input_prefix": "2 ", "expected_halt": "13"}
+        ]
+      },
+      "python": {
+        "signature": "solve(n)",
+        "vectors": [
+          {"args": [0], "expected": 7},
+          {"args": [1], "expected": 10},
+          {"args": [5], "expected": 22},
+          {"args": [2], "expected": 13}
+        ]
+      }
+    },
+    {
+      "id": "rev3",
+      "arm_common_desc": "Reverse the top three values. Input a b c (c on top) -> c b a.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "1 2 3 ", "expected_halt": "3 2 1"},
+          {"input_prefix": "7 8 9 ", "expected_halt": "9 8 7"}
+        ]
+      },
+      "python": {
+        "signature": "solve(a, b, c)",
+        "vectors": [
+          {"args": [1, 2, 3], "expected": [3, 2, 1]},
+          {"args": [7, 8, 9], "expected": [9, 8, 7]}
+        ]
+      }
+    },
+    {
+      "id": "is_even",
+      "arm_common_desc": "Given integer n, return 1 if n is even else 0.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "0 ", "expected_halt": "1"},
+          {"input_prefix": "1 ", "expected_halt": "0"},
+          {"input_prefix": "2 ", "expected_halt": "1"},
+          {"input_prefix": "3 ", "expected_halt": "0"},
+          {"input_prefix": "4 ", "expected_halt": "1"}
+        ]
+      },
+      "python": {
+        "signature": "solve(n)",
+        "vectors": [
+          {"args": [0], "expected": 1},
+          {"args": [1], "expected": 0},
+          {"args": [2], "expected": 1},
+          {"args": [3], "expected": 0},
+          {"args": [4], "expected": 1}
+        ]
+      }
+    },
+    {
+      "id": "factorial",
+      "arm_common_desc": "Given integer n >= 0, compute n! (0! = 1).",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "0 ", "expected_halt": "1"},
+          {"input_prefix": "1 ", "expected_halt": "1"},
+          {"input_prefix": "2 ", "expected_halt": "2"},
+          {"input_prefix": "3 ", "expected_halt": "6"},
+          {"input_prefix": "5 ", "expected_halt": "120"},
+          {"input_prefix": "6 ", "expected_halt": "720"}
+        ]
+      },
+      "python": {
+        "signature": "solve(n)",
+        "vectors": [
+          {"args": [0], "expected": 1},
+          {"args": [1], "expected": 1},
+          {"args": [2], "expected": 2},
+          {"args": [3], "expected": 6},
+          {"args": [5], "expected": 120},
+          {"args": [6], "expected": 720}
+        ]
+      }
+    },
+    {
+      "id": "gcd",
+      "arm_common_desc": "Euclid gcd(a, b). Input two ints a (lower) then b (top). gcd(a,0)=a.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "12 8 ", "expected_halt": "4"},
+          {"input_prefix": "48 36 ", "expected_halt": "12"},
+          {"input_prefix": "17 5 ", "expected_halt": "1"},
+          {"input_prefix": "0 5 ", "expected_halt": "5"},
+          {"input_prefix": "5 0 ", "expected_halt": "5"},
+          {"input_prefix": "10 10 ", "expected_halt": "10"}
+        ]
+      },
+      "python": {
+        "signature": "solve(a, b)",
+        "vectors": [
+          {"args": [12, 8], "expected": 4},
+          {"args": [48, 36], "expected": 12},
+          {"args": [17, 5], "expected": 1},
+          {"args": [0, 5], "expected": 5},
+          {"args": [5, 0], "expected": 5},
+          {"args": [10, 10], "expected": 10}
+        ]
+      }
+    },
+    {
+      "id": "sum_list",
+      "arm_common_desc": "Sum a list of ints. Empty list sums to 0. Input: the list as one quotation.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "[1 2 3] ", "expected_halt": "6"},
+          {"input_prefix": "[5] ", "expected_halt": "5"},
+          {"input_prefix": "[10 20 30 40] ", "expected_halt": "100"},
+          {"input_prefix": "[] ", "expected_halt": "0"},
+          {"input_prefix": "[0] ", "expected_halt": "0"}
+        ]
+      },
+      "python": {
+        "signature": "solve(xs)",
+        "vectors": [
+          {"args": [[1, 2, 3]], "expected": 6},
+          {"args": [[5]], "expected": 5},
+          {"args": [[10, 20, 30, 40]], "expected": 100},
+          {"args": [[]], "expected": 0},
+          {"args": [[0]], "expected": 0}
+        ]
+      }
+    },
+    {
+      "id": "reverse_list",
+      "arm_common_desc": "Reverse a list. Output is a quotation (list). Input: the list as one quotation.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "[1 2 3] ", "expected_halt": "[3 2 1]"},
+          {"input_prefix": "[] ", "expected_halt": "[]"},
+          {"input_prefix": "[7] ", "expected_halt": "[7]"},
+          {"input_prefix": "[1 2 3 4] ", "expected_halt": "[4 3 2 1]"}
+        ]
+      },
+      "python": {
+        "signature": "solve(xs)",
+        "vectors": [
+          {"args": [[1, 2, 3]], "expected": [3, 2, 1]},
+          {"args": [[]], "expected": []},
+          {"args": [[7]], "expected": [7]},
+          {"args": [[1, 2, 3, 4]], "expected": [4, 3, 2, 1]}
+        ]
+      }
+    },
+    {
+      "id": "palindrome_number",
+      "arm_common_desc": "Given n >= 0, return 1 if its decimal digits are a palindrome else 0.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "121 ", "expected_halt": "1"},
+          {"input_prefix": "123 ", "expected_halt": "0"},
+          {"input_prefix": "7 ", "expected_halt": "1"},
+          {"input_prefix": "1221 ", "expected_halt": "1"},
+          {"input_prefix": "10 ", "expected_halt": "0"},
+          {"input_prefix": "0 ", "expected_halt": "1"}
+        ]
+      },
+      "python": {
+        "signature": "solve(n)",
+        "vectors": [
+          {"args": [121], "expected": 1},
+          {"args": [123], "expected": 0},
+          {"args": [7], "expected": 1},
+          {"args": [1221], "expected": 1},
+          {"args": [10], "expected": 0},
+          {"args": [0], "expected": 1}
+        ]
+      }
+    },
+    {
+      "id": "contains",
+      "arm_common_desc": "Return 1 if value x is in list xs else 0. Input: list xs as a quotation (lower), then x (top).",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "[1 2 3] 2 ", "expected_halt": "1"},
+          {"input_prefix": "[1 2 3] 5 ", "expected_halt": "0"},
+          {"input_prefix": "[] 5 ", "expected_halt": "0"},
+          {"input_prefix": "[7] 7 ", "expected_halt": "1"},
+          {"input_prefix": "[4 4 4] 4 ", "expected_halt": "1"}
+        ]
+      },
+      "python": {
+        "signature": "solve(xs, x)",
+        "vectors": [
+          {"args": [[1, 2, 3], 2], "expected": 1},
+          {"args": [[1, 2, 3], 5], "expected": 0},
+          {"args": [[], 5], "expected": 0},
+          {"args": [[7], 7], "expected": 1},
+          {"args": [[4, 4, 4], 4], "expected": 1}
+        ]
+      }
+    },
+    {
+      "id": "climbing_stairs",
+      "arm_common_desc": "Number of ways to climb n stairs taking 1 or 2 at a time (Fibonacci-like: 0->1, 1->1).",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "0 ", "expected_halt": "1"},
+          {"input_prefix": "1 ", "expected_halt": "1"},
+          {"input_prefix": "2 ", "expected_halt": "2"},
+          {"input_prefix": "3 ", "expected_halt": "3"},
+          {"input_prefix": "4 ", "expected_halt": "5"},
+          {"input_prefix": "5 ", "expected_halt": "8"}
+        ]
+      },
+      "python": {
+        "signature": "solve(n)",
+        "vectors": [
+          {"args": [0], "expected": 1},
+          {"args": [1], "expected": 1},
+          {"args": [2], "expected": 2},
+          {"args": [3], "expected": 3},
+          {"args": [4], "expected": 5},
+          {"args": [5], "expected": 8}
+        ]
+      }
+    }
+  ]
+}
