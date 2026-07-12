@@ -11,6 +11,7 @@
 //! (Windows path fallback: C:\Users\markm\verus\verus.exe mtl_core.rs)
 
 use vstd::prelude::*;
+use vstd::arithmetic::div_mod::{rust_div, rust_rem, lemma_fundamental_div_mod};
 
 verus! {
 
@@ -753,13 +754,16 @@ pub proof fn lemma_view_stack_index(s: Seq<Value>, i: int)
         view_stack(s)[i] == view_value(s[i]),
     decreases s.len(),
 {
+    let head = seq![view_value(s[0])];
+    let t = s.subrange(1, s.len() as int);
+    assert(view_stack(s) == head + view_stack(t));  // unfold (fuel)
     if i == 0 {
-        assert(view_stack(s)[0] == view_value(s[0]));
+        assert((head + view_stack(t))[0] == head[0]);
     } else {
-        let t = s.subrange(1, s.len() as int);
+        lemma_view_stack_len(t);
         assert(t[i - 1] == s[i]);
         // (seq![vv] + view_stack(t))[i] == view_stack(t)[i-1] for i >= 1.
-        assert(view_stack(s)[i] == view_stack(t)[i - 1]);
+        assert((head + view_stack(t))[i] == view_stack(t)[i - 1]);
         lemma_view_stack_index(t, i - 1);
     }
 }
@@ -776,13 +780,20 @@ pub proof fn lemma_view_stack_prefix(s: Seq<Value>, k: int)
         assert(s.subrange(0, 0) =~= Seq::<Value>::empty());
         assert(view_stack(s).subrange(0, 0) =~= Seq::<SpecValue>::empty());
     } else {
+        let head = seq![view_value(s[0])];
         let t = s.subrange(1, s.len() as int);
-        assert(s.subrange(0, k)[0] == s[0]);
-        assert(s.subrange(0, k).subrange(1, k) =~= t.subrange(0, k - 1));
+        let p = s.subrange(0, k);
+        assert(p[0] == s[0]);
+        assert(p.subrange(1, k) =~= t.subrange(0, k - 1));
+        assert(view_stack(p) == head + view_stack(p.subrange(1, k)));  // unfold p
         lemma_view_stack_prefix(t, k - 1);
-        // (seq![vv] + view_stack(t)).subrange(0,k) == seq![vv] + view_stack(t).subrange(0,k-1).
-        // TODO(verify): may need assert_seqs_equal! on the concat/subrange identity.
-        assert(view_stack(s.subrange(0, k)) =~= view_stack(s).subrange(0, k));
+        lemma_view_stack_len(t);
+        assert(view_stack(s) == head + view_stack(t));  // unfold s
+        // pure Seq identity: (head + X).subrange(0,k) == head + X.subrange(0,k-1)
+        vstd::assert_seqs_equal!(
+            (head + view_stack(t)).subrange(0, k)
+                == head + view_stack(t).subrange(0, k - 1));
+        assert(view_stack(p) =~= view_stack(s).subrange(0, k));
     }
 }
 
@@ -793,9 +804,13 @@ pub proof fn lemma_view_stack_push(s: Seq<Value>, v: Value)
     decreases s.len(),
 {
     if s.len() == 0 {
-        assert(s.push(v) =~= seq![v]);
+        let sv = s.push(v);
+        assert(sv =~= seq![v]);
+        assert(sv.subrange(1, sv.len() as int) =~= Seq::<Value>::empty());
+        assert(view_stack(sv) == seq![view_value(sv[0])]
+            + view_stack(sv.subrange(1, sv.len() as int)));  // unfold
         assert(view_stack(s) =~= Seq::<SpecValue>::empty());
-        assert(view_stack(s.push(v)) =~= view_stack(s).push(view_value(v)));
+        assert(view_stack(sv) =~= view_stack(s).push(view_value(v)));
     } else {
         let t = s.subrange(1, s.len() as int);
         let sv = s.push(v);
@@ -1204,7 +1219,7 @@ pub fn exec_arith(vm: &mut Vm, p: SpecPrim, n: usize) -> (r: StepResult)
     ensures ({
         let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
         match spec_step_prim(view_stack(old(vm).stack@), p, rest) {
-            SpecStep::Next(s2) => r is Next && vm.deep_view() == s2,
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
         }
@@ -1237,30 +1252,157 @@ pub fn exec_arith(vm: &mut Vm, p: SpecPrim, n: usize) -> (r: StepResult)
     };
     match res {
         Some(v) => {
-            proof {
-                // TODO(verify): checked-op bridge — Some(v) established here means
-                // in_i64(a int OP b int) and v as int == a int OP b int for the OP
-                // selected by `p`. Verus models i64::checked_{add,sub,mul}; the arm
-                // context fixes OP so spec_arith's closure reduces to the same OP.
-            }
             vm.cont.remove(0);
             vm.stack.pop();
             vm.stack.pop();
             vm.stack.push(Value::Int(v));
             proof {
+                // operand views are Int(a int), Int(b int).
+                assert(view_stack(s0)[n - 2] == SpecValue::Int(a as int));
+                assert(view_stack(s0)[n - 1] == SpecValue::Int(b as int));
+                // checked-op bridge: Some(v) with the p-selected op means
+                // v as int == (a int OP b int) and that value is in_i64.
+                assert(match p {
+                    SpecPrim::Add => v as int == a as int + b as int,
+                    SpecPrim::Sub => v as int == a as int - b as int,
+                    _ => v as int == a as int * b as int,
+                });
+                assert(in_i64(v as int));
+                // continuation + stack fields.
                 assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= s0.subrange(0, n - 2).push(Value::Int(v)));
                 lemma_view_stack_pop2_push(s0, Value::Int(v));
-                // TODO(verify): close vm.deep_view() == s2 (Next arm of spec_arith).
+                assert(view_stack(vm.stack@)
+                    == view_stack(s0).subrange(0, n - 2).push(SpecValue::Int(v as int)));
             }
             StepResult::Next
         }
         None => {
             proof {
-                // TODO(verify): None <=> !in_i64(a int OP b int); spec_arith then
-                // takes the Overflow arm, matching this fault.
+                assert(view_stack(s0)[n - 2] == SpecValue::Int(a as int));
+                assert(view_stack(s0)[n - 1] == SpecValue::Int(b as int));
+                // None with the p-selected op means the true int result is out of
+                // i64 range, so spec_arith takes the Overflow arm (non-vacuous).
+                assert(match p {
+                    SpecPrim::Add => !in_i64(a as int + b as int),
+                    SpecPrim::Sub => !in_i64(a as int - b as int),
+                    _ => !in_i64(a as int * b as int),
+                });
             }
             StepResult::Fault(Error::Overflow)
         }
+    }
+}
+
+// Uniqueness of truncating division: any (q, r) with q*b + r == a, |r| < |b|,
+// and r zero-or-same-sign-as-a is THE truncating quotient/remainder. Lets us
+// identify two independently-derived truncating decompositions of the same a.
+proof fn lemma_trunc_unique(a: int, b: int, q1: int, r1: int, q2: int, r2: int)
+    requires
+        b != 0,
+        q1 * b + r1 == a,
+        q2 * b + r2 == a,
+        abs_int(r1) < abs_int(b),
+        abs_int(r2) < abs_int(b),
+        r1 == 0 || (r1 > 0) == (a > 0),
+        r2 == 0 || (r2 > 0) == (a > 0),
+    ensures
+        q1 == q2,
+        r1 == r2,
+{
+    let bb = abs_int(b);
+    assert(bb > 0);
+    assert(-bb < r1 < bb);
+    assert(-bb < r2 < bb);
+    // r1 and r2 lie on the same side of 0 (both share a's sign or are 0),
+    // so their difference stays strictly within (-|b|, |b|). Linear.
+    assert(-bb < r2 - r1 < bb);
+    assert((q1 - q2) * b == r2 - r1) by (nonlinear_arith)
+        requires q1 * b + r1 == a, q2 * b + r2 == a;
+    // |(q1-q2)*b| < |b| with b != 0 forces q1 == q2, hence r1 == r2.
+    assert(q1 == q2) by (nonlinear_arith)
+        requires
+            (q1 - q2) * b == r2 - r1,
+            -bb < r2 - r1 < bb,
+            bb > 0,
+            b == bb || b == -bb;
+}
+
+// Value bridge: MTL's truncating trunc_div/trunc_mod coincide with vstd's
+// rust_div/rust_rem (the model of Rust's `/`/`%` that checked_div/checked_rem
+// return). Verus int `/`,`%` are Euclidean (SMT `div`/`mod`, remainder in
+// [0,|b|)); rust_div/rust_rem wrap them into truncating form. We prove equality
+// by showing rust_div/rust_rem form a valid truncating decomposition of `a`,
+// then invoking uniqueness against trunc_divmod_correct.
+proof fn lemma_trunc_is_rust(a: int, b: int)
+    requires
+        b != 0,
+    ensures
+        trunc_div(a, b) == rust_div(a, b),
+        trunc_mod(a, b) == rust_rem(a, b),
+{
+    trunc_divmod_correct(a, b);
+    lemma_fundamental_div_mod(a, b);        // a == b*(a/b) + a%b
+    lemma_fundamental_div_mod(-a, b);       // -a == b*((-a)/b) + (-a)%b
+    // Euclidean remainder range (SMT `mod`): 0 <= x%b < |b|.
+    assert(0 <= a % b < abs_int(b));
+    assert(0 <= (-a) % b < abs_int(b));
+    let rd = rust_div(a, b);
+    let rr = rust_rem(a, b);
+    // rust decomposition: rd*b + rr == a (cases on sign of a, via fundamental).
+    assert(rd * b + rr == a) by (nonlinear_arith)
+        requires
+            a == b * (a / b) + (a % b),
+            (-a) == b * ((-a) / b) + ((-a) % b),
+            rd == rust_div(a, b),
+            rr == rust_rem(a, b);
+    // rust remainder is bounded and zero-or-same-sign-as-a.
+    assert(abs_int(rr) < abs_int(b));
+    assert(rr == 0 || (rr > 0) == (a > 0));
+    lemma_trunc_unique(a, b, trunc_div(a, b), trunc_mod(a, b), rd, rr);
+}
+
+// trunc_div stays in i64 EXCEPT at the single MIN/-1 point (|trunc_div| <= |a|,
+// and the only way |a|/|b| reaches 2^63 with a positive sign is a==MIN, b==-1).
+// This is exactly the boundary checked_div/checked_rem report as overflow.
+proof fn lemma_trunc_div_in_range(a: int, b: int)
+    requires
+        in_i64(a),
+        in_i64(b),
+        b != 0,
+        !(a == -0x8000_0000_0000_0000 && b == -1),
+    ensures
+        in_i64(trunc_div(a, b)),
+{
+    let aa = abs_int(a);
+    let ab = abs_int(b);
+    let q = aa / ab;
+    let r = aa % ab;
+    assert(aa == ab * q + r && 0 <= r < ab) by (nonlinear_arith)
+        requires aa >= 0, ab > 0, q == aa / ab, r == aa % ab;
+    assert(ab >= 1);
+    assert(0 <= q) by (nonlinear_arith)
+        requires aa == ab * q + r, 0 <= r < ab, ab >= 1, aa >= 0;
+    assert(q <= aa) by (nonlinear_arith)
+        requires aa == ab * q + r, 0 <= r, ab >= 1, q >= 0;
+    assert(aa <= 0x8000_0000_0000_0000);
+    if (a >= 0) == (b >= 0) {
+        assert(trunc_div(a, b) == q);  // same sign -> +q
+        if a == -0x8000_0000_0000_0000 {
+            // same sign & a<0 => b<0; b != -1 => b <= -2 => |b| >= 2 => q <= |a|/2.
+            assert(b <= -2);
+            assert(ab >= 2);
+            assert(2 * q <= aa) by (nonlinear_arith)
+                requires aa == ab * q + r, 0 <= r, ab >= 2, q >= 0;
+            assert(q <= 0x7FFF_FFFF_FFFF_FFFF);
+        } else {
+            // a != MIN and in_i64(a) => |a| <= MAX, and q <= |a|.
+            assert(aa <= 0x7FFF_FFFF_FFFF_FFFF);
+            assert(q <= 0x7FFF_FFFF_FFFF_FFFF);
+        }
+    } else {
+        assert(trunc_div(a, b) == -q);  // opposite sign -> -q, in [MIN, 0].
+        assert(-q >= -0x8000_0000_0000_0000);
     }
 }
 
@@ -1279,7 +1421,7 @@ pub fn exec_divmod(vm: &mut Vm, is_div: bool, n: usize) -> (r: StepResult)
         let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
         let p = if is_div { SpecPrim::Div } else { SpecPrim::Mod };
         match spec_step_prim(view_stack(old(vm).stack@), p, rest) {
-            SpecStep::Next(s2) => r is Next && vm.deep_view() == s2,
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
         }
@@ -1312,30 +1454,47 @@ pub fn exec_divmod(vm: &mut Vm, is_div: bool, n: usize) -> (r: StepResult)
     let res = if is_div { a.checked_div(b) } else { a.checked_rem(b) };
     match res {
         Some(v) => {
-            proof {
-                // TODO(verify): value bridge — Some(v) here (b != 0, not MIN/-1) means
-                // v as int == trunc_div(a int, b int) (is_div) / trunc_mod(a int, b int).
-                // Rust i64 `/` and `%` truncate toward zero, matching trunc_div/trunc_mod;
-                // trunc_divmod_correct pins the a == q*b + r identity if needed.
-            }
             vm.cont.remove(0);
             vm.stack.pop();
             vm.stack.pop();
             vm.stack.push(Value::Int(v));
             proof {
+                // Some(v) with b != 0 rules out the MIN/-1 overflow point.
+                assert(!(a as int == -0x8000_0000_0000_0000 && b as int == -1));
+                lemma_trunc_is_rust(a as int, b as int);
+                lemma_trunc_div_in_range(a as int, b as int);
+                // v is the truncating quotient/remainder = trunc_div/trunc_mod.
+                assert(v as int == if is_div {
+                    trunc_div(a as int, b as int)
+                } else {
+                    trunc_mod(a as int, b as int)
+                });
+                assert(in_i64(trunc_div(a as int, b as int)));
+                // operands + fields.
+                assert(view_stack(s0)[n - 2] == SpecValue::Int(a as int));
+                assert(view_stack(s0)[n - 1] == SpecValue::Int(b as int));
                 assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= s0.subrange(0, n - 2).push(Value::Int(v)));
                 lemma_view_stack_pop2_push(s0, Value::Int(v));
-                // TODO(verify): close vm.deep_view() == s2 (Next arm of spec_divmod).
+                assert(view_stack(vm.stack@)
+                    == view_stack(s0).subrange(0, n - 2).push(SpecValue::Int(v as int)));
             }
             StepResult::Next
         }
         None => {
             proof {
-                // TODO(verify): with b != 0, checked_div/checked_rem == None <=> a==MIN && b==-1
-                // <=> !in_i64(trunc_div(a int, b int)) (only the MIN/-1 case escapes i64).
-                // RED-ALERT guard #2: prove this equivalence directly, do NOT let it go
-                // vacuous — checked_rem(MIN,-1)==None for a DIFFERENT reason than the
-                // mathematical remainder (0), but the spec Overflow arm still fires.
+                // With b != 0, checked_div/checked_rem == None <=> a == MIN && b == -1.
+                assert(a as int == -0x8000_0000_0000_0000 && b as int == -1);
+                // trunc_div(MIN, -1) == 2^63, which is NOT in_i64 (non-vacuous: the
+                // spec Overflow arm fires for the SAME MIN/-1 input, for both div and
+                // mod, exactly as checked_rem(MIN,-1) is also None).
+                assert(abs_int(a as int) == 0x8000_0000_0000_0000);
+                assert(abs_int(b as int) == 1);
+                assert((0x8000_0000_0000_0000int) / (1int) == 0x8000_0000_0000_0000) by (nonlinear_arith);
+                assert(trunc_div(a as int, b as int) == 0x8000_0000_0000_0000);
+                assert(!in_i64(trunc_div(a as int, b as int)));
+                assert(view_stack(s0)[n - 2] == SpecValue::Int(a as int));
+                assert(view_stack(s0)[n - 1] == SpecValue::Int(b as int));
             }
             StepResult::Fault(Error::Overflow)
         }
@@ -1358,7 +1517,7 @@ pub fn exec_cmp(vm: &mut Vm, is_eq: bool, n: usize) -> (r: StepResult)
         let p = if is_eq { SpecPrim::Eq } else { SpecPrim::Lt };
         let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
         match spec_step_prim(view_stack(old(vm).stack@), p, rest) {
-            SpecStep::Next(s2) => r is Next && vm.deep_view() == s2,
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
         }
@@ -1395,14 +1554,22 @@ pub fn exec_cmp(vm: &mut Vm, is_eq: bool, n: usize) -> (r: StepResult)
     vm.stack.pop();
     vm.stack.push(Value::Int(v));
     proof {
-        // final cont@ == c0.subrange(1, len) so view_words(final cont) == rest.
+        // continuation field: remove(0) == subrange(1, len); view_words is a fn.
         assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
-        // final stack@ == s0.subrange(0, n-2).push(Int v); push it through view_stack.
+        // stack field: two pops then push == the pop2_push shape on s0.
+        assert(vm.stack@ =~= s0.subrange(0, n - 2).push(Value::Int(v)));
         lemma_view_stack_pop2_push(s0, Value::Int(v));
-        // view_value(Int v) == Int(v as int) == Int(if a==b {1} else {0}) matches
-        // the spec Eq/Lt arm's pushed value.
-        // TODO(verify): may need to assert deep_view fields with =~= to close
-        // the struct equality vm.deep_view() == s2.
+        assert(view_stack(vm.stack@)
+            == view_stack(s0).subrange(0, n - 2).push(SpecValue::Int(v as int)));
+        // operand views are Int(a as int), Int(b as int).
+        assert(view_stack(s0)[n - 2] == SpecValue::Int(a as int));
+        assert(view_stack(s0)[n - 1] == SpecValue::Int(b as int));
+        // v as int matches the spec Eq/Lt comparator on the int operands.
+        assert(v as int == if is_eq {
+            if (a as int) == (b as int) { 1int } else { 0int }
+        } else {
+            if (a as int) < (b as int) { 1int } else { 0int }
+        });
     }
     StepResult::Next
 }
