@@ -30,6 +30,11 @@ pub enum SpecPrim {
     // linrec: partial, DESUGARS into If (inherits verified branch semantics).
     // uncons: structural quotation deconstructor (the TC-proof enabler, §6.2).
     PrimRec, Times, LinRec, Uncons,
+    // v0.3 sequence primitives (design: docs/design/v0.3-sequences.md §3).
+    // fold: native LEFT fold over a cons-list; terminating (the spine strictly
+    //   shrinks, exactly like primrec's count) and total on a finite seq.
+    // xor: total i64 two's-complement bitwise XOR (arity->type only, no Overflow).
+    Fold, Xor,
 }
 
 pub enum SpecWord {
@@ -68,6 +73,19 @@ pub enum SpecStep {
 // ------------------------------------------------------------
 pub open spec fn in_i64(n: int) -> bool {
     -0x8000_0000_0000_0000 <= n <= 0x7FFF_FFFF_FFFF_FFFF
+}
+
+// ------------------------------------------------------------
+// Bitwise XOR on the i64 two's-complement representation (v0.3 `xor`).
+//
+// MTL ints are i64 (spec §3), so `xor` is defined on the 64-bit two's-complement
+// bit pattern — exactly Rust's `i64 ^ i64`. The stack invariant keeps operands
+// in_i64, so the `as i64` casts are lossless and the result is ALWAYS in i64
+// range: there is NO Overflow arm (contrast spec_arith, which checks in_i64).
+// This is the spec twin of the exec `a ^ b` in `crate::interp` / `exec_prim`.
+// ------------------------------------------------------------
+pub open spec fn i64_bitxor(a: int, b: int) -> int {
+    ((a as i64) ^ (b as i64)) as int
 }
 
 // ------------------------------------------------------------
@@ -424,6 +442,77 @@ pub open spec fn spec_step_prim(
                         }
                     }
                     _ => SpecStep::Fault(Error::TypeMismatch),
+                }
+            }
+        }
+        // ---------------- v0.3 sequence primitives (design §3) ----------------
+        // fold ( [w0 w1 ...] init [C] -- r ): LEFT fold. init seeds the accumulator;
+        // C ( acc w -- acc' ) is applied once per element, left to right. The
+        // sequence is deconstructed head-first -- affine, like uncons (consumed
+        // once, never duplicated); C is replicated along the spine -- multiplicative,
+        // like C in primrec. Native recursion via re-emitting Fold (does NOT desugar
+        // into linrec). Reuses the existing value_to_word helper to re-push `init`.
+        //
+        // TERMINATION (like primrec/times, NOT linrec): fold's own recursion is
+        // well-founded on the spine length `qs.len()` -- each step recurses on
+        // `tail` with `tail.len() == qs.len() - 1`, strictly decreasing toward the
+        // empty-list base, so on any finite seq fold terminates in `len(seq)`
+        // applications. (A divergent user quote C could still loop inside C, exactly
+        // as a divergent C could inside primrec; that is C's concern, not fold's.)
+        // Fault precedence: arity (Underflow) -> types (TypeMismatch, seq/C not
+        // quotes OR a non-value seq head). No semantic-fault arm: fold performs no
+        // arithmetic, so Overflow/DivByZero can arise only inside C, under C's rules.
+        SpecPrim::Fold => {
+            if n < 3 { SpecStep::Fault(Error::Underflow) }              // (1) arity  -> Underflow
+            else {
+                match (stk[n - 3], stk[n - 2], stk[n - 1]) {
+                    // seq must be a Quote; init is ANY value; combine must be a Quote.
+                    (SpecValue::Quote(qs), init, SpecValue::Quote(qc)) => {
+                        let base = stk.subrange(0, n - 3);
+                        if qs.len() == 0 {
+                            // empty list: the result is the seed accumulator.
+                            SpecStep::Next(SpecState { stack: base.push(init), cont: rest })
+                        } else {
+                            let tail = qs.subrange(1, qs.len() as int);    // head-first (uncons reading)
+                            match qs[0] {
+                                // Continuation, run on `base`:
+                                //   [tail]  init  <push head>   C   [C] fold
+                                SpecWord::PushInt(_) | SpecWord::PushQuote(_) => {
+                                    let recur = seq![
+                                        SpecWord::PushQuote(tail),
+                                        value_to_word(init),
+                                        qs[0]
+                                    ] + qc + seq![
+                                        SpecWord::PushQuote(qc),
+                                        SpecWord::Prim(SpecPrim::Fold)
+                                    ];
+                                    SpecStep::Next(SpecState { stack: base, cont: recur + rest })
+                                }
+                                _ => SpecStep::Fault(Error::TypeMismatch),  // (2b) non-value head
+                            }
+                        }
+                    }
+                    _ => SpecStep::Fault(Error::TypeMismatch),              // (2a) seq/C not quotes
+                }
+            }
+        }
+        // xor ( a b -- a^b ): pop two Ints, push their i64 two's-complement XOR.
+        // Structurally identical to Eq/Lt: TOTAL, arity -> type ordering only.
+        // Unlike Add/Sub/Mul, (a ^ b) of two in-range i64 values is ALWAYS in
+        // i64 range, so there is NO Overflow arm and NO DivByZero arm.
+        SpecPrim::Xor => {
+            if n < 2 { SpecStep::Fault(Error::Underflow) }        // (1) arity -> Underflow
+            else {
+                match (stk[n - 2], stk[n - 1]) {
+                    (SpecValue::Int(a), SpecValue::Int(b)) =>
+                        // (3) semantic: total. Bitwise XOR on the i64 two's-complement
+                        // representation; no Overflow arm (cf. Eq/Lt).
+                        SpecStep::Next(SpecState {
+                            stack: stk.subrange(0, n - 2).push(
+                                SpecValue::Int(i64_bitxor(a, b))),
+                            cont: rest,
+                        }),
+                    _ => SpecStep::Fault(Error::TypeMismatch),        // (2) type -> TypeMismatch
                 }
             }
         }
@@ -858,6 +947,60 @@ pub fn exec_prim(vm: &mut Vm, p: SpecPrim, n: usize) -> StepResult {
             }
             StepResult::Next
         }
+        // ---------------- v0.3 sequence primitives (mirror of spec_step_prim) ----------------
+        SpecPrim::Fold => {
+            if n < 3 { return StepResult::Fault(Error::Underflow); }
+            // seq (n-3) and combine (n-1) must be quotes; init (n-2) is any value.
+            // A non-value seq head faults TypeMismatch (mirrors Uncons). Inspect
+            // without consuming so a fault leaves the machine state untouched.
+            let ok = matches!(vm.stack[n - 3], Value::Quote(_))
+                && matches!(vm.stack[n - 1], Value::Quote(_));
+            if !ok { return StepResult::Fault(Error::TypeMismatch); }
+            if let Value::Quote(qs) = &vm.stack[n - 3] {
+                if let Some(head) = qs.first() {
+                    match head {
+                        Word::PushInt(_) | Word::PushQuote(_) => {}
+                        _ => return StepResult::Fault(Error::TypeMismatch),
+                    }
+                }
+            }
+            vm.cont.remove(0);
+            let qc = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+            let init = match vm.stack.pop() { Some(v) => v, _ => Value::Int(0) };
+            let qs = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+            if qs.is_empty() {
+                vm.stack.push(init);
+            } else {
+                let mut it = qs.into_iter();
+                let head = it.next().unwrap();
+                let tail: Vec<Word> = it.collect();
+                // cont := [PushQuote(tail), value_to_word(init), head] ++ qc
+                //         ++ [PushQuote(qc), Prim(Fold)] ++ rest
+                let mut recur = vec![
+                    Word::PushQuote(tail),
+                    value_to_exec_word(init),
+                    head,
+                ];
+                recur.extend(qc.clone());
+                recur.push(Word::PushQuote(qc));
+                recur.push(Word::Prim(SpecPrim::Fold));
+                recur.append(&mut vm.cont);
+                vm.cont = recur;
+            }
+            StepResult::Next
+        }
+        SpecPrim::Xor => {
+            if n < 2 { return StepResult::Fault(Error::Underflow); }
+            let (a, b) = match (&vm.stack[n - 2], &vm.stack[n - 1]) {
+                (Value::Int(a), Value::Int(b)) => (*a, *b),
+                _ => return StepResult::Fault(Error::TypeMismatch),
+            };
+            vm.cont.remove(0);
+            vm.stack.pop();
+            vm.stack.pop();
+            vm.stack.push(Value::Int(a ^ b));
+            StepResult::Next
+        }
     }
 }
 
@@ -1151,6 +1294,75 @@ pub proof fn smoke_uncons_head_int(i: int, t: Seq<SpecWord>)
 {
     assert((seq![SpecWord::PushInt(i)] + t)[0] == SpecWord::PushInt(i));
     assert((seq![SpecWord::PushInt(i)] + t).subrange(1, (seq![SpecWord::PushInt(i)] + t).len() as int) =~= t);
+}
+
+// --- Smoke theorems for the v0.3 sequence primitives (design §3, §10.2). ---
+// Same style as the v0.2 recursion primitives: a single symbolic spec step from
+// a constructed state, asserting the exact successor. `fold` gets both the base
+// (empty list) and step (non-empty re-emission) cases — the spine strictly
+// shrinks (tail is one shorter than qs), which is the SAME well-founded measure
+// primrec/times rely on (count -> 0), a STRONGER guarantee than linrec's (which
+// gets no termination claim). `xor` gets the one-step total re-write, the trivial
+// P2 lock-step pair (spec `i64_bitxor` vs exec `a ^ b`, agree definitionally).
+
+// fold base: an empty sequence steps to `push init` (the seed accumulator).
+pub proof fn smoke_fold_base(init: SpecValue, qc: Seq<SpecWord>)
+    ensures ({
+        let s0 = SpecState {
+            stack: seq![
+                SpecValue::Quote(Seq::<SpecWord>::empty()), init, SpecValue::Quote(qc)
+            ],
+            cont: seq![SpecWord::Prim(SpecPrim::Fold)],
+        };
+        &&& spec_step(s0) is Next
+        &&& spec_step(s0)->Next_0.stack =~= seq![init]
+        &&& spec_step(s0)->Next_0.cont =~= Seq::<SpecWord>::empty()
+    }),
+{
+}
+
+// fold step: a non-empty sequence [h | tail] steps to the native re-emission
+//   [tail] init <push h> C [C] Fold  — the §3.1 desugar. The spine shrinks
+// (tail.len() == qs.len()-1), the termination measure that makes fold total on
+// a finite list, exactly like primrec's count strictly decreasing.
+pub proof fn smoke_fold_step(h: int, tail: Seq<SpecWord>, init: SpecValue, qc: Seq<SpecWord>)
+    ensures ({
+        let qs = seq![SpecWord::PushInt(h)] + tail;
+        let s0 = SpecState {
+            stack: seq![SpecValue::Quote(qs), init, SpecValue::Quote(qc)],
+            cont: seq![SpecWord::Prim(SpecPrim::Fold)],
+        };
+        let recur = seq![
+            SpecWord::PushQuote(tail),
+            value_to_word(init),
+            SpecWord::PushInt(h)
+        ] + qc + seq![
+            SpecWord::PushQuote(qc),
+            SpecWord::Prim(SpecPrim::Fold)
+        ];
+        &&& spec_step(s0) is Next
+        &&& spec_step(s0)->Next_0.stack =~= Seq::<SpecValue>::empty()
+        &&& spec_step(s0)->Next_0.cont =~= recur
+    }),
+{
+    let qs = seq![SpecWord::PushInt(h)] + tail;
+    assert(qs[0] == SpecWord::PushInt(h));
+    assert(qs.subrange(1, qs.len() as int) =~= tail);
+}
+
+// xor: two Ints step to their i64 two's-complement XOR. Total (no Overflow arm),
+// definitional lock-step of spec `i64_bitxor` against exec `a ^ b`.
+pub proof fn smoke_xor(a: int, b: int)
+    ensures ({
+        let s0 = SpecState {
+            stack: seq![SpecValue::Int(a), SpecValue::Int(b)],
+            cont: seq![SpecWord::Prim(SpecPrim::Xor)],
+        };
+        &&& spec_step(s0) is Next
+        &&& spec_step(s0)->Next_0.stack =~= seq![SpecValue::Int(i64_bitxor(a, b))]
+        &&& spec_step(s0)->Next_0.cont =~= Seq::<SpecWord>::empty()
+    }),
+{
 }
 
 // --- General div/mod correctness: the spine lemma P2's arithmetic

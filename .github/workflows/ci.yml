@@ -20,11 +20,13 @@ jobs:
   verus:
     name: verus verify (0.2026.07.05.49b8806)
     runs-on: ubuntu-latest
-    # Non-blocking: fetching a ~31 MB Verus release asset in CI is network-flaky,
-    # so we never gate merges on this job. The in-job "core P1/P3" step below still
-    # surfaces a real proof regression clearly (red step + job step-summary)
-    # without blocking the merge queue.
-    continue-on-error: true
+    # Toolchain health is a HARD gate. Install + a `verus --version` smoke check run
+    # fail-fast (NO continue-on-error): if Verus cannot even be invoked, this job
+    # goes RED. It must never again read as "skipped, job green" — which is exactly
+    # what happened when `verus --version` died on a missing Rust toolchain while the
+    # verify step got SKIPPED under a job-level continue-on-error. Only the actual
+    # proof *verification outcome* stays advisory (continue-on-error on that step):
+    # proofs are visible-but-non-blocking per the #5 design; toolchain breakage is not.
     env:
       # DEVIATION FROM SPEC (spec pins bare "0.2026.07.05"):
       # verus-lang publishes every release tag WITH a trailing build/commit hash.
@@ -37,22 +39,51 @@ jobs:
       # SESSION: update the spec pin to include the .49b8806 suffix (or record the
       # commit hash alongside the version).
       VERUS_VERSION: "0.2026.07.05.49b8806"
+      # ROOT CAUSE of the historical silent failure (run 29171900326 @ d92a463):
+      # the Verus binary release is a thin wrapper that shells out — via rustup — to
+      # a PINNED Rust toolchain, and `verus --version` itself fails if that toolchain
+      # is absent. The install step succeeded (binary found at verus-x86-linux/verus,
+      # PATH exported fine), but `verus --version` then died with:
+      #   "verus: required rust toolchain 1.96.0-x86_64-unknown-linux-gnu not found".
+      # GitHub's ubuntu-24.04 image ships rustup but NOT this toolchain, so we install
+      # exactly it before invoking verus.
+      VERUS_RUST_TOOLCHAIN: "1.96.0"
     steps:
       - uses: actions/checkout@v4
-      - name: Install Verus ${{ env.VERUS_VERSION }}
+
+      - name: Install Verus ${{ env.VERUS_VERSION }} (+ pinned Rust toolchain) — fail-fast
         run: |
           set -euxo pipefail
+          # 1) Fetch + unpack the pinned Verus release.
           # Tag is `release/<VERUS_VERSION>`; the '/' is URL-encoded as %2F.
           url="https://github.com/verus-lang/verus/releases/download/release%2F${VERUS_VERSION}/verus-${VERUS_VERSION}-x86-linux.zip"
           echo "Fetching $url"
           curl -fL "$url" -o verus.zip
           unzip -q verus.zip -d verus-dist
-          echo "$PWD/$(dirname "$(find verus-dist -name verus -type f | head -1)")" >> "$GITHUB_PATH"
-      - name: verus version
-        run: verus --version
+          # Resolve the dir holding the `verus` binary; make it (+ its driver) invocable.
+          verus_dir="$(dirname "$(find verus-dist -name verus -type f | head -1)")"
+          test -n "$verus_dir"
+          chmod +x "$verus_dir/verus" "$verus_dir/verus-driver" 2>/dev/null || true
+          echo "$PWD/$verus_dir" >> "$GITHUB_PATH"
+          # 2) Install the Rust toolchain Verus wraps — `verus --version` needs it.
+          rustup toolchain install "${VERUS_RUST_TOOLCHAIN}-x86_64-unknown-linux-gnu" --profile minimal
+
+      - name: verus --version (toolchain smoke check) — fail-fast
+        run: |
+          set -euxo pipefail
+          # Proves the binary AND its pinned toolchain are actually invocable. NO
+          # continue-on-error: a broken/uninvocable toolchain turns the job RED here,
+          # so it can never again masquerade as "skipped, job green".
+          verus --version | tee /tmp/verus-version.txt
+          grep -Eq '[0-9]+\.[0-9]+' /tmp/verus-version.txt
 
       - name: verus verify — core P1/P3 proofs (machine-checked; regression signal)
         id: core
+        # Advisory-but-visible (per #5): the proof VERIFICATION OUTCOME does not gate
+        # the merge queue, but a regression is clearly surfaced (red step + job
+        # step-summary). This is the ONLY continue-on-error step — toolchain health
+        # above is a hard gate.
+        continue-on-error: true
         # Full verification of the Verus artifact `mtl_core.rs`. The stubbed P2
         # refinement is a *trusted* boundary (#[verifier::external_body] bodies +
         # p2_refinement's admit()), so this run PASSES on the real, machine-checked

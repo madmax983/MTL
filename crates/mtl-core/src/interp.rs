@@ -21,8 +21,9 @@
 //! toward zero (Rust semantics); every fault is a value. `run` is fuel-bounded and
 //! does not assume termination (MTL is Turing complete).
 
-/// The primitives of MTL: the 17 v0.1 primitives plus the 4 v0.2 recursion
-/// primitives. Mirrors `SpecPrim` in `mtl_core.rs`.
+/// The primitives of MTL: the 17 v0.1 primitives, the 4 v0.2 recursion
+/// primitives, and the 2 v0.3 sequence primitives (`fold`, `xor`). Mirrors
+/// `SpecPrim` in `mtl_core.rs`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Prim {
     Dup,
@@ -51,6 +52,12 @@ pub enum Prim {
     LinRec,
     /// `( [w ...] -- w [...] 1 )` | `( [] -- 0 )` quotation deconstructor. Affine.
     Uncons,
+    // v0.3 sequence primitives (design: docs/design/v0.3-sequences.md).
+    /// `( [seq] init [C] -- r )` native LEFT fold. Total & terminating (the
+    /// sequence spine strictly shrinks each step, like `primrec`'s count).
+    Fold,
+    /// `( a b -- a^b )` total i64 two's-complement bitwise XOR. No overflow.
+    Xor,
 }
 
 /// A program word. Mirrors exec `Word` in `mtl_core.rs`.
@@ -490,6 +497,54 @@ fn exec_prim(vm: &mut Vm, p: Prim) -> Step {
             }
             Step::Next
         }
+        // ---------------- v0.3 sequence primitives ----------------
+        // Byte-for-byte semantic mirror of the ghost `spec_step_prim` arms in
+        // `mtl_core.rs`: same fault precedence, same native re-emission.
+        Prim::Fold => {
+            // ( [seq] init [C] -- r ) LEFT fold. init seeds the accumulator;
+            // C ( acc w -- acc' ) runs once per element, left to right.
+            if n < 3 {
+                return Step::Fault(Fault::Underflow);
+            }
+            // seq (n-3) and combine (n-1) must be quotes; init (n-2) is any value.
+            // Inspect without consuming: a non-Quote seq/combine, or a non-value
+            // seq head (bare Prim/Call), faults, leaving the machine untouched.
+            match (&vm.stack[n - 3], &vm.stack[n - 1]) {
+                (Value::Quote(qs), Value::Quote(_)) => {
+                    if let Some(head) = qs.first() {
+                        match head {
+                            Word::PushInt(_) | Word::PushQuote(_) => {}
+                            _ => return Step::Fault(Fault::TypeMismatch),
+                        }
+                    }
+                }
+                _ => return Step::Fault(Fault::TypeMismatch),
+            }
+            vm.cont.remove(0);
+            let qc = pop_quote(vm);
+            let init = vm.stack.pop().expect("checked len >= 3");
+            let qs = pop_quote(vm);
+            if qs.is_empty() {
+                // empty list: the result is the seed accumulator.
+                vm.stack.push(init);
+            } else {
+                let mut it = qs.into_iter();
+                let head = it.next().expect("non-empty checked above");
+                let tail: Vec<Word> = it.collect();
+                // cont := [PushQuote(tail), value_to_word(init), head] ++ qc
+                //         ++ [PushQuote(qc), Fold] ++ rest
+                let mut recur = Vec::with_capacity(qc.len() + 5);
+                recur.push(Word::PushQuote(tail));
+                recur.push(value_to_word(init));
+                recur.push(head);
+                recur.extend(qc.clone());
+                recur.push(Word::PushQuote(qc));
+                recur.push(Word::Prim(Prim::Fold));
+                prepend(&mut vm.cont, recur);
+            }
+            Step::Next
+        }
+        Prim::Xor => exec_xor(vm),
     }
 }
 
@@ -556,6 +611,26 @@ fn exec_cmp(vm: &mut Vm, op: fn(i64, i64) -> bool) -> Step {
     match (&vm.stack[n - 2], &vm.stack[n - 1]) {
         (Value::Int(a), Value::Int(b)) => {
             let r = if op(*a, *b) { 1 } else { 0 };
+            vm.cont.remove(0);
+            vm.stack.truncate(n - 2);
+            vm.stack.push(Value::Int(r));
+            Step::Next
+        }
+        _ => Step::Fault(Fault::TypeMismatch),
+    }
+}
+
+/// `xor`: arity -> type -> i64 two's-complement bitwise XOR. TOTAL — the XOR of
+/// two in-range i64 values is always in i64 range, so (unlike `add`/`sub`/`mul`)
+/// there is no overflow check: it mirrors `exec_cmp`'s shape, not `exec_arith`'s.
+fn exec_xor(vm: &mut Vm) -> Step {
+    let n = vm.stack.len();
+    if n < 2 {
+        return Step::Fault(Fault::Underflow);
+    }
+    match (&vm.stack[n - 2], &vm.stack[n - 1]) {
+        (Value::Int(a), Value::Int(b)) => {
+            let r = a ^ b;
             vm.cont.remove(0);
             vm.stack.truncate(n - 2);
             vm.stack.push(Value::Int(r));
@@ -701,5 +776,12 @@ pub mod build {
     }
     pub fn uncons() -> Word {
         Word::Prim(Prim::Uncons)
+    }
+    // v0.3 sequence primitives.
+    pub fn fold() -> Word {
+        Word::Prim(Prim::Fold)
+    }
+    pub fn xor() -> Word {
+        Word::Prim(Prim::Xor)
     }
 }

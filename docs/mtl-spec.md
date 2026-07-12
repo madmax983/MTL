@@ -1,6 +1,6 @@
-# MTL: Minimal Token Language — Specification v0.2-draft
+# MTL: Minimal Token Language — Specification v0.3-draft
 
-**Status:** Draft for review — revised in response to the 2026-07-11 adversarial review (`docs/reviews/2026-07-11-adversarial-review.md`); v0.2-draft adds the four recursion primitives (`primrec`, `times`, `linrec`, `uncons`) admitted by `docs/design/v0.2-recursion-primitives.md` (merged PR #8) and implemented in the core (`spec_step_prim` + `crate::interp`).
+**Status:** Draft for review — revised in response to the 2026-07-11 adversarial review (`docs/reviews/2026-07-11-adversarial-review.md`). v0.2-draft added the four recursion primitives (`primrec`, `times`, `linrec`, `uncons`) admitted by `docs/design/v0.2-recursion-primitives.md` (merged PR #8). v0.3-draft adds the two sequence primitives (`fold`, `xor`) admitted by `docs/design/v0.3-sequences.md` (merged PR #13) and implemented in the core (`spec_step_prim` + `crate::interp`).
 **North star:** Turing complete (conjectured — see §6). Minimize expected total LLM inference tokens to a correct solution over a benchmark task distribution.
 **Verification target:** Reference semantics and interpreter verified in Verus (SPEC → PROOF → RED → GREEN → REFACTOR). The normative artifact is `crates/mtl-core/src/mtl_core.rs`: where this prose and `spec_step` disagree, `spec_step` is authoritative and the prose is the defect.
 
@@ -179,6 +179,23 @@ Notation: stack grows rightward; `s · v` is stack `s` with `v` on top. `p` is t
 -- not Push) faults TypeMismatch.
 (s · Quote([]),        Uncons p) → Next(s · Int(0), p)               -- empty
 (s · Quote(Push(v)::t), Uncons p) → Next(s · v · Quote(t) · Int(1), p) -- non-empty
+
+-- Sequence fold (v0.3). Native LEFT fold; recurses by re-emitting Fold (does
+-- NOT desugar into LinRec). Total and terminating on a finite list: the spine
+-- strictly shrinks each step (tail is one shorter than the sequence), the same
+-- well-founded measure primrec/times use — distinct from LinRec, which is
+-- partial. `init` is ANY value; a non-value sequence head (bare Prim/Call, not
+-- Push) faults TypeMismatch, exactly as Uncons. No arithmetic ⇒ no Overflow arm
+-- (Overflow/DivByZero arise only inside C, under C's own rules).
+(s · Quote([]) · init · Quote(c), Fold p)        -- ( [seq] init [C] -- r )
+    → Next(s · init, p)                                          -- empty ⇒ seed
+(s · Quote(Push(h)::t) · init · Quote(c), Fold p)
+    → Next(s, [[t], Push(init), Push(h)] ++ c ++ [[c], Fold] ++ p)  -- run C(init,h), recurse
+
+-- Bitwise XOR (v0.3). Total, arity → type only (like Eq/Lt): the XOR of two
+-- 64-bit two's-complement patterns is always a valid i64, so — unlike Add/Mul —
+-- there is NO Overflow rule and NO DivByZero rule. `a^b` is Rust's `i64 ^ i64`.
+(s · Int(a) · Int(b), Xor p)    → Next(s · Int(a^b), p)
 ```
 
 Any pattern not matched above with the required arity/types faults with `Underflow` or `TypeMismatch` per the precedence in §4.4. **No rule is partial; no rule panics.**
@@ -225,6 +242,11 @@ This ordering is normative because `spec_step` **is** the specification: P2 refi
 | `[Int(3), Int(1)]` | `Times` | `Fault(TypeMismatch)` | arity ok (2); `times` requires `Quote` on top, got `Int` |
 | `[Int(9)]` | `Uncons` | `Fault(TypeMismatch)` | arity ok (1); `uncons` requires `Quote`, got `Int` |
 | `[Quote([Add])]` | `Uncons` | `Fault(TypeMismatch)` | arity ok, is `Quote`; head word `Add` is not a value (`Push…`) |
+| `[Int(1), Int(2)]` | `Fold` | `Fault(Underflow)` | arity: `fold` needs 3, stack has 2 — checked before types |
+| `[Int(9), Int(0), Quote(c)]` | `Fold` | `Fault(TypeMismatch)` | arity ok (3); sequence slot is `Int`, not `Quote` |
+| `[Quote([Add]), Int(0), Quote(c)]` | `Fold` | `Fault(TypeMismatch)` | arity ok, both quotes; sequence head `Add` is not a value (`Push…`) |
+| `[Int(5)]` | `Xor` | `Fault(Underflow)` | arity: `xor` needs 2, stack has 1 — checked before types |
+| `[Quote(q), Int(1)]` | `Xor` | `Fault(TypeMismatch)` | arity ok (2); operand `Quote` is not `Int`. `xor` is total — no semantic-fault case |
 
 The review's illustrative pair maps as: `[Str] Add` → single non-matching operand, arity 2 unsatisfied → `Underflow` (arity checked first); `[Str, Int] Add` → arity satisfied, operand wrong → `TypeMismatch`. In the v0.1 core these are moot because `Str` never reaches the stack.
 
@@ -261,6 +283,15 @@ Glyphs below are **provisional** — final assignment comes from the measurement
 | `>` | uncons | `( [w …] -- w [ … ] 1 )` \| `( [] -- 0 )` | deconstruct a quotation: non-empty → head value, tail quote, flag `1`; empty → flag `0`. Structural and **affine** (consumed once, split). A non-value head (bare `Prim`/`Call`) faults `TypeMismatch`. The direct enabler of the honest TC proof (§6.2) |
 
 `primrec`/`times`/`linrec` are admitted on token grounds (frozen `T_v0` reaches 3.72× with `primrec`+`linrec`); `uncons` is admitted on the TC-proof / list-enablement rationale. Multiplicity (spec §14.4): `primrec`/`times`/`linrec` **replicate** their quote arguments along the recursion spine (like `:!`), while `uncons` is genuinely **affine** — it splits its one quote without duplication.
+
+**v0.3 sequence primitives** (admitted by `docs/design/v0.3-sequences.md`, merged PR #13; implemented in `spec_step_prim` and `crate::interp`). Glyphs are the measured assignment from the design doc (§5 there); the lexer wiring for these glyphs lands with the v0.3 parser.
+
+| Glyph | Name | Stack effect | Notes |
+|---|---|---|---|
+| `(` | fold | `( [seq] init [C] -- r )`, `C:( acc w -- acc' )` | native **LEFT** fold; `init` seeds the accumulator, `C` runs once per element left-to-right. On `[]` the result is `init`. Recurses by **re-emitting itself** (does **not** desugar into `linrec`); **total, terminating** — the sequence spine strictly shrinks each step (the same well-founded measure `primrec`/`times` use). **Affine** in `seq` (consumed once, split head-first like `uncons`), **multiplicative** in `[C]` (replicated along the spine like `primrec`). A non-value sequence head faults `TypeMismatch`. No Overflow arm (any Overflow arises inside `C`) |
+| `$` | xor | `( a b -- a^b )` | bitwise XOR on the i64 two's-complement representation (Rust's `i64 ^ i64`). **Total**, arity → type only: unlike `+`/`*`, the XOR of two in-range i64 values is always in i64 range, so there is **no Overflow arm and no DivByZero arm**. The two "obvious" bitwise glyphs `^`/`&`/`\|` are all taken (over/primrec/linrec), and `[$` merges to one token in both pinned tokenizers |
+
+`fold` is admitted on **token grounds** — it collapses the tier-2 list-traversal solutions 145 → 56/54 tokens (design §6), internalising the left-fold "stack-juggling tax" that is the dominant LLM failure mode, with no task regressing. `xor` is admitted because it **clears the `single_number` wall and the whole bit-manipulation class** at trivial proof cost (total; one lock-step P2 pair). Together they take the tier-2 aggregate from 1.91× to **3.87× / 3.92×**, on par with the frozen `T_v0` headline. Multiplicity (spec §14.4): `fold` is the first primitive that is **affine in one argument (`seq`) and multiplicative in another (`[C]`) at once**; `xor` is a plain binary value op (two linear `Int`s in, one out), like `+`/`=`.
 
 **Deliberate inclusions beyond the minimal base.** `swap`, `rot`, `over`, `dip`, native ints, `if` are all derivable from the Kerby base `{dup, drop, cat, cons, apply}` — and we include them anyway, because derived forms cost 5–20 tokens *per use site* while a primitive costs ~1. This is the anti-tarpit principle applied consistently: **the primitive set is open, and admission is decided by corpus-level token accounting**, not by minimality aesthetics.
 
@@ -645,6 +676,7 @@ Before expanding the language or publishing quantitative claims, these gates mus
 
 ## 16. Changelog
 
+- **v0.3-draft** (2026-07-12) — Added the two v0.3 sequence primitives admitted by `docs/design/v0.3-sequences.md` (merged PR #13) and implemented in the verified ghost model (`SpecPrim::{Fold, Xor}` + `spec_step_prim` arms), the exec twin, and the cargo interpreter `crate::interp`: **`fold` (`(`)** native **LEFT** fold `( [seq] init [C] -- r )` — total and terminating on a finite list (the sequence spine strictly shrinks each step, the same well-founded measure `primrec`/`times` use; it recurses by re-emitting itself and does **not** desugar into `linrec`), affine in `seq` and multiplicative in `[C]`, with a non-value sequence head faulting `TypeMismatch` (as `uncons`) and no Overflow arm (Overflow arises only inside `C`); and **`xor` (`$`)** bitwise XOR `( a b -- a^b )` on the i64 two's-complement representation — **total**, arity → type only, with **no Overflow or DivByZero arm** because the XOR of two in-range i64 values is always in i64 range (contrast `+`/`*`). Step rules added to §4.1, primitive table and multiplicity notes to §5, fault-precedence worked examples to §4.4 (each new arm checks arity → types; `fold` has no semantic-fault arm, `xor` is total). Golden (max/min/reverse/contains/count via `fold`, `single_number` via `xor`), boundary (empty-sequence `fold` returns `init`, i64 XOR edges incl. `MIN^MAX`, `x^x==0`, `x^0==x`, `MIN^-1`), fault-precedence, and differential-proptest-oracle coverage added in `crates/mtl-core/tests/interpreter.rs`. Smoke theorems for the new arms (`smoke_fold_base`, `smoke_fold_step`, `smoke_xor`) and the `i64_bitxor` spec helper stated in `mtl_core.rs` for the Verus CI job. Note (deviation from the design doc's §10.2 framing): `fold` is documented and proven as **terminating like `primrec`/`times`** (spine-decreases measure), not as "partial, no termination claim" — the small-step semantics are byte-identical to the design sketch; only the termination framing is strengthened.
 - **v0.2-draft** (2026-07-11) — Added the four v0.2 recursion primitives admitted by `docs/design/v0.2-recursion-primitives.md` (merged PR #8) and implemented in the verified ghost model (`SpecPrim::{PrimRec, Times, LinRec, Uncons}` + `spec_step_prim` arms), the exec twin, and the cargo interpreter `crate::interp`: **`primrec` (`&`)** bounded primitive recursion `( n [I] [C] -- r )`, **`times` (`.`)** bounded iteration `( n [Q] -- … )` — both total and terminating (count strictly decreases; checked i64, no Overflow arm since `k-1` is provably in range); **`linrec` (`\|`)** linear recursion `( [P] [T] [R1] [R2] -- … )` that **desugars into `if`** (inherits its verified branch semantics, adds no control operator; partial, fuel-bounded); and **`uncons` (`>`)** quotation deconstructor `( [w …] -- w [ … ] 1 ) | ( [] -- 0 )` — structural, affine, and the TC-proof enabler (§6.2). Step rules added to §4.1, primitive table and multiplicity notes to §5, fault-precedence worked examples to §4.4 (each new arm checks arity → types → semantics). Golden (incl. factorial-via-primrec, gcd-via-linrec, fib-via-times, sum_to, power), boundary (i64 edges, non-positive/`i64::MIN` counts, empty-quotation uncons), fault-precedence, and differential-proptest-oracle coverage added in `crates/mtl-core/tests/interpreter.rs`. Uncons open decision (non-value head) resolved to `TypeMismatch` per the design's faithful reading. Smoke theorems for the new arms (`smoke_primrec_*`, `smoke_times_*`, `smoke_linrec_desugar`, `smoke_uncons_*`) stated in `mtl_core.rs` for the Verus CI job.
 - **v0.1.1** (2026-07-11) — Revision in response to the adversarial review (`docs/reviews/2026-07-11-adversarial-review.md`). TC "theorem" withdrawn to a conjecture with a quotation-encoded repair route and a v0.2 `uncons` candidate (§6). Deterministic lexer with unsigned integer literals (Option A) and test vectors; `-` is always `Sub` (§2.3). Normative fault precedence arity → types → semantics with worked examples (§4.4). `Call → UnknownWord` documented as v0.1 core behavior; two-machine `Invoke`/host-runner split specified for v0.2; "unconditional theorems" reworded (§8). `: !` reframed as a self-application kernel with a recursive-normal-form definition; "proper tail calls for free" made conditional on a loop normal form (P6) (§4.2, §6.3). §14 frozen as v0.2+ exploratory future work with claim-by-claim softening (Perceus "resembles"; `dip` = non-access interval; `over` = duplicate; P8 → P8a/b/c; P9 split into static / guarded / host-conformance / normal-exit; linear = at-most-once + exactly-once-on-normal-halt). Definitions `#f[...]` deferred out of v0.1 (§9). Benchmark redesigned with corpus splits, versioned task sets (T_v0 / T_v0.2), a baseline panel, warm/cold protocol, total-token accounting, and the headline metric *correct solutions per million inference tokens* (§10–§11). Layered proof hierarchy A–F (§7.5) and Go/No-Go gates (§15) added. String literals / `Str` clarified as not part of the v0.1 core (parser rejects; §2–§3, §7.1). Verification-status caveat added and the Verus pin corrected to the full build id `0.2026.07.05.49b8806` (the date-shaped `0.2026.07.05` named no downloadable asset → HTTP 403; fixed in CI #5), satisfying the review's "pin a precise commit, not a date-shaped version"; GREEN-phase proofs remain contract-stated and differential-proptest-evidenced pending the interpreter (§7.3, G7).
 - **v0.1** — Initial draft.
