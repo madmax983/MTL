@@ -314,6 +314,59 @@ mod oracle {
                     _ => RefStep::Fault(Fault::TypeMismatch),
                 }
             }
+            // ---------------- v0.3 sequence primitives ----------------
+            Prim::Fold => {
+                // ( [seq] init [C] -- r ) LEFT fold.
+                if n < 3 {
+                    return RefStep::Fault(Fault::Underflow);
+                }
+                match (&s[n - 3], &s[n - 1]) {
+                    (Value::Quote(qs), Value::Quote(qc)) => {
+                        let (qs, qc) = (qs.clone(), qc.clone());
+                        let init = s[n - 2].clone();
+                        let base = s[..n - 3].to_vec();
+                        if qs.is_empty() {
+                            let mut ns = base;
+                            ns.push(init);
+                            next(ns, rest)
+                        } else {
+                            match &qs[0] {
+                                Word::PushInt(_) | Word::PushQuote(_) => {
+                                    let head = qs[0].clone();
+                                    let tail = qs[1..].to_vec();
+                                    let mut cont = vec![
+                                        Word::PushQuote(tail),
+                                        value_to_word(&init),
+                                        head,
+                                    ];
+                                    cont.extend(qc.clone());
+                                    cont.push(Word::PushQuote(qc));
+                                    cont.push(Word::Prim(Prim::Fold));
+                                    cont.extend(rest);
+                                    next(base, cont)
+                                }
+                                _ => RefStep::Fault(Fault::TypeMismatch),
+                            }
+                        }
+                    }
+                    _ => RefStep::Fault(Fault::TypeMismatch),
+                }
+            }
+            Prim::Xor => {
+                // ( a b -- a^b ) total i64 bitwise XOR.
+                if n < 2 {
+                    return RefStep::Fault(Fault::Underflow);
+                }
+                match (&s[n - 2], &s[n - 1]) {
+                    (Value::Int(a), Value::Int(b)) => {
+                        let r = a ^ b;
+                        let mut ns = s[..n - 2].to_vec();
+                        ns.push(Value::Int(r));
+                        next(ns, rest)
+                    }
+                    _ => RefStep::Fault(Fault::TypeMismatch),
+                }
+            }
         }
     }
 
@@ -899,6 +952,314 @@ mod recursion {
 }
 
 // ============================================================
+// SEQUENCES — v0.3 primitives: fold (native LEFT fold) and xor.
+// Golden (list algorithms via fold, single_number via xor), boundary
+// (empty seq, i64 edges), and fault-precedence tests (design §3, §7).
+// ============================================================
+mod sequences {
+    use super::*;
+
+    /// A cons-list literal `[x0 x1 ...]` as a first-class quotation Value.
+    fn seqv(xs: &[i64]) -> Value {
+        q(xs.iter().map(|&x| int(x)).collect())
+    }
+
+    /// `[seq] -- result` program: push `init`, push the combine quote, fold.
+    fn fold_prog(init: Word, combine: Vec<Word>) -> Vec<Word> {
+        vec![init, quote(combine), fold()]
+    }
+
+    /// `[seq] -- result` program that seeds `init` from the FIRST element via the
+    /// `> _ ~` uncons prelude (design §7 max/min), then folds `combine` over the
+    /// tail. Faults `Underflow` on the empty list (max/min of [] is undefined).
+    fn fold_seeded_prog(combine: Vec<Word>) -> Vec<Word> {
+        vec![uncons(), drop(), swap(), quote(combine), fold()]
+    }
+
+    // ---- GOLDEN: list algorithms expressed as a native fold ----
+    mod golden {
+        use super::*;
+
+        // sum_list `0[+](` (design §7 clean fold; re-derives the §3.1 desugar).
+        #[test]
+        fn sum_via_fold() {
+            let prog = fold_prog(int(0), vec![add()]);
+            assert_eq!(expect_halt(vec![seqv(&[3, 1, 2])], prog.clone()), vec![i(6)]);
+            assert_eq!(expect_halt(vec![seqv(&[])], prog.clone()), vec![i(0)]);
+            assert_eq!(expect_halt(vec![seqv(&[10])], prog), vec![i(10)]);
+        }
+
+        // product_list `1[*](`.
+        #[test]
+        fn product_via_fold() {
+            let prog = fold_prog(int(1), vec![mul()]);
+            assert_eq!(expect_halt(vec![seqv(&[3, 1, 2])], prog.clone()), vec![i(6)]);
+            assert_eq!(expect_halt(vec![seqv(&[])], prog), vec![i(1)]); // empty product
+        }
+
+        // length_list `0[_1+](`: combine `(acc w -- acc+1)` = drop w, push 1, add.
+        #[test]
+        fn length_via_fold() {
+            let prog = fold_prog(int(0), vec![drop(), int(1), add()]);
+            assert_eq!(expect_halt(vec![seqv(&[3, 1, 2])], prog.clone()), vec![i(3)]);
+            assert_eq!(expect_halt(vec![seqv(&[])], prog), vec![i(0)]);
+        }
+
+        // max_list `>_~[^^<[~_][_]?](`: seed from the head, combine = max(acc,w).
+        #[test]
+        fn max_via_fold() {
+            let combine = vec![
+                over(), over(), lt(),
+                quote(vec![swap(), drop()]), // acc<w true  -> keep w
+                quote(vec![drop()]),         // acc<w false -> keep acc
+                iff(),
+            ];
+            let prog = fold_seeded_prog(combine);
+            assert_eq!(expect_halt(vec![seqv(&[3, 1, 2])], prog.clone()), vec![i(3)]);
+            assert_eq!(expect_halt(vec![seqv(&[1, 9, 4, 9, 2])], prog.clone()), vec![i(9)]);
+            assert_eq!(expect_halt(vec![seqv(&[-5, -1, -8])], prog.clone()), vec![i(-1)]);
+            assert_eq!(expect_halt(vec![seqv(&[7])], prog), vec![i(7)]);
+        }
+
+        // min_list `>_~[^^<[_][~_]?](`: seed from the head, branches swapped.
+        #[test]
+        fn min_via_fold() {
+            let combine = vec![
+                over(), over(), lt(),
+                quote(vec![drop()]),         // acc<w true  -> keep acc
+                quote(vec![swap(), drop()]), // acc<w false -> keep w
+                iff(),
+            ];
+            let prog = fold_seeded_prog(combine);
+            assert_eq!(expect_halt(vec![seqv(&[3, 1, 2])], prog.clone()), vec![i(1)]);
+            assert_eq!(expect_halt(vec![seqv(&[9, 4, 9, 2, 8])], prog.clone()), vec![i(2)]);
+            assert_eq!(expect_halt(vec![seqv(&[-5, -1, -8])], prog.clone()), vec![i(-8)]);
+            assert_eq!(expect_halt(vec![seqv(&[7])], prog), vec![i(7)]);
+        }
+
+        // reverse_list `[][~;](`: init=[], combine `(acc w -- w;acc)` (prepend).
+        // A LEFT fold that prepends yields the reversal — exactly why fold is LEFT.
+        #[test]
+        fn reverse_via_fold() {
+            let prog = fold_prog(quote(vec![]), vec![swap(), cons()]);
+            assert_eq!(
+                expect_halt(vec![seqv(&[3, 1, 2])], prog.clone()),
+                vec![seqv(&[2, 1, 3])]
+            );
+            assert_eq!(expect_halt(vec![seqv(&[])], prog.clone()), vec![seqv(&[])]);
+            assert_eq!(expect_halt(vec![seqv(&[5])], prog), vec![seqv(&[5])]);
+        }
+
+        // contains `[x =+0~<];0~(`: init=0, combine `(acc w -- acc OR (w==x))`,
+        // the search scalar `x` baked into the combine as a literal.
+        #[test]
+        fn contains_via_fold() {
+            let contains = |xs: &[i64], x: i64| -> Vec<Value> {
+                let combine = vec![int(x), eq(), add(), int(0), swap(), lt()];
+                expect_halt(vec![seqv(xs)], fold_prog(int(0), combine))
+            };
+            assert_eq!(contains(&[3, 1, 2], 1), vec![i(1)]);
+            assert_eq!(contains(&[3, 1, 2], 5), vec![i(0)]); // absent
+            assert_eq!(contains(&[], 1), vec![i(0)]);
+            assert_eq!(contains(&[7, 7, 7], 7), vec![i(1)]);
+        }
+
+        // count_occurrences `[x =+];0~(`: init=0, combine `(acc w -- acc+(w==x))`.
+        #[test]
+        fn count_via_fold() {
+            let count = |xs: &[i64], x: i64| -> Vec<Value> {
+                let combine = vec![int(x), eq(), add()];
+                expect_halt(vec![seqv(xs)], fold_prog(int(0), combine))
+            };
+            assert_eq!(count(&[3, 1, 2], 1), vec![i(1)]);
+            assert_eq!(count(&[1, 1, 2], 1), vec![i(2)]);
+            assert_eq!(count(&[3, 1, 2], 5), vec![i(0)]);
+            assert_eq!(count(&[], 9), vec![i(0)]);
+        }
+
+        // single_number: XOR-reduce the list (every value appears twice except one).
+        // fold init=0, combine=[xor]: 0 ^ x0 ^ x1 ^ ... leaves the lone element.
+        #[test]
+        fn single_number_via_xor_fold() {
+            let prog = fold_prog(int(0), vec![xor()]);
+            assert_eq!(expect_halt(vec![seqv(&[4, 1, 2, 1, 2])], prog.clone()), vec![i(4)]);
+            assert_eq!(expect_halt(vec![seqv(&[2, 2, 7])], prog.clone()), vec![i(7)]);
+            assert_eq!(expect_halt(vec![seqv(&[99])], prog), vec![i(99)]);
+        }
+
+        // xor basic binary semantics (the two-operand primitive itself).
+        #[test]
+        fn xor_basic() {
+            assert_eq!(expect_halt(vec![i(6), i(3)], vec![xor()]), vec![i(5)]); // 110 ^ 011 = 101
+            assert_eq!(expect_halt(vec![i(0b1010), i(0b0110)], vec![xor()]), vec![i(0b1100)]);
+        }
+    }
+
+    // ---- BOUNDARY: empty sequence, seed variants, i64 xor edges ----
+    mod boundary {
+        use super::*;
+
+        #[test]
+        fn fold_empty_seq_returns_init_unchanged() {
+            // empty list -> the seed accumulator (int seed).
+            assert_eq!(
+                expect_halt(vec![seqv(&[])], vec![int(7), quote(vec![add()]), fold()]),
+                vec![i(7)]
+            );
+            // the seed is ANY value: a quote seed comes back untouched.
+            assert_eq!(
+                expect_halt(
+                    vec![seqv(&[])],
+                    vec![quote(vec![int(9)]), quote(vec![add()]), fold()]
+                ),
+                vec![q(vec![int(9)])]
+            );
+        }
+
+        #[test]
+        fn fold_single_element_applies_combine_once() {
+            assert_eq!(
+                expect_halt(vec![seqv(&[5])], vec![int(0), quote(vec![add()]), fold()]),
+                vec![i(5)]
+            );
+        }
+
+        #[test]
+        fn fold_preserves_stack_below_seq() {
+            // Values below the seq are untouched: [i(42), seq] fold -> [i(42), result].
+            assert_eq!(
+                expect_halt(
+                    vec![i(42), seqv(&[1, 2, 3])],
+                    vec![int(0), quote(vec![add()]), fold()]
+                ),
+                vec![i(42), i(6)]
+            );
+        }
+
+        #[test]
+        fn xor_identities() {
+            // x ^ x == 0 (the property single_number relies on)
+            assert_eq!(expect_halt(vec![i(42), i(42)], vec![xor()]), vec![i(0)]);
+            assert_eq!(expect_halt(vec![i(-42), i(-42)], vec![xor()]), vec![i(0)]);
+            assert_eq!(expect_halt(vec![i(i64::MIN), i(i64::MIN)], vec![xor()]), vec![i(0)]);
+            // x ^ 0 == x
+            assert_eq!(expect_halt(vec![i(42), i(0)], vec![xor()]), vec![i(42)]);
+            assert_eq!(expect_halt(vec![i(-7), i(0)], vec![xor()]), vec![i(-7)]);
+            assert_eq!(expect_halt(vec![i(i64::MIN), i(0)], vec![xor()]), vec![i(i64::MIN)]);
+        }
+
+        #[test]
+        fn xor_sign_and_i64_edge_cases_never_overflow() {
+            // WHY xor has no Overflow arm (unlike add/sub/mul): the bitwise XOR of
+            // two 64-bit two's-complement patterns is itself a 64-bit pattern, so
+            // it is ALWAYS a valid i64. These pairs would overflow under add/mul but
+            // are total under xor:
+            //   MIN ^ MAX = all-ones = -1
+            assert_eq!(expect_halt(vec![i(i64::MIN), i(i64::MAX)], vec![xor()]), vec![i(-1)]);
+            //   MAX ^ MAX = 0, MIN ^ MIN = 0
+            assert_eq!(expect_halt(vec![i(i64::MAX), i(i64::MAX)], vec![xor()]), vec![i(0)]);
+            //   MIN ^ -1 = MAX (contrast: MIN / -1 is an Overflow fault for div)
+            assert_eq!(expect_halt(vec![i(i64::MIN), i(-1)], vec![xor()]), vec![i(i64::MAX)]);
+            //   neg ^ neg is an ordinary total op: -1 ^ -2 = 1
+            assert_eq!(expect_halt(vec![i(-1), i(-2)], vec![xor()]), vec![i(1)]);
+            //   MAX ^ -1 = MIN
+            assert_eq!(expect_halt(vec![i(i64::MAX), i(-1)], vec![xor()]), vec![i(i64::MIN)]);
+        }
+    }
+
+    // ---- FAULT PRECEDENCE: arity (Underflow) -> type (TypeMismatch) ----
+    mod precedence {
+        use super::*;
+
+        #[test]
+        fn fold_arity_beats_type() {
+            // 2 items (fold needs 3), wrong shapes: arity (Underflow) wins over
+            // the type check. Faulting word retained at cont[0].
+            let fi = expect_fault(vec![i(1), i(2)], vec![fold()]);
+            assert_eq!(fi.fault, Fault::Underflow);
+            assert_eq!(fi.cont, vec![fold()]);
+            assert_eq!(fi.stack, vec![i(1), i(2)]);
+        }
+
+        #[test]
+        fn fold_type_mismatch_seq_not_quote() {
+            // arity ok (3), seq slot (n-3) is an Int, not a Quote -> TypeMismatch.
+            let fi = expect_fault(vec![i(9), i(0), q(vec![add()])], vec![fold()]);
+            assert_eq!(fi.fault, Fault::TypeMismatch);
+        }
+
+        #[test]
+        fn fold_type_mismatch_combine_not_quote() {
+            // combine slot (n-1) is an Int, not a Quote -> TypeMismatch.
+            let fi = expect_fault(vec![q(vec![int(1)]), i(0), i(5)], vec![fold()]);
+            assert_eq!(fi.fault, Fault::TypeMismatch);
+        }
+
+        #[test]
+        fn fold_type_mismatch_non_value_seq_head() {
+            // seq is a Quote whose head is a bare Prim (not a value word): fold
+            // faults TypeMismatch, mirroring uncons. Machine state untouched.
+            let fi = expect_fault(vec![q(vec![add()]), i(0), q(vec![add()])], vec![fold()]);
+            assert_eq!(fi.fault, Fault::TypeMismatch);
+            assert_eq!(fi.cont, vec![fold()]);
+            assert_eq!(fi.stack, vec![q(vec![add()]), i(0), q(vec![add()])]);
+            // a Call head also faults.
+            let fi = expect_fault(vec![q(vec![call("emit")]), i(0), q(vec![add()])], vec![fold()]);
+            assert_eq!(fi.fault, Fault::TypeMismatch);
+        }
+
+        #[test]
+        fn fold_type_mismatch_outranks_bad_head_when_combine_not_quote() {
+            // Both faults available: seq head is fine but combine (n-1) is an Int.
+            // The outer both-quote guard fires first -> TypeMismatch (never inspects
+            // the head, exactly as the spec tuple-match falls straight through).
+            let fi = expect_fault(vec![q(vec![add()]), i(0), i(3)], vec![fold()]);
+            assert_eq!(fi.fault, Fault::TypeMismatch);
+        }
+
+        #[test]
+        fn fold_has_no_semantic_fault_overflow_comes_from_combine() {
+            // fold itself has NO semantic-fault arm; Overflow can only arise INSIDE
+            // C. fold [i64::MAX] from init 1 with C=[+] overflows in Add, not fold.
+            let fi = expect_fault(
+                vec![seqv(&[i64::MAX]), i(1), q(vec![add()])],
+                vec![fold()],
+            );
+            assert_eq!(fi.fault, Fault::Overflow);
+        }
+
+        #[test]
+        fn xor_arity_beats_type() {
+            // 1 item, wrong type (xor needs 2): arity (Underflow) wins.
+            let fi = expect_fault(vec![q(vec![])], vec![xor()]);
+            assert_eq!(fi.fault, Fault::Underflow);
+            assert_eq!(fi.cont, vec![xor()]);
+        }
+
+        #[test]
+        fn xor_type_mismatch_when_arity_satisfied() {
+            // arity ok (2), a Quote operand -> TypeMismatch (xor is Int-only, cf. eq/lt).
+            let fi = expect_fault(vec![q(vec![]), i(1)], vec![xor()]);
+            assert_eq!(fi.fault, Fault::TypeMismatch);
+            let fi = expect_fault(vec![i(1), q(vec![])], vec![xor()]);
+            assert_eq!(fi.fault, Fault::TypeMismatch);
+        }
+
+        #[test]
+        fn xor_is_total_no_semantic_fault() {
+            // xor has no Overflow/DivByZero arm: every Int,Int pair yields a value.
+            // (Regression guard for the "total, arity->type only" precedence.)
+            for (a, b) in [(i64::MIN, i64::MAX), (i64::MIN, -1), (0, 0), (i64::MAX, i64::MAX)] {
+                match run_prog(vec![i(a), i(b)], vec![xor()]) {
+                    Outcome::Halt(s) => assert_eq!(s, vec![i(a ^ b)]),
+                    other => panic!("xor({a},{b}) not total: {:?}", other),
+                }
+            }
+        }
+    }
+}
+
+// ============================================================
 // BOUNDARY — overflow, div/mod edges, underflow per arity.
 // ============================================================
 mod boundary {
@@ -998,6 +1359,7 @@ mod boundary {
             Prim::Mod,
             Prim::Eq,
             Prim::Lt,
+            Prim::Xor,
         ] {
             let fi = expect_fault(vec![i(1)], vec![prim(p)]);
             assert_eq!(fi.fault, Fault::Underflow, "prim {:?}", p);
@@ -1005,7 +1367,7 @@ mod boundary {
     }
     #[test]
     fn underflow_arity_3() {
-        for p in [Prim::Rot, Prim::If] {
+        for p in [Prim::Rot, Prim::If, Prim::Fold] {
             let fi = expect_fault(vec![i(1), i(2)], vec![prim(p)]);
             assert_eq!(fi.fault, Fault::Underflow, "prim {:?}", p);
         }
@@ -1252,6 +1614,8 @@ mod differential {
             Just(Prim::Times),
             Just(Prim::LinRec),
             Just(Prim::Uncons),
+            Just(Prim::Fold),
+            Just(Prim::Xor),
         ]
     }
 
