@@ -576,6 +576,7 @@ pub open spec fn spec_divmod(
 // 3. Exec side (GREEN phase implements; deep view is the bridge)
 // ============================================================
 
+#[derive(Clone)]
 pub enum Word {
     PushInt(i64),
     PushQuote(Vec<Word>),
@@ -583,6 +584,7 @@ pub enum Word {
     Call(Vec<char>),
 }
 
+#[derive(Clone)]
 pub enum Value {
     Int(i64),
     Quote(Vec<Word>),
