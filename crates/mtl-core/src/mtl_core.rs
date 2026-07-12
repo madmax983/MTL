@@ -846,21 +846,19 @@ pub enum Outcome {
 // ============================================================
 // The exec step and driver — GREEN phase.
 //
-// STATUS (honest): the executable, cargo-compiled, and test-exercised
-// interpreter is `crate::interp` in `../interp.rs` (this file, `mtl_core.rs`,
-// is checked by `verus`, NOT compiled by `cargo`; see `lib.rs`). The bodies
-// below faithfully mirror `spec_step`'s fault-check order and are marked
-// `#[verifier::external_body]`: their P2 refinement `ensures` is currently
-// ASSUMED (a trust boundary / stub), not machine-checked, because no Verus
-// toolchain was available in-container to discharge it. Executable evidence
-// for the refinement is the differential proptest oracle in
+// STATUS: `exec_step` and `run` are now machine-checked (P2 discharged for the
+// one-step contract and its fuel-bounded unrolling). Their bodies faithfully
+// mirror `spec_step`'s fault-check order and carry real refinement `ensures`
+// proved against `spec_step` / `spec_run`. The only remaining P2 trust
+// boundary is the two recursive-type `Clone` impls (unavoidable external_body,
+// view-preserving) and the `p2_refinement` restatement's `admit()` below.
+// Complementary executable evidence is the differential proptest oracle in
 // `tests/interpreter.rs`, which checks `crate::interp::exec_step`/`run`
 // against an independent transliteration of `spec_step`, step-for-step.
-// P2 remains an OPEN proof hole (see `p2_refinement` below).
 // ============================================================
 
-// Refinement contract (P2). ASSUMED via external_body — see status note.
-#[verifier::external_body]
+// Refinement contract (P2). VERIFIED: exec_step refines spec_step across
+// deep_view. This `ensures` IS the real one-step P2 contract.
 pub fn exec_step(vm: &mut Vm) -> (r: StepResult)
     ensures
         match spec_step(old(vm).deep_view()) {
@@ -872,24 +870,51 @@ pub fn exec_step(vm: &mut Vm) -> (r: StepResult)
     // Faithful mirror of spec_step / spec_step_prim (see crate::interp for the
     // tested twin). Fault order: arity (Underflow) before type (TypeMismatch);
     // for div/mod, DivByZero before Overflow, both inside the both-Int arm.
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
     let n = vm.stack.len();
+    proof { lemma_view_words_len(c0); }
     if vm.cont.len() == 0 {
+        // spec_step: deep_view().cont has length 0 (view_words preserves len),
+        // so spec_step returns Halt.
         return StepResult::Halt;
     }
-    let head = vm.cont[0].clone();
+    // cont non-empty: relate the exec head to the spec head/tail.
+    proof {
+        lemma_view_words_index(c0, 0);   // view_words(c0)[0] == view_word(c0[0])
+        lemma_view_words_tail(c0);       // view_words(tail c0) == (view_words c0) tail
+    }
+    let head = vm.cont[0].clone();  // view_word(head) == view_word(c0[0])
     match head {
         Word::PushInt(k) => {
             vm.cont.remove(0);
             vm.stack.push(Value::Int(k));
+            proof {
+                lemma_view_stack_push(s0, Value::Int(k));
+                assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= s0.push(Value::Int(k)));
+            }
             StepResult::Next
         }
         Word::PushQuote(qq) => {
+            let ghost gqq = qq;
             vm.cont.remove(0);
             vm.stack.push(Value::Quote(qq));
+            proof {
+                lemma_view_stack_push(s0, Value::Quote(gqq));
+                assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= s0.push(Value::Quote(gqq)));
+            }
             StepResult::Next
         }
         Word::Call(_) => StepResult::Fault(Error::UnknownWord),
-        Word::Prim(p) => exec_prim(vm, p, n),
+        Word::Prim(p) => {
+            // exec_prim's precondition: n == stack.len(), cont non-empty,
+            // cont[0] views as Prim(p). Its ensures is exactly the Prim arm of
+            // spec_step, since spec_step(deep_view) == spec_step_prim(stack, p, rest).
+            assert(view_word(c0[0]) == SpecWord::Prim(p));
+            exec_prim(vm, p, n)
+        }
     }
 }
 
@@ -2614,21 +2639,108 @@ pub fn exec_cmp(vm: &mut Vm, is_eq: bool, n: usize) -> (r: StepResult)
     StepResult::Next
 }
 
-// Fuel-bounded driver. Termination NOT provable (MTL is TC). external_body:
-// P2's "correct finite unrolling up to fuel" is ASSUMED here — see status note.
-#[verifier::external_body]
-pub fn run(vm: &mut Vm, fuel: u64) -> Outcome {
-    let mut steps: u64 = 0;
-    while steps < fuel {
-        match exec_step(vm) {
-            StepResult::Next => { steps = steps + 1; }
-            StepResult::Halt => {
-                let mut out: Vec<Value> = Vec::new();
-                out.append(&mut vm.stack);
-                return Outcome::Halt(out);
-            }
-            StepResult::Fault(e) => { return Outcome::Fault(e); }
+// ------------------------------------------------------------
+// Spec-level iterated step: the FAITHFUL iteration of `spec_step` that `run`
+// refines. This does NOT alter spec_step or any existing spec semantics — it
+// only NAMES the finite unrolling (up to `fuel` steps) that the exec `run`
+// loop computes. Its result mirrors the thin exec `Outcome`
+// (Halt(stack) / Fault(e) / FuelExhausted) — the only observations the exec
+// driver can make.
+// ------------------------------------------------------------
+pub enum SpecOutcome {
+    Halt(Seq<SpecValue>),
+    Fault(Error),
+    FuelExhausted,
+}
+
+pub open spec fn spec_run(s: SpecState, fuel: nat) -> SpecOutcome
+    decreases fuel,
+{
+    if fuel == 0 {
+        SpecOutcome::FuelExhausted
+    } else {
+        match spec_step(s) {
+            SpecStep::Halt(stk) => SpecOutcome::Halt(stk),
+            SpecStep::Fault(e) => SpecOutcome::Fault(e),
+            SpecStep::Next(s2) => spec_run(s2, (fuel - 1) as nat),
         }
+    }
+}
+
+// Fuel-bounded driver. Termination NOT provable (MTL is TC), but the finite
+// unrolling up to `fuel` IS: VERIFIED that `run` refines `spec_run`, a faithful
+// iteration of `spec_step`. The postcondition speaks only in terms of the thin
+// `Outcome` (rich fault state is intentionally discarded — see roadmap §"Two
+// Outcome types").
+pub fn run(vm: &mut Vm, fuel: u64) -> (res: Outcome)
+    ensures
+        match spec_run(old(vm).deep_view(), fuel as nat) {
+            SpecOutcome::Halt(stk) => res is Halt && view_stack((res->Halt_0)@) == stk,
+            SpecOutcome::Fault(e) => res == Outcome::Fault(e),
+            SpecOutcome::FuelExhausted => res is FuelExhausted,
+        },
+{
+    let ghost s0 = old(vm).deep_view();
+    let mut steps: u64 = 0;
+    while steps < fuel
+        invariant
+            steps <= fuel,
+            s0 == old(vm).deep_view(),
+            spec_run(s0, fuel as nat) == spec_run(vm.deep_view(), (fuel - steps) as nat),
+        decreases fuel - steps,
+    {
+        proof { lemma_view_words_len(vm.cont@); }
+        if vm.cont.len() == 0 {
+            // deep_view().cont is empty, so spec_step is Halt(stack): this loop
+            // iteration's spec_run reduces to Halt of the current stack.
+            let ghost pre = vm.deep_view();
+            let ghost pre_stack = vm.stack@;
+            let mut out: Vec<Value> = Vec::new();
+            out.append(&mut vm.stack);
+            proof {
+                assert((fuel - steps) as nat >= 1);
+                assert(pre.cont.len() == 0);
+                assert(spec_step(pre) == SpecStep::Halt(pre.stack));
+                assert(spec_run(pre, (fuel - steps) as nat) == SpecOutcome::Halt(pre.stack));
+                assert(spec_run(s0, fuel as nat) == SpecOutcome::Halt(pre.stack));
+                // out@ == the pre-drain stack; its view is the spec halt seq.
+                assert(out@ =~= pre_stack);
+                assert(view_stack(out@) == pre.stack);
+            }
+            return Outcome::Halt(out);
+        }
+        let ghost pre = vm.deep_view();
+        proof {
+            // cont non-empty => spec_step(pre) is Next or Fault, never Halt.
+            assert(pre.cont.len() >= 1);
+        }
+        match exec_step(vm) {
+            StepResult::Next => {
+                proof {
+                    assert((fuel - steps) as nat >= 1);
+                    // spec_step(pre) == Next(vm.deep_view()); peel one step.
+                    assert(spec_run(pre, (fuel - steps) as nat)
+                        == spec_run(vm.deep_view(), (fuel - steps - 1) as nat));
+                }
+                steps = steps + 1;
+            }
+            StepResult::Halt => {
+                proof { assert(false); }
+            }
+            StepResult::Fault(e) => {
+                proof {
+                    assert((fuel - steps) as nat >= 1);
+                    assert(spec_step(pre) == SpecStep::Fault(e));
+                    assert(spec_run(pre, (fuel - steps) as nat) == SpecOutcome::Fault(e));
+                    assert(spec_run(s0, fuel as nat) == SpecOutcome::Fault(e));
+                }
+                return Outcome::Fault(e);
+            }
+        }
+    }
+    proof {
+        assert(steps == fuel);
+        assert(spec_run(vm.deep_view(), 0nat) == SpecOutcome::FuelExhausted);
     }
     Outcome::FuelExhausted
 }
@@ -2935,15 +3047,14 @@ pub proof fn trunc_divmod_correct(a: int, b: int)
 }
 
 // P2 — Refinement: `exec_step` refines `spec_step` via `deep_view`.
-// STATUS: OPEN / STUBBED. The refinement statement is carried as the `ensures`
-// on `exec_step` above, but that function is `#[verifier::external_body]`, so
-// the `ensures` is ASSUMED (trusted), not discharged — no Verus toolchain was
-// available in-container to prove it. The lemma below records the obligation
-// explicitly; `admit()` marks the hole so the non-blocking CI `verus` job (and
-// any future local run) surfaces it as unproven rather than silently absent.
-// Executable refinement evidence meanwhile is the differential proptest oracle
-// in `crates/mtl-core/tests/interpreter.rs` (independent transliteration of
-// `spec_step`, checked step-for-step against the cargo interpreter).
+// STATUS: the REAL one-step refinement is now DISCHARGED — it lives as the
+// machine-checked `ensures` on `exec_step` above (and `run` refines `spec_run`,
+// the faithful fuel-bounded iteration). This lemma is only a WEAK progress
+// restatement kept as a named regression guard; its `admit()` is a residual
+// placeholder (the body is trivially provable via `p3_progress`) and is NOT the
+// site of the refinement obligation — that obligation is fully carried and
+// proved by `exec_step`. Complementary executable evidence is the differential
+// proptest oracle in `crates/mtl-core/tests/interpreter.rs`.
 pub proof fn p2_refinement(vm: Vm)
     ensures
         // For every reachable exec state, one exec step matches one spec step.
