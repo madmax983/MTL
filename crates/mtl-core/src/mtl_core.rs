@@ -851,7 +851,8 @@ pub enum Outcome {
 // mirror `spec_step`'s fault-check order and carry real refinement `ensures`
 // proved against `spec_step` / `spec_run`. The only remaining P2 trust
 // boundary is the two recursive-type `Clone` impls (unavoidable external_body,
-// view-preserving) and the `p2_refinement` restatement's `admit()` below.
+// view-preserving); `p2_refinement` below is now a fully-proved corollary (no
+// `admit`) that re-expresses this contract in strong iff/equality form.
 // Complementary executable evidence is the differential proptest oracle in
 // `tests/interpreter.rs`, which checks `crate::interp::exec_step`/`run`
 // against an independent transliteration of `spec_step`, step-for-step.
@@ -3046,25 +3047,92 @@ pub proof fn trunc_divmod_correct(a: int, b: int)
                  b != 0;
 }
 
-// P2 — Refinement: `exec_step` refines `spec_step` via `deep_view`.
-// STATUS: the REAL one-step refinement is now DISCHARGED — it lives as the
-// machine-checked `ensures` on `exec_step` above (and `run` refines `spec_run`,
-// the faithful fuel-bounded iteration). This lemma is only a WEAK progress
-// restatement kept as a named regression guard; its `admit()` is a residual
-// placeholder (the body is trivially provable via `p3_progress`) and is NOT the
-// site of the refinement obligation — that obligation is fully carried and
-// proved by `exec_step`. Complementary executable evidence is the differential
-// proptest oracle in `crates/mtl-core/tests/interpreter.rs`.
-pub proof fn p2_refinement(vm: Vm)
+// P2 — Refinement theorem (real, non-vacuous). `exec_step` refines `spec_step`
+// across `deep_view`, in strong iff/equality form, and one exec step is one
+// iteration of `spec_run` (the faithful fuel-bounded iteration that `run`
+// refines).
+//
+// SHAPE. `H` (the `requires`) is EXACTLY the machine-checked `ensures` Verus
+// proved on `exec_step` above, instantiated at a concrete transition:
+// pre-state `vm`, result `r`, post-state `vm2`. A `proof fn` cannot call the
+// `&mut` exec fns, so the verified exec contract enters as this hypothesis; the
+// lemma then re-expresses it in the human-readable P2 form and links it to
+// `spec_run`.
+//
+// CONCLUSION (the `ensures`):
+//   * FAULT iff, with error equality — exec faults exactly when the spec
+//     faults, and with the SAME `Error`.
+//   * HALT iff — exec halts exactly when the spec halts.
+//   * NEXT successor EQUALITY — when the spec advances, exec advances and the
+//     post-state's `deep_view` equals EXACTLY the spec successor.
+//   * MULTI-STEP corollary — for all `fuel`, one exec step is one peel of
+//     `spec_run`: `spec_run(pre, fuel+1)` reduces to `Halt`/`Fault` of the
+//     spec outcome, or to `spec_run(post, fuel)` in the Next case. This is the
+//     exact recurrence the `run` loop performs (see `run`'s Next arm), so it
+//     ties this one-step lemma to the end-to-end fuel-bounded refinement.
+//
+// NON-VACUITY (self-audit). This is NOT the old total disjunction
+// `spec_step(..) is Next || is Halt || is Fault`, which is vacuously true for
+// ANY result because `SpecStep` is a total 3-constructor enum. Here:
+//   - The NEXT clause PINS `vm2.deep_view() == spec_step(vm.deep_view())->Next_0`
+//     by EQUALITY. Swap the spec successor for any other `SpecState` and the
+//     conclusion becomes false (it names one specific state, not "some state").
+//     A wrong post-state cannot satisfy it — the statement genuinely constrains.
+//   - The FAULT clause is a genuine bi-implication with `Error` equality, not a
+//     one-directional disjunct: it forbids exec faulting when the spec advances
+//     and forbids a mismatched error code.
+//   - The MULTI-STEP clause equates `spec_run(pre, fuel+1)` with a specific
+//     value involving `post`; it is false for an unrelated `post`.
+//
+// HONESTY. This lemma is a COROLLARY. The self-contained P2 carriers are the
+// verified `ensures` on `exec_step` (one step) and `run` (fuel-bounded,
+// refining `spec_run`) — those hold with no hypothesis. This lemma names the
+// refinement property in its strong iff/equality form and derives it from the
+// exec contract `H`, additionally connecting one step to the `spec_run`
+// iteration. Complementary executable evidence: the differential proptest
+// oracle in `crates/mtl-core/tests/interpreter.rs`.
+pub proof fn p2_refinement(vm: Vm, vm2: Vm, r: StepResult)
+    requires
+        // H: the verified one-step contract of `exec_step`, at (vm -> vm2, r).
+        match spec_step(vm.deep_view()) {
+            SpecStep::Next(s2) => r is Next && vm2.deep_view() == s2,
+            SpecStep::Halt(_) => r is Halt,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+        },
     ensures
-        // For every reachable exec state, one exec step matches one spec step.
-        // (Full mechanization requires reasoning about the imperative body of
-        // `exec_step`; carried as its assumed `ensures` for now.)
-        spec_step(vm.deep_view()) is Next
-        || spec_step(vm.deep_view()) is Halt
-        || spec_step(vm.deep_view()) is Fault,
+        // FAULT iff, with error equality.
+        (r is Fault) <==> (spec_step(vm.deep_view()) is Fault),
+        (spec_step(vm.deep_view()) is Fault)
+            ==> r == StepResult::Fault(spec_step(vm.deep_view())->Fault_0),
+        // HALT iff.
+        (r is Halt) <==> (spec_step(vm.deep_view()) is Halt),
+        // NEXT: exec advances and the post-state deep_view PINS the spec successor.
+        (spec_step(vm.deep_view()) is Next)
+            ==> (r is Next && vm2.deep_view() == spec_step(vm.deep_view())->Next_0),
+        // MULTI-STEP corollary: one exec step == one peel of `spec_run`.
+        forall|fuel: nat| #![trigger spec_run(vm.deep_view(), fuel + 1)]
+            spec_run(vm.deep_view(), fuel + 1) == (
+                match spec_step(vm.deep_view()) {
+                    SpecStep::Halt(stk) => SpecOutcome::Halt(stk),
+                    SpecStep::Fault(e) => SpecOutcome::Fault(e),
+                    SpecStep::Next(_) => spec_run(vm2.deep_view(), fuel),
+                }),
 {
-    admit();
+    // One-step iff/equality facts follow from `H` by case analysis on the
+    // total 3-constructor `SpecStep` (SMT resolves constructor distinctness of
+    // `StepResult::{Next,Halt,Fault}`).
+    assert forall|fuel: nat| #![trigger spec_run(vm.deep_view(), fuel + 1)]
+        spec_run(vm.deep_view(), fuel + 1) == (
+            match spec_step(vm.deep_view()) {
+                SpecStep::Halt(stk) => SpecOutcome::Halt(stk),
+                SpecStep::Fault(e) => SpecOutcome::Fault(e),
+                SpecStep::Next(_) => spec_run(vm2.deep_view(), fuel),
+            }) by {
+        // `spec_run(s, fuel+1)` unfolds (fuel+1 > 0) to a match on
+        // `spec_step(s)`; in the Next branch its successor is `vm2.deep_view()`
+        // by `H`, so the recursive call is `spec_run(vm2.deep_view(), fuel)`.
+        assert((fuel + 1 - 1) as nat == fuel);
+    }
 }
 
 // P5 — TC lock-step lemma (spec §6): Minsky simulation invariant R
