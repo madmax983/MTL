@@ -1006,7 +1006,6 @@ pub fn exec_drop(vm: &mut Vm, n: usize) -> (r: StepResult)
     StepResult::Next
 }
 
-#[verifier::external_body]
 pub fn exec_swap(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1020,13 +1019,36 @@ pub fn exec_swap(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    // Behaviour-identical to `stack.swap(n-1, n-2)`, but expressed via pop/push
+    // so only the push/prefix/index view lemmas are needed (Vec::swap has no
+    // vstd spec). ( a b -- b a )
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 2 { return StepResult::Fault(Error::Underflow); }
     vm.cont.remove(0);
-    vm.stack.swap(n - 1, n - 2);
+    let vb = vm.stack.pop();  // Some(s0[n-1])
+    let va = vm.stack.pop();  // Some(s0[n-2])
+    match (va, vb) {
+        (Some(x), Some(y)) => {
+            vm.stack.push(y);
+            vm.stack.push(x);
+            proof {
+                let base = s0.subrange(0, n as int - 2);
+                lemma_view_stack_index(s0, n as int - 2);
+                lemma_view_stack_index(s0, n as int - 1);
+                lemma_view_stack_prefix(s0, n as int - 2);
+                lemma_view_stack_push(base, s0[n as int - 1]);
+                lemma_view_stack_push(base.push(s0[n as int - 1]), s0[n as int - 2]);
+                assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= base.push(s0[n as int - 1]).push(s0[n as int - 2]));
+            }
+        }
+        _ => { assert(false); }
+    }
     StepResult::Next
 }
 
-#[verifier::external_body]
 pub fn exec_rot(vm: &mut Vm, n: usize) -> (r: StepResult)
     requires
         n == old(vm).stack.len(),
@@ -1040,10 +1062,41 @@ pub fn exec_rot(vm: &mut Vm, n: usize) -> (r: StepResult)
         }
     }),
 {
+    // Behaviour-identical to `let a = stack.remove(n-3); stack.push(a)`, but via
+    // pop/push so the view proof reduces to prefix + three pushes. ( a b c -- b c a )
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
     if n < 3 { return StepResult::Fault(Error::Underflow); }
     vm.cont.remove(0);
-    let a = vm.stack.remove(n - 3);
-    vm.stack.push(a);
+    let vc = vm.stack.pop();  // Some(s0[n-1])
+    let vb = vm.stack.pop();  // Some(s0[n-2])
+    let va = vm.stack.pop();  // Some(s0[n-3])
+    match (va, vb, vc) {
+        (Some(a), Some(b), Some(c)) => {
+            vm.stack.push(b);
+            vm.stack.push(c);
+            vm.stack.push(a);
+            proof {
+                let base = s0.subrange(0, n as int - 3);
+                lemma_view_stack_index(s0, n as int - 3);
+                lemma_view_stack_index(s0, n as int - 2);
+                lemma_view_stack_index(s0, n as int - 1);
+                lemma_view_stack_prefix(s0, n as int - 3);
+                lemma_view_stack_push(base, s0[n as int - 2]);
+                lemma_view_stack_push(base.push(s0[n as int - 2]), s0[n as int - 1]);
+                lemma_view_stack_push(
+                    base.push(s0[n as int - 2]).push(s0[n as int - 1]),
+                    s0[n as int - 3]);
+                assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= base
+                    .push(s0[n as int - 2])
+                    .push(s0[n as int - 1])
+                    .push(s0[n as int - 3]));
+            }
+        }
+        _ => { assert(false); }
+    }
     StepResult::Next
 }
 
