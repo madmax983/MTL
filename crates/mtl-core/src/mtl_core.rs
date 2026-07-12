@@ -681,7 +681,7 @@ pub enum Outcome {
 pub fn exec_step(vm: &mut Vm) -> (r: StepResult)
     ensures
         match spec_step(old(vm).deep_view()) {
-            SpecStep::Next(s2) => r is Next && vm.deep_view() == s2,
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Halt(_) => r is Halt,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
         },
