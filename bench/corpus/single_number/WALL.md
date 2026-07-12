@@ -1,4 +1,14 @@
-# single_number — WALL (inexpressible in MTL v0.2)
+# single_number — WALL (was inexpressible through MTL v0.2)
+
+## RESOLVED in v0.3
+
+This task is **no longer a wall.** MTL v0.3 adds a `$` xor primitive, which
+collapses the canonical XOR-reduce into a single fold. The interpreter-validated
+solution is `[>0=][0][][$]|` (**9 tokens**), validated by
+`bench/validate/tests/tier2_v03.rs`. Everything below is retained as historical
+context describing why the task was a wall through v0.2.
+
+---
 
 Canonical solution: XOR-reduce the list (a ^ a == 0, so all paired elements
 cancel and the lone element remains).
