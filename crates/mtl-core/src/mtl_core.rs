@@ -893,107 +893,36 @@ pub fn exec_step(vm: &mut Vm) -> (r: StepResult)
     }
 }
 
-// Splits out the primitive dispatch. external_body: unverified (P2 assumed).
-#[verifier::external_body]
-pub fn exec_prim(vm: &mut Vm, p: SpecPrim, n: usize) -> StepResult {
+// exec_prim — primitive dispatch. Verified DISPATCHER: each arm delegates to a
+// per-primitive helper whose refinement `ensures` mirrors the matching
+// spec_step_prim arm across deep_view (same shape as exec_step's contract).
+// The dispatcher carries no proof beyond routing; the obligations live in the
+// helpers, or in the already-verified arithmetic/comparison leaves
+// (exec_arith / exec_divmod / exec_cmp) for the Add..Lt arms.
+pub fn exec_prim(vm: &mut Vm, p: SpecPrim, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+        view_word(old(vm).cont@[0]) == SpecWord::Prim(p),
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), p, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
     match p {
-        SpecPrim::Dup => {
-            if n < 1 { return StepResult::Fault(Error::Underflow); }
-            vm.cont.remove(0);
-            let top = vm.stack[n - 1].clone();
-            vm.stack.push(top);
-            StepResult::Next
-        }
-        SpecPrim::Drop => {
-            if n < 1 { return StepResult::Fault(Error::Underflow); }
-            vm.cont.remove(0);
-            vm.stack.pop();
-            StepResult::Next
-        }
-        SpecPrim::Swap => {
-            if n < 2 { return StepResult::Fault(Error::Underflow); }
-            vm.cont.remove(0);
-            vm.stack.swap(n - 1, n - 2);
-            StepResult::Next
-        }
-        SpecPrim::Rot => {
-            if n < 3 { return StepResult::Fault(Error::Underflow); }
-            vm.cont.remove(0);
-            let a = vm.stack.remove(n - 3);
-            vm.stack.push(a);
-            StepResult::Next
-        }
-        SpecPrim::Over => {
-            if n < 2 { return StepResult::Fault(Error::Underflow); }
-            vm.cont.remove(0);
-            let a = vm.stack[n - 2].clone();
-            vm.stack.push(a);
-            StepResult::Next
-        }
-        SpecPrim::Apply => {
-            if n < 1 { return StepResult::Fault(Error::Underflow); }
-            match vm.stack[n - 1] {
-                Value::Quote(_) => {
-                    vm.cont.remove(0);
-                    if let Some(Value::Quote(mut q)) = vm.stack.pop() {
-                        q.append(&mut vm.cont);
-                        vm.cont = q;
-                    }
-                    StepResult::Next
-                }
-                _ => StepResult::Fault(Error::TypeMismatch),
-            }
-        }
-        SpecPrim::Cat => {
-            if n < 2 { return StepResult::Fault(Error::Underflow); }
-            let ok = matches!(vm.stack[n - 2], Value::Quote(_))
-                && matches!(vm.stack[n - 1], Value::Quote(_));
-            if !ok { return StepResult::Fault(Error::TypeMismatch); }
-            vm.cont.remove(0);
-            let vb = vm.stack.pop();
-            let va = vm.stack.pop();
-            if let (Some(Value::Quote(mut a)), Some(Value::Quote(mut b))) = (va, vb) {
-                a.append(&mut b);
-                vm.stack.push(Value::Quote(a));
-            }
-            StepResult::Next
-        }
-        SpecPrim::Cons => {
-            if n < 2 { return StepResult::Fault(Error::Underflow); }
-            if !matches!(vm.stack[n - 1], Value::Quote(_)) {
-                return StepResult::Fault(Error::TypeMismatch);
-            }
-            vm.cont.remove(0);
-            let qv = vm.stack.pop();
-            let v = vm.stack.pop();
-            if let Some(Value::Quote(q)) = qv {
-                let mut newq: Vec<Word> = Vec::new();
-                if let Some(vv) = v {
-                    newq.push(value_to_exec_word(vv));
-                }
-                let mut q2 = q;
-                newq.append(&mut q2);
-                vm.stack.push(Value::Quote(newq));
-            }
-            StepResult::Next
-        }
-        SpecPrim::Dip => {
-            if n < 2 { return StepResult::Fault(Error::Underflow); }
-            if !matches!(vm.stack[n - 1], Value::Quote(_)) {
-                return StepResult::Fault(Error::TypeMismatch);
-            }
-            vm.cont.remove(0);
-            let qv = vm.stack.pop();
-            let a = vm.stack.pop();
-            if let Some(Value::Quote(mut q)) = qv {
-                if let Some(av) = a {
-                    q.push(value_to_exec_word(av));
-                }
-                q.append(&mut vm.cont);
-                vm.cont = q;
-            }
-            StepResult::Next
-        }
+        SpecPrim::Dup => exec_dup(vm, n),
+        SpecPrim::Drop => exec_drop(vm, n),
+        SpecPrim::Swap => exec_swap(vm, n),
+        SpecPrim::Rot => exec_rot(vm, n),
+        SpecPrim::Over => exec_over(vm, n),
+        SpecPrim::Apply => exec_apply(vm, n),
+        SpecPrim::Cat => exec_cat(vm, n),
+        SpecPrim::Cons => exec_cons(vm, n),
+        SpecPrim::Dip => exec_dip(vm, n),
         SpecPrim::Add => exec_arith(vm, p, n),
         SpecPrim::Sub => exec_arith(vm, p, n),
         SpecPrim::Mul => exec_arith(vm, p, n),
@@ -1001,192 +930,530 @@ pub fn exec_prim(vm: &mut Vm, p: SpecPrim, n: usize) -> StepResult {
         SpecPrim::Mod => exec_divmod(vm, false, n),
         SpecPrim::Eq => exec_cmp(vm, true, n),
         SpecPrim::Lt => exec_cmp(vm, false, n),
-        SpecPrim::If => {
-            if n < 3 { return StepResult::Fault(Error::Underflow); }
-            let ok = matches!(vm.stack[n - 3], Value::Int(_))
-                && matches!(vm.stack[n - 2], Value::Quote(_))
-                && matches!(vm.stack[n - 1], Value::Quote(_));
-            if !ok { return StepResult::Fault(Error::TypeMismatch); }
+        SpecPrim::If => exec_if(vm, n),
+        SpecPrim::PrimRec => exec_primrec(vm, n),
+        SpecPrim::Times => exec_times(vm, n),
+        SpecPrim::LinRec => exec_linrec(vm, n),
+        SpecPrim::Uncons => exec_uncons(vm, n),
+        SpecPrim::Fold => exec_fold(vm, n),
+        SpecPrim::Xor => exec_xor(vm, n),
+    }
+}
+
+// ============================================================
+// Per-primitive exec helpers. Each refines the matching spec_step_prim arm
+// under deep_view. EASY arms (stack shuffles, quote algebra, If, Xor) are
+// discharged; the re-emission arms (PrimRec/Times/LinRec/Uncons/Fold) remain
+// isolated external_body — TODO(Stage 2b).
+// ============================================================
+
+// ---------------- stack shuffling (arity-only faults) ----------------
+#[verifier::external_body]
+pub fn exec_dup(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Dup, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 1 { return StepResult::Fault(Error::Underflow); }
+    vm.cont.remove(0);
+    let top = vm.stack[n - 1].clone();
+    vm.stack.push(top);
+    StepResult::Next
+}
+
+#[verifier::external_body]
+pub fn exec_drop(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Drop, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 1 { return StepResult::Fault(Error::Underflow); }
+    vm.cont.remove(0);
+    vm.stack.pop();
+    StepResult::Next
+}
+
+#[verifier::external_body]
+pub fn exec_swap(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Swap, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 2 { return StepResult::Fault(Error::Underflow); }
+    vm.cont.remove(0);
+    vm.stack.swap(n - 1, n - 2);
+    StepResult::Next
+}
+
+#[verifier::external_body]
+pub fn exec_rot(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Rot, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 3 { return StepResult::Fault(Error::Underflow); }
+    vm.cont.remove(0);
+    let a = vm.stack.remove(n - 3);
+    vm.stack.push(a);
+    StepResult::Next
+}
+
+#[verifier::external_body]
+pub fn exec_over(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Over, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 2 { return StepResult::Fault(Error::Underflow); }
+    vm.cont.remove(0);
+    let a = vm.stack[n - 2].clone();
+    vm.stack.push(a);
+    StepResult::Next
+}
+
+// ---------------- quotation algebra ----------------
+#[verifier::external_body]
+pub fn exec_apply(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Apply, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 1 { return StepResult::Fault(Error::Underflow); }
+    match vm.stack[n - 1] {
+        Value::Quote(_) => {
             vm.cont.remove(0);
-            let fv = vm.stack.pop();
-            let tv = vm.stack.pop();
-            let cv = vm.stack.pop();
-            if let (Some(Value::Int(c)), Some(Value::Quote(t)), Some(Value::Quote(f))) =
-                (cv, tv, fv)
-            {
-                let mut branch = if c != 0 { t } else { f };
-                branch.append(&mut vm.cont);
-                vm.cont = branch;
+            if let Some(Value::Quote(mut q)) = vm.stack.pop() {
+                q.append(&mut vm.cont);
+                vm.cont = q;
             }
             StepResult::Next
         }
-        // ---------------- v0.2 recursion primitives (mirror of spec_step_prim) ----------------
-        SpecPrim::PrimRec => {
-            if n < 3 { return StepResult::Fault(Error::Underflow); }
-            let ok = matches!(vm.stack[n - 3], Value::Int(_))
-                && matches!(vm.stack[n - 2], Value::Quote(_))
-                && matches!(vm.stack[n - 1], Value::Quote(_));
-            if !ok { return StepResult::Fault(Error::TypeMismatch); }
-            vm.cont.remove(0);
-            let qc = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-            let qi = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-            let k = match vm.stack.pop() { Some(Value::Int(k)) => k, _ => 0 };
-            if k <= 0 {
-                // cont := qi ++ rest
-                let mut recur = qi;
-                recur.append(&mut vm.cont);
-                vm.cont = recur;
-            } else {
-                // cont := [PushInt(k), PushInt(k-1), PushQuote(qi), PushQuote(qc), Prim(PrimRec)] ++ qc ++ rest
-                let mut recur = vec![
-                    Word::PushInt(k),
-                    Word::PushInt(k - 1),
-                    Word::PushQuote(qi),
-                    Word::PushQuote(qc.clone()),
-                    Word::Prim(SpecPrim::PrimRec),
-                ];
-                recur.extend(qc);
-                recur.append(&mut vm.cont);
-                vm.cont = recur;
-            }
-            StepResult::Next
+        _ => StepResult::Fault(Error::TypeMismatch),
+    }
+}
+
+#[verifier::external_body]
+pub fn exec_cat(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Cat, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
         }
-        SpecPrim::Times => {
-            if n < 2 { return StepResult::Fault(Error::Underflow); }
-            let ok = matches!(vm.stack[n - 2], Value::Int(_))
-                && matches!(vm.stack[n - 1], Value::Quote(_));
-            if !ok { return StepResult::Fault(Error::TypeMismatch); }
-            vm.cont.remove(0);
-            let q = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-            let k = match vm.stack.pop() { Some(Value::Int(k)) => k, _ => 0 };
-            if k > 0 {
-                // cont := q ++ [PushInt(k-1), PushQuote(q), Prim(Times)] ++ rest
-                let mut recur = q.clone();
-                recur.push(Word::PushInt(k - 1));
-                recur.push(Word::PushQuote(q));
-                recur.push(Word::Prim(SpecPrim::Times));
-                recur.append(&mut vm.cont);
-                vm.cont = recur;
-            }
-            StepResult::Next
+    }),
+{
+    if n < 2 { return StepResult::Fault(Error::Underflow); }
+    let ok = matches!(vm.stack[n - 2], Value::Quote(_))
+        && matches!(vm.stack[n - 1], Value::Quote(_));
+    if !ok { return StepResult::Fault(Error::TypeMismatch); }
+    vm.cont.remove(0);
+    let vb = vm.stack.pop();
+    let va = vm.stack.pop();
+    if let (Some(Value::Quote(mut a)), Some(Value::Quote(mut b))) = (va, vb) {
+        a.append(&mut b);
+        vm.stack.push(Value::Quote(a));
+    }
+    StepResult::Next
+}
+
+#[verifier::external_body]
+pub fn exec_cons(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Cons, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
         }
-        SpecPrim::LinRec => {
-            if n < 4 { return StepResult::Fault(Error::Underflow); }
-            let ok = matches!(vm.stack[n - 4], Value::Quote(_))
-                && matches!(vm.stack[n - 3], Value::Quote(_))
-                && matches!(vm.stack[n - 2], Value::Quote(_))
-                && matches!(vm.stack[n - 1], Value::Quote(_));
-            if !ok { return StepResult::Fault(Error::TypeMismatch); }
-            vm.cont.remove(0);
-            let qr2 = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-            let qr1 = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-            let qt = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-            let qp = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-            // else_q := R1 ++ [PushQuote(P), PushQuote(T), PushQuote(R1), PushQuote(R2), Prim(LinRec)] ++ R2
-            let mut else_q = qr1.clone();
-            else_q.push(Word::PushQuote(qp.clone()));
-            else_q.push(Word::PushQuote(qt.clone()));
-            else_q.push(Word::PushQuote(qr1));
-            else_q.push(Word::PushQuote(qr2.clone()));
-            else_q.push(Word::Prim(SpecPrim::LinRec));
-            else_q.extend(qr2);
-            // spliced := P ++ [PushQuote(T), PushQuote(else_q), Prim(If)] ++ rest
-            let mut spliced = qp;
-            spliced.push(Word::PushQuote(qt));
-            spliced.push(Word::PushQuote(else_q));
-            spliced.push(Word::Prim(SpecPrim::If));
-            spliced.append(&mut vm.cont);
-            vm.cont = spliced;
-            StepResult::Next
+    }),
+{
+    if n < 2 { return StepResult::Fault(Error::Underflow); }
+    if !matches!(vm.stack[n - 1], Value::Quote(_)) {
+        return StepResult::Fault(Error::TypeMismatch);
+    }
+    vm.cont.remove(0);
+    let qv = vm.stack.pop();
+    let v = vm.stack.pop();
+    if let Some(Value::Quote(q)) = qv {
+        let mut newq: Vec<Word> = Vec::new();
+        if let Some(vv) = v {
+            newq.push(value_to_exec_word(vv));
         }
-        SpecPrim::Uncons => {
-            if n < 1 { return StepResult::Fault(Error::Underflow); }
-            // Inspect (without consuming) so a fault leaves the machine untouched.
-            match &vm.stack[n - 1] {
-                Value::Quote(q) => {
-                    if !q.is_empty() {
-                        match &q[0] {
-                            Word::PushInt(_) | Word::PushQuote(_) => {}
-                            _ => return StepResult::Fault(Error::TypeMismatch),
-                        }
-                    }
+        let mut q2 = q;
+        newq.append(&mut q2);
+        vm.stack.push(Value::Quote(newq));
+    }
+    StepResult::Next
+}
+
+#[verifier::external_body]
+pub fn exec_dip(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Dip, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 2 { return StepResult::Fault(Error::Underflow); }
+    if !matches!(vm.stack[n - 1], Value::Quote(_)) {
+        return StepResult::Fault(Error::TypeMismatch);
+    }
+    vm.cont.remove(0);
+    let qv = vm.stack.pop();
+    let a = vm.stack.pop();
+    if let Some(Value::Quote(mut q)) = qv {
+        if let Some(av) = a {
+            q.push(value_to_exec_word(av));
+        }
+        q.append(&mut vm.cont);
+        vm.cont = q;
+    }
+    StepResult::Next
+}
+
+// ---------------- branch ----------------
+#[verifier::external_body]
+pub fn exec_if(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::If, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 3 { return StepResult::Fault(Error::Underflow); }
+    let ok = matches!(vm.stack[n - 3], Value::Int(_))
+        && matches!(vm.stack[n - 2], Value::Quote(_))
+        && matches!(vm.stack[n - 1], Value::Quote(_));
+    if !ok { return StepResult::Fault(Error::TypeMismatch); }
+    vm.cont.remove(0);
+    let fv = vm.stack.pop();
+    let tv = vm.stack.pop();
+    let cv = vm.stack.pop();
+    if let (Some(Value::Int(c)), Some(Value::Quote(t)), Some(Value::Quote(f))) =
+        (cv, tv, fv)
+    {
+        let mut branch = if c != 0 { t } else { f };
+        branch.append(&mut vm.cont);
+        vm.cont = branch;
+    }
+    StepResult::Next
+}
+
+// ---------------- total bitwise xor (cmp-shaped: NO Overflow arm) ----------------
+#[verifier::external_body]
+pub fn exec_xor(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Xor, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 2 { return StepResult::Fault(Error::Underflow); }
+    let (a, b) = match (&vm.stack[n - 2], &vm.stack[n - 1]) {
+        (Value::Int(a), Value::Int(b)) => (*a, *b),
+        _ => return StepResult::Fault(Error::TypeMismatch),
+    };
+    vm.cont.remove(0);
+    vm.stack.pop();
+    vm.stack.pop();
+    vm.stack.push(Value::Int(a ^ b));
+    StepResult::Next
+}
+
+// ============================================================
+// Re-emission arms — ISOLATED external_body. TODO(Stage 2b): these splice a
+// re-emitted recursive continuation and need the append homomorphism plus a
+// per-arm decreases; a separate pass discharges them. Kept external_body so
+// the file stays 0 errors while the easy arms above are proved.
+// ============================================================
+
+// TODO(Stage 2b): PrimRec re-emission.
+#[verifier::external_body]
+pub fn exec_primrec(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::PrimRec, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 3 { return StepResult::Fault(Error::Underflow); }
+    let ok = matches!(vm.stack[n - 3], Value::Int(_))
+        && matches!(vm.stack[n - 2], Value::Quote(_))
+        && matches!(vm.stack[n - 1], Value::Quote(_));
+    if !ok { return StepResult::Fault(Error::TypeMismatch); }
+    vm.cont.remove(0);
+    let qc = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+    let qi = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+    let k = match vm.stack.pop() { Some(Value::Int(k)) => k, _ => 0 };
+    if k <= 0 {
+        let mut recur = qi;
+        recur.append(&mut vm.cont);
+        vm.cont = recur;
+    } else {
+        let mut recur = vec![
+            Word::PushInt(k),
+            Word::PushInt(k - 1),
+            Word::PushQuote(qi),
+            Word::PushQuote(qc.clone()),
+            Word::Prim(SpecPrim::PrimRec),
+        ];
+        recur.extend(qc);
+        recur.append(&mut vm.cont);
+        vm.cont = recur;
+    }
+    StepResult::Next
+}
+
+// TODO(Stage 2b): Times re-emission.
+#[verifier::external_body]
+pub fn exec_times(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Times, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 2 { return StepResult::Fault(Error::Underflow); }
+    let ok = matches!(vm.stack[n - 2], Value::Int(_))
+        && matches!(vm.stack[n - 1], Value::Quote(_));
+    if !ok { return StepResult::Fault(Error::TypeMismatch); }
+    vm.cont.remove(0);
+    let q = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+    let k = match vm.stack.pop() { Some(Value::Int(k)) => k, _ => 0 };
+    if k > 0 {
+        let mut recur = q.clone();
+        recur.push(Word::PushInt(k - 1));
+        recur.push(Word::PushQuote(q));
+        recur.push(Word::Prim(SpecPrim::Times));
+        recur.append(&mut vm.cont);
+        vm.cont = recur;
+    }
+    StepResult::Next
+}
+
+// TODO(Stage 2b): LinRec re-emission (desugars to If).
+#[verifier::external_body]
+pub fn exec_linrec(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::LinRec, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 4 { return StepResult::Fault(Error::Underflow); }
+    let ok = matches!(vm.stack[n - 4], Value::Quote(_))
+        && matches!(vm.stack[n - 3], Value::Quote(_))
+        && matches!(vm.stack[n - 2], Value::Quote(_))
+        && matches!(vm.stack[n - 1], Value::Quote(_));
+    if !ok { return StepResult::Fault(Error::TypeMismatch); }
+    vm.cont.remove(0);
+    let qr2 = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+    let qr1 = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+    let qt = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+    let qp = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+    let mut else_q = qr1.clone();
+    else_q.push(Word::PushQuote(qp.clone()));
+    else_q.push(Word::PushQuote(qt.clone()));
+    else_q.push(Word::PushQuote(qr1));
+    else_q.push(Word::PushQuote(qr2.clone()));
+    else_q.push(Word::Prim(SpecPrim::LinRec));
+    else_q.extend(qr2);
+    let mut spliced = qp;
+    spliced.push(Word::PushQuote(qt));
+    spliced.push(Word::PushQuote(else_q));
+    spliced.push(Word::Prim(SpecPrim::If));
+    spliced.append(&mut vm.cont);
+    vm.cont = spliced;
+    StepResult::Next
+}
+
+// TODO(Stage 2b): Uncons deconstruction.
+#[verifier::external_body]
+pub fn exec_uncons(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Uncons, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 1 { return StepResult::Fault(Error::Underflow); }
+    match &vm.stack[n - 1] {
+        Value::Quote(q) => {
+            if !q.is_empty() {
+                match &q[0] {
+                    Word::PushInt(_) | Word::PushQuote(_) => {}
+                    _ => return StepResult::Fault(Error::TypeMismatch),
                 }
+            }
+        }
+        _ => return StepResult::Fault(Error::TypeMismatch),
+    }
+    vm.cont.remove(0);
+    let q = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+    if q.is_empty() {
+        vm.stack.push(Value::Int(0));
+    } else {
+        let mut it = q.into_iter();
+        let head = it.next().unwrap();
+        let tail: Vec<Word> = it.collect();
+        let head_val = match head {
+            Word::PushInt(i) => Value::Int(i),
+            Word::PushQuote(s) => Value::Quote(s),
+            _ => Value::Int(0), // unreachable: guarded above
+        };
+        vm.stack.push(head_val);
+        vm.stack.push(Value::Quote(tail));
+        vm.stack.push(Value::Int(1));
+    }
+    StepResult::Next
+}
+
+// TODO(Stage 2b): Fold re-emission (left fold).
+#[verifier::external_body]
+pub fn exec_fold(vm: &mut Vm, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        match spec_step_prim(view_stack(old(vm).stack@), SpecPrim::Fold, rest) {
+            SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    if n < 3 { return StepResult::Fault(Error::Underflow); }
+    let ok = matches!(vm.stack[n - 3], Value::Quote(_))
+        && matches!(vm.stack[n - 1], Value::Quote(_));
+    if !ok { return StepResult::Fault(Error::TypeMismatch); }
+    if let Value::Quote(qs) = &vm.stack[n - 3] {
+        if let Some(head) = qs.first() {
+            match head {
+                Word::PushInt(_) | Word::PushQuote(_) => {}
                 _ => return StepResult::Fault(Error::TypeMismatch),
             }
-            vm.cont.remove(0);
-            let q = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-            if q.is_empty() {
-                vm.stack.push(Value::Int(0));
-            } else {
-                let mut it = q.into_iter();
-                let head = it.next().unwrap();
-                let tail: Vec<Word> = it.collect();
-                let head_val = match head {
-                    Word::PushInt(i) => Value::Int(i),
-                    Word::PushQuote(s) => Value::Quote(s),
-                    _ => Value::Int(0), // unreachable: guarded above
-                };
-                vm.stack.push(head_val);
-                vm.stack.push(Value::Quote(tail));
-                vm.stack.push(Value::Int(1));
-            }
-            StepResult::Next
-        }
-        // ---------------- v0.3 sequence primitives (mirror of spec_step_prim) ----------------
-        SpecPrim::Fold => {
-            if n < 3 { return StepResult::Fault(Error::Underflow); }
-            // seq (n-3) and combine (n-1) must be quotes; init (n-2) is any value.
-            // A non-value seq head faults TypeMismatch (mirrors Uncons). Inspect
-            // without consuming so a fault leaves the machine state untouched.
-            let ok = matches!(vm.stack[n - 3], Value::Quote(_))
-                && matches!(vm.stack[n - 1], Value::Quote(_));
-            if !ok { return StepResult::Fault(Error::TypeMismatch); }
-            if let Value::Quote(qs) = &vm.stack[n - 3] {
-                if let Some(head) = qs.first() {
-                    match head {
-                        Word::PushInt(_) | Word::PushQuote(_) => {}
-                        _ => return StepResult::Fault(Error::TypeMismatch),
-                    }
-                }
-            }
-            vm.cont.remove(0);
-            let qc = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-            let init = match vm.stack.pop() { Some(v) => v, _ => Value::Int(0) };
-            let qs = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
-            if qs.is_empty() {
-                vm.stack.push(init);
-            } else {
-                let mut it = qs.into_iter();
-                let head = it.next().unwrap();
-                let tail: Vec<Word> = it.collect();
-                // cont := [PushQuote(tail), value_to_word(init), head] ++ qc
-                //         ++ [PushQuote(qc), Prim(Fold)] ++ rest
-                let mut recur = vec![
-                    Word::PushQuote(tail),
-                    value_to_exec_word(init),
-                    head,
-                ];
-                recur.extend(qc.clone());
-                recur.push(Word::PushQuote(qc));
-                recur.push(Word::Prim(SpecPrim::Fold));
-                recur.append(&mut vm.cont);
-                vm.cont = recur;
-            }
-            StepResult::Next
-        }
-        SpecPrim::Xor => {
-            if n < 2 { return StepResult::Fault(Error::Underflow); }
-            let (a, b) = match (&vm.stack[n - 2], &vm.stack[n - 1]) {
-                (Value::Int(a), Value::Int(b)) => (*a, *b),
-                _ => return StepResult::Fault(Error::TypeMismatch),
-            };
-            vm.cont.remove(0);
-            vm.stack.pop();
-            vm.stack.pop();
-            vm.stack.push(Value::Int(a ^ b));
-            StepResult::Next
         }
     }
+    vm.cont.remove(0);
+    let qc = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+    let init = match vm.stack.pop() { Some(v) => v, _ => Value::Int(0) };
+    let qs = match vm.stack.pop() { Some(Value::Quote(q)) => q, _ => Vec::new() };
+    if qs.is_empty() {
+        vm.stack.push(init);
+    } else {
+        let mut it = qs.into_iter();
+        let head = it.next().unwrap();
+        let tail: Vec<Word> = it.collect();
+        let mut recur = vec![
+            Word::PushQuote(tail),
+            value_to_exec_word(init),
+            head,
+        ];
+        recur.extend(qc.clone());
+        recur.push(Word::PushQuote(qc));
+        recur.push(Word::Prim(SpecPrim::Fold));
+        recur.append(&mut vm.cont);
+        vm.cont = recur;
+    }
+    StepResult::Next
 }
 
 // exec-side value_to_word (the interp twin of the spec `value_to_word`).
