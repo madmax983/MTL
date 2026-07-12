@@ -1264,24 +1264,81 @@ pub fn exec_arith(vm: &mut Vm, p: SpecPrim, n: usize) -> (r: StepResult)
     }
 }
 
-#[verifier::external_body]
-pub fn exec_divmod(vm: &mut Vm, is_div: bool, n: usize) -> StepResult {
-    if n < 2 { return StepResult::Fault(Error::Underflow); }
+// P2 leaf refinement of the Div/Mod arms of spec_step_prim (both spec_divmod).
+// Fault ordering is preserved exactly: arity (Underflow) -> type (TypeMismatch)
+// -> DivByZero (b == 0) -> Overflow (only i64::MIN / -1). The b==0 check comes
+// BEFORE the checked op, matching spec_divmod's `if b == 0` guard ahead of its
+// `!in_i64(trunc_div(a,b))` guard.
+pub fn exec_divmod(vm: &mut Vm, is_div: bool, n: usize) -> (r: StepResult)
+    requires
+        n == old(vm).stack.len(),
+        old(vm).cont.len() >= 1,
+        view_word(old(vm).cont@[0])
+            == SpecWord::Prim(if is_div { SpecPrim::Div } else { SpecPrim::Mod }),
+    ensures ({
+        let rest = view_words(old(vm).cont@.subrange(1, old(vm).cont@.len() as int));
+        let p = if is_div { SpecPrim::Div } else { SpecPrim::Mod };
+        match spec_step_prim(view_stack(old(vm).stack@), p, rest) {
+            SpecStep::Next(s2) => r is Next && vm.deep_view() == s2,
+            SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Halt(_) => false,
+        }
+    }),
+{
+    let ghost s0 = vm.stack@;
+    let ghost c0 = vm.cont@;
+    proof { lemma_view_stack_len(vm.stack@); }
+    if n < 2 {
+        return StepResult::Fault(Error::Underflow);
+    }
     let (a, b) = match (&vm.stack[n - 2], &vm.stack[n - 1]) {
         (Value::Int(a), Value::Int(b)) => (*a, *b),
-        _ => return StepResult::Fault(Error::TypeMismatch),
+        _ => {
+            proof {
+                lemma_view_stack_index(s0, n - 2);
+                lemma_view_stack_index(s0, n - 1);
+            }
+            return StepResult::Fault(Error::TypeMismatch);
+        }
     };
-    if b == 0 { return StepResult::Fault(Error::DivByZero); }
-    let r = if is_div { a.checked_div(b) } else { a.checked_rem(b) };
-    match r {
+    proof {
+        lemma_view_stack_index(s0, n - 2);
+        lemma_view_stack_index(s0, n - 1);
+    }
+    // DivByZero BEFORE Overflow, mirroring spec_divmod's guard order.
+    if b == 0 {
+        return StepResult::Fault(Error::DivByZero);
+    }
+    let res = if is_div { a.checked_div(b) } else { a.checked_rem(b) };
+    match res {
         Some(v) => {
+            proof {
+                // TODO(verify): value bridge — Some(v) here (b != 0, not MIN/-1) means
+                // v as int == trunc_div(a int, b int) (is_div) / trunc_mod(a int, b int).
+                // Rust i64 `/` and `%` truncate toward zero, matching trunc_div/trunc_mod;
+                // trunc_divmod_correct pins the a == q*b + r identity if needed.
+            }
             vm.cont.remove(0);
             vm.stack.pop();
             vm.stack.pop();
             vm.stack.push(Value::Int(v));
+            proof {
+                assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+                lemma_view_stack_pop2_push(s0, Value::Int(v));
+                // TODO(verify): close vm.deep_view() == s2 (Next arm of spec_divmod).
+            }
             StepResult::Next
         }
-        None => StepResult::Fault(Error::Overflow),
+        None => {
+            proof {
+                // TODO(verify): with b != 0, checked_div/checked_rem == None <=> a==MIN && b==-1
+                // <=> !in_i64(trunc_div(a int, b int)) (only the MIN/-1 case escapes i64).
+                // RED-ALERT guard #2: prove this equivalence directly, do NOT let it go
+                // vacuous — checked_rem(MIN,-1)==None for a DIFFERENT reason than the
+                // mathematical remainder (0), but the spec Overflow arm still fires.
+            }
+            StepResult::Fault(Error::Overflow)
+        }
     }
 }
 
