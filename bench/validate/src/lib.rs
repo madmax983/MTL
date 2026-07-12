@@ -52,6 +52,12 @@ pub fn conv(w: &Word) -> IWord {
             Prim::Times => IPrim::Times,
             Prim::LinRec => IPrim::LinRec,
             Prim::Uncons => IPrim::Uncons,
+            // v0.3 sequence primitives: parsed by mtl-syntax but not yet
+            // executable — mtl-core's interp variants land in the v03-core PR.
+            // Explicit arms (no wildcard) so the compiler flags any future Prim.
+            Prim::Fold | Prim::Xor => {
+                unimplemented!("v0.3 primitive not yet executable (mtl-core support pending)")
+            }
         }),
     }
 }

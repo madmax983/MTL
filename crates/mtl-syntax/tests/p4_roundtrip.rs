@@ -17,8 +17,8 @@ use mtl_syntax::ast::Prim;
 use mtl_syntax::{parse, print, Word};
 use proptest::prelude::*;
 
-/// All 21 primitives, for the generator.
-const ALL_PRIMS: [Prim; 21] = [
+/// All 23 primitives, for the generator.
+const ALL_PRIMS: [Prim; 23] = [
     Prim::Dup,
     Prim::Drop,
     Prim::Swap,
@@ -40,6 +40,8 @@ const ALL_PRIMS: [Prim; 21] = [
     Prim::Times,
     Prim::LinRec,
     Prim::Uncons,
+    Prim::Fold,
+    Prim::Xor,
 ];
 
 /// A name `[a-z][a-z0-9]*` of 1..=3 chars.
@@ -111,7 +113,9 @@ proptest! {
         s in proptest::collection::vec(
             prop_oneof![
                 Just('['), Just(']'), Just(':'), Just('!'), Just('-'),
-                Just('"'), Just('#'), Just('$'), Just(' '),
+                // `)` is a still-unassigned char (unlike `$`, now the xor
+                // glyph) — keeps an `UnexpectedChar` case in the fuzz mix.
+                Just('"'), Just('#'), Just('$'), Just(')'), Just(' '),
                 (b'0'..=b'9').prop_map(|b| b as char),
                 (b'a'..=b'z').prop_map(|b| b as char),
                 any::<char>(),
@@ -150,4 +154,42 @@ proptest! {
     ) {
         let _ = print(&p);
     }
+}
+
+/// Explicit BPE-merge adjacency round-trip vectors for the v0.3 glyphs `(`
+/// (fold) and `$` (xor). The glyph choices were BPE-measured because the
+/// tokenizer merges `](` and `[$`; those boundaries must survive a print/parse
+/// round-trip byte-exact. Each source below is already canonical, so we assert
+/// both `parse(print(ast)) == ast` and that the printed form is byte-identical.
+#[test]
+fn v03_glyph_adjacency_roundtrip() {
+    fn i(n: i64) -> Word {
+        Word::PushInt(n)
+    }
+    fn p(pr: Prim) -> Word {
+        Word::Prim(pr)
+    }
+    fn q(ws: Vec<Word>) -> Word {
+        Word::PushQuote(ws)
+    }
+    fn check(src: &str, ast: Vec<Word>) {
+        assert_eq!(parse(src), Ok(ast.clone()), "parse({src:?})");
+        assert_eq!(print(&ast), src, "canonical print of {src:?}");
+        assert_eq!(parse(&print(&ast)), Ok(ast), "round-trip of {src:?}");
+    }
+
+    // `]` immediately followed by `(` — the `](` merge (fold after a quote).
+    check("[+](", vec![q(vec![p(Prim::Add)]), p(Prim::Fold)]);
+    // `[` immediately followed by `$` — the `[$` merge (xor inside a quote).
+    check("[$]", vec![q(vec![p(Prim::Xor)])]);
+    check("[$]|", vec![q(vec![p(Prim::Xor)]), p(Prim::LinRec)]);
+    // `(` adjacent to a digit, both sides (fold is self-delimiting punct).
+    check("3(", vec![i(3), p(Prim::Fold)]);
+    check("(3", vec![p(Prim::Fold), i(3)]);
+    // `(` adjacent to a quotation, both sides.
+    check("[](", vec![q(vec![]), p(Prim::Fold)]);
+    check("([]", vec![p(Prim::Fold), q(vec![])]);
+    // `((` and `$$` sequences.
+    check("((", vec![p(Prim::Fold), p(Prim::Fold)]);
+    check("$$", vec![p(Prim::Xor), p(Prim::Xor)]);
 }

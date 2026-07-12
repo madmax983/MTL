@@ -70,6 +70,8 @@ fn each_glyph_alone() {
         (".", Times),
         ("|", LinRec),
         (">", Uncons),
+        ("(", Fold),
+        ("$", Xor),
     ];
     for (glyph, prim) in cases {
         check(glyph, vec![p(*prim)], glyph);
@@ -178,6 +180,103 @@ fn v02_design_doc_programs() {
 }
 
 #[test]
+fn v03_design_doc_programs() {
+    // Design doc `docs/design/v0.3-sequences.md` §7 hand-traced solutions using
+    // the new `fold` (`(`) and `xor` (`$`) primitives. Source strings are
+    // verbatim from the doc; each is already canonical, so it round-trips.
+
+    // --- the three clean folds (§7) ---
+    // sum_list `0[+](`
+    check("0[+](", vec![i(0), q(vec![p(Add)]), p(Fold)], "0[+](");
+    // product_list `1[*](`
+    check("1[*](", vec![i(1), q(vec![p(Mul)]), p(Fold)], "1[*](");
+    // length_list `0[_1+](`
+    check(
+        "0[_1+](",
+        vec![i(0), q(vec![p(Drop), i(1), p(Add)]), p(Fold)],
+        "0[_1+](",
+    );
+
+    // --- the five accumulator rewrites (§7) ---
+    // max_list `>_~[^^<[~_][_]?](`
+    check(
+        ">_~[^^<[~_][_]?](",
+        vec![
+            p(Uncons),
+            p(Drop),
+            p(Swap),
+            q(vec![
+                p(Over),
+                p(Over),
+                p(Lt),
+                q(vec![p(Swap), p(Drop)]),
+                q(vec![p(Drop)]),
+                p(If),
+            ]),
+            p(Fold),
+        ],
+        ">_~[^^<[~_][_]?](",
+    );
+    // min_list `>_~[^^<[_][~_]?](`
+    check(
+        ">_~[^^<[_][~_]?](",
+        vec![
+            p(Uncons),
+            p(Drop),
+            p(Swap),
+            q(vec![
+                p(Over),
+                p(Over),
+                p(Lt),
+                q(vec![p(Drop)]),
+                q(vec![p(Swap), p(Drop)]),
+                p(If),
+            ]),
+            p(Fold),
+        ],
+        ">_~[^^<[_][~_]?](",
+    );
+    // reverse_list `[][~;](`
+    check(
+        "[][~;](",
+        vec![q(vec![]), q(vec![p(Swap), p(Cons)]), p(Fold)],
+        "[][~;](",
+    );
+    // contains `[=+0~<];0~(`
+    check(
+        "[=+0~<];0~(",
+        vec![
+            q(vec![p(Eq), p(Add), i(0), p(Swap), p(Lt)]),
+            p(Cons),
+            i(0),
+            p(Swap),
+            p(Fold),
+        ],
+        "[=+0~<];0~(",
+    );
+    // count_occurrences `[=+];0~(`
+    check(
+        "[=+];0~(",
+        vec![q(vec![p(Eq), p(Add)]), p(Cons), i(0), p(Swap), p(Fold)],
+        "[=+];0~(",
+    );
+
+    // --- xor: single_number `[>0=][0][][$]|` (§7, WALL cleared) ---
+    // Clean linrec xor-fold: P=`>0=`, T=`0`, R1=`[]`, R2=`$` (xor).
+    check(
+        "[>0=][0][][$]|",
+        vec![
+            q(vec![p(Uncons), i(0), p(Eq)]),
+            q(vec![i(0)]),
+            q(vec![]),
+            q(vec![p(Xor)]),
+            p(LinRec),
+        ],
+        "[>0=][0][][$]|",
+    );
+}
+
+#[test]
 fn nesting() {
     check("[]", vec![q(vec![])], "[]");
     check("[[[]]]", vec![q(vec![q(vec![q(vec![])])])], "[[[]]]");
@@ -254,11 +353,15 @@ fn errors_exact_kind_and_pos() {
             kind: ParseErrorKind::DefinitionUnsupported
         })
     );
+    // `)` is a genuinely-unassigned character (not in GLYPHS, not a bracket,
+    // digit, name-char, or the specially-handled `"`/`#`), so it is the
+    // canonical `UnexpectedChar`. NB: `$` is now the `xor` glyph (v0.3), so it
+    // no longer errors here.
     assert_eq!(
-        parse("$"),
+        parse(")"),
         Err(ParseError {
             pos: 0,
-            kind: ParseErrorKind::UnexpectedChar { found: '$' }
+            kind: ParseErrorKind::UnexpectedChar { found: ')' }
         })
     );
 }
