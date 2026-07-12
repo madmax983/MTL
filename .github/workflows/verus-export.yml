@@ -1,0 +1,43 @@
+name: verus-toolchain-export
+
+on:
+  push:
+    branches: [verus-toolchain-export]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    env:
+      VERUS_VERSION: "0.2026.07.05.49b8806"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download pinned Verus release
+        run: |
+          set -euxo pipefail
+          url="https://github.com/verus-lang/verus/releases/download/release%2F${VERUS_VERSION}/verus-${VERUS_VERSION}-x86-linux.zip"
+          echo "Fetching $url"
+          curl -fL "$url" -o verus.zip
+          ls -la verus.zip
+          sha256sum verus.zip | tee verus.zip.sha256.orig
+
+      - name: Split and push zip parts to artifact branch
+        run: |
+          set -euxo pipefail
+          mkdir -p out
+          split -b 90m -d verus.zip out/verus.zip.part.
+          sha256sum verus.zip | awk '{print $1}' > out/verus.zip.sha256
+          echo "$VERUS_VERSION" > out/verus.version
+          ls -la out
+          git config user.email "actions@github.com"
+          git config user.name "gh-actions"
+          git checkout --orphan verus-toolchain-artifact
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          git add -f out
+          git commit -m "verus ${VERUS_VERSION} toolchain zip parts [skip ci]"
+          git push -f origin verus-toolchain-artifact
+          echo "Pushed parts:"; ls -la out
