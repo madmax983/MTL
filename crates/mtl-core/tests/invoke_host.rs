@@ -198,6 +198,54 @@ fn drive_core_fault_after_a_serviced_invoke() {
 }
 
 // ========================================================================
+// 6. GLOBAL FUEL BUDGET — an endless capability loop is cancelled, not hung.
+// ========================================================================
+
+#[test]
+fn an_endless_capability_loop_is_cancelled_by_the_global_budget() {
+    // Models a tier-3 `agent_loop` whose `done` condition never trips: a
+    // self-reproducing quotation that invokes a capability and then re-runs
+    // itself, forever. The toy host ALWAYS Resumes (echo is identity), so the
+    // loop never terminates on its own — only the GLOBAL fuel budget can stop it.
+    //
+    //   body = [ echo, dup, apply ]  : invoke the cap, duplicate self, re-run self.
+    //   prog = [ [body], dup, apply ]: push the self-quote, then launch it.
+    //
+    // Each iteration Invokes `echo` (which costs NO fuel) BEFORE the loop's two
+    // in-core steps (`dup`, `apply`) run. Under the OLD per-segment fuel (the
+    // bug), the core returned `Invoke` before exhausting any single segment on
+    // EVERY iteration, so `run` never returned `FuelExhausted` and `drive` spun
+    // at 100% CPU forever. Under the GLOBAL budget the summed in-core steps run
+    // out and the loop is cancelled at a step boundary.
+    let body = vec![call("echo"), dup(), apply()];
+    let prog = vec![quote(body), dup(), apply()];
+
+    // A real, finite global budget. It bounds the TOTAL in-core steps across all
+    // resumptions, so the loop must terminate deterministically.
+    const BUDGET: u64 = 1_000;
+
+    let mut host = EchoHost::default();
+    let result = drive(Vm::new(prog), BUDGET, &mut host);
+
+    // The global budget is exhausted at a step boundary -> Cancelled. This is the
+    // proof the hang is gone: `drive` returns promptly instead of spinning.
+    assert_eq!(result, RunResult::Cancelled);
+
+    // The host WAS serviced (the loop genuinely looped) but a BOUNDED number of
+    // times: every service is followed by >= 1 fuel-charged in-core step, so the
+    // service count can never exceed the global budget.
+    assert!(
+        host.calls > 0,
+        "the endless loop should have invoked the host at least once"
+    );
+    assert!(
+        host.calls as u64 <= BUDGET,
+        "services ({}) must be bounded by the global budget ({BUDGET})",
+        host.calls
+    );
+}
+
+// ========================================================================
 // SEAM SMOKE — the seam data types are usable as documented (CapabilitySig).
 // ========================================================================
 

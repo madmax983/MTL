@@ -18,7 +18,7 @@
 //! never enters the core; `cont` is opaque to the host, which hands it back
 //! untouched at resume.
 
-use crate::interp::{run, Fault, FaultInfo, Outcome, Value, Vm};
+use crate::interp::{exec_step, Fault, Step, Value, Vm};
 
 /// Host-side fault codes (design §3.1 / §6). These are raised by the host runner,
 /// never by the pure core — grant/deny and resource metering are host decisions
@@ -90,41 +90,69 @@ pub enum RunResult {
     Done(Vec<Value>),
     /// The pure core faulted (an ordinary in-core fault, e.g. underflow).
     Faulted(Fault),
-    /// Fuel ran out BETWEEN steps — a clean cancellation with no partial effect
-    /// (the core suspends only at step boundaries; a `Call` yields via `Invoke`,
-    /// not `FuelExhausted`).
+    /// The GLOBAL fuel budget was exhausted BETWEEN steps — a clean cancellation
+    /// with no partial effect. `fuel` bounds the total in-core steps across the
+    /// ENTIRE driven run (all inter-`Invoke` segments summed), so an endless loop
+    /// that yields a capability every iteration is still cancelled (it can no
+    /// longer defeat metering by resetting the budget at each `Invoke`). The core
+    /// suspends only at step boundaries; a `Call` yields via `Invoke` and costs no
+    /// fuel, so exhaustion never occurs mid-capability.
     Cancelled,
     /// The host refused or failed to service a capability.
     HostFaulted(HostCode),
 }
 
-/// The impure drive loop (design §2.3 / §7.1): run the verified pure core to a
-/// boundary, and — on [`Outcome::Invoke`] — hand `(name, stack)` to the host,
-/// then re-seed a fresh `run` from the returned stack and the suspended `cont`.
+/// The impure drive loop (design §2.3 / §7.1): step the verified pure core one
+/// small step at a time and — when a `Call` yields [`Step::Invoke`] — hand
+/// `(name, stack)` to the host, then resume in place from the suspended `cont`
+/// with the host-returned stack.
 ///
-/// ## Fuel (design §6, Option B)
+/// ## Fuel — a GLOBAL budget across resumptions (design §7)
 ///
-/// `fuel` is a pure in-core step counter. The SAME `fuel` is re-supplied to each
-/// fresh `run` across resumptions; host cost is **never** folded into it. The core
-/// remains oblivious to host time/budget — those are metered host-side and surface
-/// as a [`HostCode`] via [`HostResult::HostFault`].
+/// `fuel` is a pure in-core step counter that bounds the WHOLE driven run: the
+/// total number of in-core steps summed across every inter-`Invoke` segment is
+/// `<= fuel`. `drive` owns the step loop and decrements a single `remaining`
+/// budget once per in-core step; servicing an `Invoke` does NOT reset it. When
+/// `remaining` hits 0 at a step boundary, the run is [`RunResult::Cancelled`].
+///
+/// This is what makes metering total: a program that yields a capability inside a
+/// non-terminating loop (e.g. a tier-3 `agent_loop` whose `done` never trips)
+/// hits `Invoke` before any single segment exhausts fuel on every iteration, yet
+/// the global budget still runs out — so the loop is cancelled instead of spinning
+/// forever. Re-supplying `fuel` per segment (the old behaviour) let such a loop
+/// defeat the §7 global-budget guarantee entirely.
+///
+/// An `Invoke` yield itself costs NO fuel: it is a clean boundary between steps
+/// (design §7 — "fuel exhaustion can never occur mid-capability"; exhaustion
+/// happens only at step boundaries). Host cost is **never** folded into `fuel`;
+/// the core stays oblivious to host time/budget, which are metered host-side and
+/// surface as a [`HostCode`] via [`HostResult::HostFault`] (design §6, Option B).
 pub fn drive(mut vm: Vm, fuel: u64, host: &mut dyn Host) -> RunResult {
+    // Single decreasing budget over the ENTIRE run; never reset across Invokes.
+    let mut remaining = fuel;
     loop {
-        match run(vm, fuel) {
-            Outcome::Halt(stk) => return RunResult::Done(stk),
-            Outcome::Fault(FaultInfo { fault, .. }) => return RunResult::Faulted(fault),
-            // FuelExhausted is BETWEEN steps: clean cancellation, no partial effect.
-            Outcome::FuelExhausted { .. } => return RunResult::Cancelled,
-            Outcome::Invoke { name, stack, cont } => match host.service(&name, stack) {
-                // Fresh re-entry from cont with the host-returned stack.
-                HostResult::Resume(result_stack) => {
-                    vm = Vm {
-                        stack: result_stack,
-                        cont,
-                    };
+        // Exhaustion is checked at the step boundary, before executing the next
+        // step (mirrors `interp::run`'s `steps >= fuel` guard): a clean
+        // cancellation with no partial effect.
+        if remaining == 0 {
+            return RunResult::Cancelled;
+        }
+        match exec_step(&mut vm) {
+            // An ordinary in-core step: charge exactly one unit of the budget.
+            Step::Next => remaining -= 1,
+            Step::Halt => return RunResult::Done(vm.stack),
+            Step::Fault(fault) => return RunResult::Faulted(fault),
+            // v0.4 effects: the core suspended at a `Call`. `exec_step` already
+            // consumed the `Call` word (so `vm.cont` is the tail after it) and
+            // left `vm.stack` as the snapshot. Service the capability WITHOUT
+            // charging fuel, then resume in place with the host-returned stack.
+            Step::Invoke(name) => {
+                let snapshot = core::mem::take(&mut vm.stack);
+                match host.service(&name, snapshot) {
+                    HostResult::Resume(result_stack) => vm.stack = result_stack,
+                    HostResult::HostFault(code) => return RunResult::HostFaulted(code),
                 }
-                HostResult::HostFault(code) => return RunResult::HostFaulted(code),
-            },
+            }
         }
     }
 }
