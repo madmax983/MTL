@@ -104,6 +104,28 @@ jobs:
             exit 1
           fi
 
+      - name: verus verify — P5 Turing-completeness proof (HARD GATE; admit-free)
+        id: p5
+        # HARD GATE (NO continue-on-error): unlike the P2-stubbed core step above,
+        # P5 (`p5_universality.rs`) is a fully machine-checked, admit-free proof — the
+        # two-counter Minsky simulation over `spec_step` (§6, §6.5 of docs/mtl-spec.md).
+        # If it regresses, Turing completeness is no longer proven, so the job goes RED.
+        # NOTE: p5_universality.rs does `mod mtl_core;`, so this invocation ALSO
+        # re-verifies the frozen core (the explicit core step above is kept for its
+        # dedicated regression signal + honesty audit).
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          if verus crates/mtl-core/src/p5_universality.rs 2>&1 | tee artifacts/p5-proof-log.txt ; then
+            echo "p5_status=pass" >> "$GITHUB_OUTPUT"
+            echo "### Verus P5 (Turing completeness): VERIFIED" >> "$GITHUB_STEP_SUMMARY"
+            echo "Machine-checked (admit-free): p5_lockstep, p5_simulation, p5_halt_forward, p5_halt_forward_monotone, p5_diverge, p5_halt_reverse (re-verifies mtl_core.rs alongside)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "p5_status=fail" >> "$GITHUB_OUTPUT"
+            echo "### Verus P5 (Turing completeness): FAILED — see p5 proof log artifact" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       - name: verus honesty audit — --no-cheating (reports stubbed P2; non-fatal)
         if: always()
         # `--no-cheating` rejects assume/admit/external_body. It is EXPECTED to fail
