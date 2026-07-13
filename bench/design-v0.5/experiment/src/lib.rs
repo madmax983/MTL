@@ -537,6 +537,51 @@ pub fn search_e(with_oracle: bool) -> SearchResult {
     enumerate_search("e", it, &expected_av(&[4, 3, 2, 1]), with_oracle)
 }
 
+// ==================================================== VALIDITY-FIXED variants
+// SECONDARY analysis. The pre-registered tasks (c) and (e) are retained above,
+// unchanged, for the primary verdict: the rig proved both targets provably
+// INFEASIBLE in their pre-registered spaces (task (c) x=1000 — nearest
+// reachable 1093; task (e) full-reversal [4,3,2,1] — unreachable, and in fact
+// EVERY non-identity permutation of {1,2,3,4} is either unreachable or solvable
+// in ≤2 ops, since the routing subgroup has diameter 2: the bottom element is
+// pinned because only ~/@ preserve the 4-element multiset and both touch only
+// the top three). These c2/e2 variants swap in a *reachable* target on the
+// SAME space so the fixed-validity comparison can also be measured. They are
+// NOT part of the pre-registered primary set (`TASK_IDS`).
+
+/// Task (c2) — VALIDITY-FIXED variant of (c). Same space a∈[1,8], b∈[-8,8],
+/// n∈[1,16], loop x:=a*x+b from x0=1, same Times emission form, but target
+/// x=1093 (reachable — e.g. a=3,b=1,n=6 → `1 6[3*1+].`, and a=5,b=3,n=4 →
+/// `1 4[5*3+].`; the enumerator returns the latter first because n is the
+/// outer loop).
+pub fn search_c2(with_oracle: bool) -> SearchResult {
+    let mut cands = Vec::new();
+    for n in 1..=16i64 {
+        for a in 1..=8i64 {
+            for b in -8..=8i64 {
+                cands.push(prog_c(a, b, n));
+            }
+        }
+    }
+    enumerate_search("c2", cands.into_iter(), &expected_av(&[1093]), with_oracle)
+}
+
+/// Task (e2) — VALIDITY-FIXED variant of (e). Same start [1,2,3,4], same
+/// alphabet {~,@,^,_,:}, same length ≤ 8, but a *reachable* target:
+/// [1,2,3,4,4,4,4] — "quadruplicate the top-of-stack". This target is
+/// non-identity, has provable minimal solution length 3 (reaching a 7-element
+/// stack from 4 elements needs ≥3 pushes, and each op appends at most one
+/// value; canonical solution `:::`, three dups), and rests on the strongest
+/// possible LLM prior (dup), keeping e2 winnable for the Arm-A attempt loop —
+/// the stated purpose of (e). A pure permutation/rotation target (the ideal for
+/// (e)) is provably impossible at minimal length ≥3 in this space (see the note
+/// above), so the dup-chain is the reachable strong-prior substitute. The
+/// enumerator returns `:^^` (over-based, also length 3) as the first winner.
+pub fn search_e2(with_oracle: bool) -> SearchResult {
+    let it = combos(5, 8).map(|seq| prog_e(&seq));
+    enumerate_search("e2", it, &expected_av(&[1, 2, 3, 4, 4, 4, 4]), with_oracle)
+}
+
 // ----------------------------------------------------------- combo iterator
 /// All op-index sequences over `nops` ops of length 1..=`maxlen`, ordered by
 /// length then lexicographically (v[0] most significant).
@@ -562,11 +607,17 @@ pub fn run_task(id: &str, with_oracle: bool) -> SearchResult {
         "c" => search_c(with_oracle),
         "d" => search_d(with_oracle),
         "e" => search_e(with_oracle),
+        "c2" => search_c2(with_oracle),
+        "e2" => search_e2(with_oracle),
         _ => panic!("unknown task {id}"),
     }
 }
 
+/// Pre-registered primary task set (the pre-registered verdict is over these).
 pub const TASK_IDS: [&str; 5] = ["a", "b", "c", "d", "e"];
+
+/// Secondary VALIDITY-FIXED task set (reachable-target variants of c and e).
+pub const FIXED_TASK_IDS: [&str; 2] = ["c2", "e2"];
 
 /// Validate a winning glyph string end-to-end the way `mtlrun` does: parse it,
 /// run it on the reference interpreter, and require `Halt(expected)`.
@@ -630,6 +681,8 @@ pub fn expected_ints(id: &str) -> Vec<i64> {
         "c" => vec![1000],
         "d" => vec![100],
         "e" => vec![4, 3, 2, 1],
+        "c2" => vec![1093],
+        "e2" => vec![1, 2, 3, 4, 4, 4, 4],
         _ => vec![],
     }
 }
@@ -671,5 +724,29 @@ mod tests {
         assert!(r.space_exhausted);
         assert_eq!(r.candidates_explored, 2176);
         assert_eq!(r.oracle_checked, r.oracle_agree);
+    }
+
+    #[test]
+    fn task_c2_finds_1093() {
+        // VALIDITY-FIXED: reachable target 1093. Enumerator (n outer) returns
+        // a=5,b=3,n=4 first: `1 4[5*3+].`.
+        let r = search_c2(true);
+        assert!(r.found);
+        assert!(!r.space_exhausted);
+        assert_eq!(r.winner_glyphs, "1 4[5*3+].");
+        assert_eq!(r.oracle_checked, r.oracle_agree);
+        assert!(validate_glyphs(&r.winner_glyphs, &[1093]));
+    }
+
+    #[test]
+    fn task_e2_finds_quadruplicate() {
+        // VALIDITY-FIXED: reachable target [1,2,3,4,4,4,4]. First winner `:^^`
+        // (length 3, over-based); canonical minimal solution `:::` is also len 3.
+        let r = search_e2(true);
+        assert!(r.found);
+        assert!(!r.space_exhausted);
+        assert_eq!(r.winner_glyphs, "1 2 3 4:^^");
+        assert_eq!(r.oracle_checked, r.oracle_agree);
+        assert!(validate_glyphs(&r.winner_glyphs, &[1, 2, 3, 4, 4, 4, 4]));
     }
 }

@@ -1,0 +1,37 @@
+{
+  "arm": "B (VM speculative search)",
+  "analysis": "SECONDARY — validity-fixed variants of tasks c and e with reachable targets. The pre-registered tasks c (target 1000) and e (target [4,3,2,1]) are provably infeasible in their spaces and remain in arm_b.json for the primary verdict; c2 (target 1093) and e2 (target [1,2,3,4,4,4,4]) swap in reachable targets on the identical search spaces.",
+  "global_fuel_B": 50000000,
+  "tasks": [
+    {
+      "task": "c2",
+      "found": true,
+      "space_exhausted": false,
+      "winning_program": "1 4[5*3+].",
+      "validated_by_mtlrun_predicate": true,
+      "candidates_explored": 488,
+      "vm_wall_ms": [2.4613, 2.3154, 2.3641],
+      "vm_wall_ms_median": 2.3641,
+      "candidates_per_sec": 206418.8,
+      "arena_high_water": { "tape": 7254, "stack_nodes": 8145, "cont_nodes": 5033 },
+      "core_steps_spent": 9768,
+      "oracle_checked": 488,
+      "oracle_agree": 488
+    },
+    {
+      "task": "e2",
+      "found": true,
+      "space_exhausted": false,
+      "winning_program": "1 2 3 4:^^",
+      "validated_by_mtlrun_predicate": true,
+      "candidates_explored": 143,
+      "vm_wall_ms": [0.3030, 0.2675, 0.2841],
+      "vm_wall_ms_median": 0.2841,
+      "candidates_per_sec": 503393.5,
+      "arena_high_water": { "tape": 966, "stack_nodes": 1138, "cont_nodes": 144 },
+      "core_steps_spent": 965,
+      "oracle_checked": 143,
+      "oracle_agree": 143
+    }
+  ]
+}
