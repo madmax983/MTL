@@ -1,0 +1,20 @@
+MTL search task (c2) — Loop coefficients (validity-fixed).
+
+Consider the loop  x := a*x + b,  started at x0 = 1 and repeated n times.
+Find integers (a, b, n) with
+
+    a in [1, 8],   b in [-8, 8],   n in [1, 16]
+
+such that the final value x equals 1093.
+
+Emit the answer as an MTL program using Times ('.'):
+
+    1 <n>[<a>*<b>+].
+
+That is: push 1 (x0), push n, push the quote [a * b +] (multiply by a then
+add b), then Times runs the quote n times. For negative b use '-' instead
+of '+' (e.g. b = -3 becomes `3-`); for b = 0 omit the add entirely.
+
+Deliverable: the full MTL program that, run through mtlrun, prints exactly:
+
+    HALT: 1093

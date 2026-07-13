@@ -1,0 +1,19 @@
+{
+  "task": "b",
+  "trial": 2,
+  "arm": "A",
+  "model": "sonnet",
+  "solved": true,
+  "solved_at_attempt": 1,
+  "quickref_included": true,
+  "attempts": [
+    {
+      "n": 1,
+      "emitted_program": "3 5+:*",
+      "mtlrun_verdict": "HALT: 64",
+      "fault_feedback": null,
+      "t_start": 1783966599.783258542,
+      "t_end": 1783966608.963406694
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+MTL search task (d) — Reachability puzzle.
+
+Starting from 1, reach 100 using the operations {+3, ×2, −1} in at most
+12 moves. As MTL glyphs:
+
+    +3  is  `3+`      (push 3, add)
+    ×2  is  `2*`      (push 2, multiply)
+    −1  is  `1-`      (push 1, subtract)
+
+Find a sequence S of at most 12 such ops so that the MTL program `1`
+followed by S halts with the operand stack equal to [100].
+
+Deliverable: the full MTL program `1<S>` that, run through mtlrun, prints
+exactly:
+
+    HALT: 100
