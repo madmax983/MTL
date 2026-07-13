@@ -17,7 +17,11 @@
 //!
 //! ## Totality
 //!
-//! `exec_step` and `run` never panic. All arithmetic is checked; div/mod truncate
+//! `exec_step` and `run` are total: every stack access and every type refinement
+//! is handled explicitly and yields a `Fault` rather than a panic — there are no
+//! `expect`/`unreachable!`/`panic!` sites. (Well-formed VM states never reach the
+//! internal type-refinement fault arms; those are exercised by the differential
+//! tests and the verified twin.) All arithmetic is checked; div/mod truncate
 //! toward zero (Rust semantics); every fault is a value. `run` is fuel-bounded and
 //! does not assume termination (MTL is Turing complete).
 
@@ -67,10 +71,9 @@ pub enum Word {
     PushQuote(Vec<Word>),
     Prim(Prim),
     /// Host capability / definition name. v0.4 effects: executing a `Call`
-    /// yields `Step::Invoke(name)` to the host (spec §8.2) — the pure core has
-    /// no host/dictionary machinery and does not distinguish bound vs unbound
-    /// names. `Fault::UnknownWord` is retained in the enum but unreachable from
-    /// the `Call` path.
+    /// dispatches to the host by yielding `Step::Invoke(name)` (spec §8.2) — the
+    /// pure core has no host/dictionary machinery and does not distinguish bound
+    /// vs unbound names; grant/deny is a host-side decision.
     Call(String),
 }
 
@@ -92,7 +95,6 @@ pub enum Fault {
     TypeMismatch,
     Overflow,
     DivByZero,
-    UnknownWord,
 }
 
 /// The machine state: operand stack + continuation. Mirrors exec `Vm`.
@@ -189,7 +191,8 @@ fn value_to_word(v: Value) -> Word {
 
 /// Execute exactly one small step, mutating `vm` in place.
 ///
-/// TOTAL: never panics. The fault-check order byte-for-byte mirrors
+/// TOTAL: no `expect`/`unreachable!`/`panic!` — every access and refinement
+/// yields a `Fault`. The fault-check order byte-for-byte mirrors
 /// `spec_step` / `spec_step_prim` in `mtl_core.rs`:
 ///   * arity (`Underflow`) is always checked before type (`TypeMismatch`);
 ///   * for `div`/`mod`, `DivByZero` is checked before `Overflow`, and both are
@@ -219,14 +222,12 @@ pub fn exec_step(vm: &mut Vm) -> Step {
             }
             Step::Next
         }
-        Word::Call(_) => {
+        Word::Call(name) => {
             // v0.4 effects: yield to the host. Stack unchanged (Call consumes
             // nothing); consume the Call word so cont becomes `rest`.
-            let head = vm.cont.remove(0);
-            match head {
-                Word::Call(name) => Step::Invoke(name),
-                _ => unreachable!("matched Call above"),
-            }
+            let name = name.clone();
+            vm.cont.remove(0);
+            Step::Invoke(name)
         }
         Word::Prim(p) => {
             let p = *p;
@@ -310,8 +311,12 @@ fn exec_prim(vm: &mut Vm, p: Prim) -> Step {
             match (&vm.stack[n - 2], &vm.stack[n - 1]) {
                 (Value::Quote(_), Value::Quote(_)) => {
                     vm.cont.remove(0);
-                    let b = pop_quote(vm);
-                    let mut a = pop_quote(vm);
+                    let Some(b) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
+                    let Some(mut a) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
                     a.extend(b);
                     vm.stack.push(Value::Quote(a));
                     Step::Next
@@ -327,8 +332,12 @@ fn exec_prim(vm: &mut Vm, p: Prim) -> Step {
             match &vm.stack[n - 1] {
                 Value::Quote(_) => {
                     vm.cont.remove(0);
-                    let q = pop_quote(vm);
-                    let v = vm.stack.pop().expect("checked len >= 2");
+                    let Some(q) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
+                    let Some(v) = vm.stack.pop() else {
+                        return Step::Fault(Fault::Underflow);
+                    };
                     let mut newq = Vec::with_capacity(q.len() + 1);
                     newq.push(value_to_word(v));
                     newq.extend(q);
@@ -346,8 +355,12 @@ fn exec_prim(vm: &mut Vm, p: Prim) -> Step {
             match &vm.stack[n - 1] {
                 Value::Quote(_) => {
                     vm.cont.remove(0);
-                    let q = pop_quote(vm);
-                    let a = vm.stack.pop().expect("checked len >= 2");
+                    let Some(q) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
+                    let Some(a) = vm.stack.pop() else {
+                        return Step::Fault(Fault::Underflow);
+                    };
                     // cont := q ++ [Push(a)] ++ rest
                     vm.cont.insert(0, value_to_word(a));
                     prepend(&mut vm.cont, q);
@@ -374,11 +387,16 @@ fn exec_prim(vm: &mut Vm, p: Prim) -> Step {
             match (&vm.stack[n - 3], &vm.stack[n - 2], &vm.stack[n - 1]) {
                 (Value::Int(_), Value::Quote(_), Value::Quote(_)) => {
                     vm.cont.remove(0);
-                    let f = pop_quote(vm);
-                    let t = pop_quote(vm);
+                    let Some(f) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
+                    let Some(t) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
                     let c = match vm.stack.pop() {
                         Some(Value::Int(c)) => c,
-                        _ => unreachable!("checked Int below two quotes"),
+                        Some(_) => return Step::Fault(Fault::TypeMismatch),
+                        None => return Step::Fault(Fault::Underflow),
                     };
                     let branch = if c != 0 { t } else { f };
                     prepend(&mut vm.cont, branch);
@@ -398,11 +416,16 @@ fn exec_prim(vm: &mut Vm, p: Prim) -> Step {
             match (&vm.stack[n - 3], &vm.stack[n - 2], &vm.stack[n - 1]) {
                 (Value::Int(_), Value::Quote(_), Value::Quote(_)) => {
                     vm.cont.remove(0);
-                    let qc = pop_quote(vm);
-                    let qi = pop_quote(vm);
+                    let Some(qc) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
+                    let Some(qi) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
                     let k = match vm.stack.pop() {
                         Some(Value::Int(k)) => k,
-                        _ => unreachable!("checked Int below two quotes"),
+                        Some(_) => return Step::Fault(Fault::TypeMismatch),
+                        None => return Step::Fault(Fault::Underflow),
                     };
                     if k <= 0 {
                         // base: discard the count, run I: cont := qi ++ rest
@@ -432,10 +455,13 @@ fn exec_prim(vm: &mut Vm, p: Prim) -> Step {
             match (&vm.stack[n - 2], &vm.stack[n - 1]) {
                 (Value::Int(_), Value::Quote(_)) => {
                     vm.cont.remove(0);
-                    let q = pop_quote(vm);
+                    let Some(q) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
                     let k = match vm.stack.pop() {
                         Some(Value::Int(k)) => k,
-                        _ => unreachable!("checked Int below quote"),
+                        Some(_) => return Step::Fault(Fault::TypeMismatch),
+                        None => return Step::Fault(Fault::Underflow),
                     };
                     if k > 0 {
                         // cont := q ++ [k-1, [q], times] ++ rest
@@ -464,10 +490,18 @@ fn exec_prim(vm: &mut Vm, p: Prim) -> Step {
             ) {
                 (Value::Quote(_), Value::Quote(_), Value::Quote(_), Value::Quote(_)) => {
                     vm.cont.remove(0);
-                    let qr2 = pop_quote(vm);
-                    let qr1 = pop_quote(vm);
-                    let qt = pop_quote(vm);
-                    let qp = pop_quote(vm);
+                    let Some(qr2) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
+                    let Some(qr1) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
+                    let Some(qt) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
+                    let Some(qp) = pop_quote(vm) else {
+                        return Step::Fault(Fault::TypeMismatch);
+                    };
                     // else_q := R1 ++ [[P],[T],[R1],[R2],linrec] ++ R2
                     let mut else_q = qr1.clone();
                     else_q.push(Word::PushQuote(qp.clone()));
@@ -506,21 +540,25 @@ fn exec_prim(vm: &mut Vm, p: Prim) -> Step {
                 _ => return Step::Fault(Fault::TypeMismatch),
             }
             vm.cont.remove(0);
-            let q = pop_quote(vm);
-            if q.is_empty() {
-                vm.stack.push(Value::Int(0));
-            } else {
-                let mut it = q.into_iter();
-                let head = it.next().expect("non-empty checked above");
-                let tail: Vec<Word> = it.collect();
-                let head_val = match head {
-                    Word::PushInt(k) => Value::Int(k),
-                    Word::PushQuote(s) => Value::Quote(s),
-                    _ => unreachable!("head is a value word, guarded above"),
-                };
-                vm.stack.push(head_val);
-                vm.stack.push(Value::Quote(tail));
-                vm.stack.push(Value::Int(1));
+            let Some(q) = pop_quote(vm) else {
+                return Step::Fault(Fault::TypeMismatch);
+            };
+            let mut it = q.into_iter();
+            match it.next() {
+                None => vm.stack.push(Value::Int(0)),
+                Some(head) => {
+                    let tail: Vec<Word> = it.collect();
+                    let head_val = match head {
+                        Word::PushInt(k) => Value::Int(k),
+                        Word::PushQuote(s) => Value::Quote(s),
+                        Word::Prim(_) | Word::Call(_) => {
+                            return Step::Fault(Fault::TypeMismatch)
+                        }
+                    };
+                    vm.stack.push(head_val);
+                    vm.stack.push(Value::Quote(tail));
+                    vm.stack.push(Value::Int(1));
+                }
             }
             Step::Next
         }
@@ -548,26 +586,32 @@ fn exec_prim(vm: &mut Vm, p: Prim) -> Step {
                 _ => return Step::Fault(Fault::TypeMismatch),
             }
             vm.cont.remove(0);
-            let qc = pop_quote(vm);
-            let init = vm.stack.pop().expect("checked len >= 3");
-            let qs = pop_quote(vm);
-            if qs.is_empty() {
+            let Some(qc) = pop_quote(vm) else {
+                return Step::Fault(Fault::TypeMismatch);
+            };
+            let Some(init) = vm.stack.pop() else {
+                return Step::Fault(Fault::Underflow);
+            };
+            let Some(qs) = pop_quote(vm) else {
+                return Step::Fault(Fault::TypeMismatch);
+            };
+            let mut it = qs.into_iter();
+            match it.next() {
                 // empty list: the result is the seed accumulator.
-                vm.stack.push(init);
-            } else {
-                let mut it = qs.into_iter();
-                let head = it.next().expect("non-empty checked above");
-                let tail: Vec<Word> = it.collect();
-                // cont := [PushQuote(tail), value_to_word(init), head] ++ qc
-                //         ++ [PushQuote(qc), Fold] ++ rest
-                let mut recur = Vec::with_capacity(qc.len() + 5);
-                recur.push(Word::PushQuote(tail));
-                recur.push(value_to_word(init));
-                recur.push(head);
-                recur.extend(qc.clone());
-                recur.push(Word::PushQuote(qc));
-                recur.push(Word::Prim(Prim::Fold));
-                prepend(&mut vm.cont, recur);
+                None => vm.stack.push(init),
+                Some(head) => {
+                    let tail: Vec<Word> = it.collect();
+                    // cont := [PushQuote(tail), value_to_word(init), head] ++ qc
+                    //         ++ [PushQuote(qc), Fold] ++ rest
+                    let mut recur = Vec::with_capacity(qc.len() + 5);
+                    recur.push(Word::PushQuote(tail));
+                    recur.push(value_to_word(init));
+                    recur.push(head);
+                    recur.extend(qc.clone());
+                    recur.push(Word::PushQuote(qc));
+                    recur.push(Word::Prim(Prim::Fold));
+                    prepend(&mut vm.cont, recur);
+                }
             }
             Step::Next
         }
@@ -667,19 +711,21 @@ fn exec_xor(vm: &mut Vm) -> Step {
     }
 }
 
-/// Pop a value known to be a `Quote` (guarded by the caller's match), returning
-/// its body. Never panics under correct use.
+/// Pop a value expected to be a `Quote` (guarded by the caller's match),
+/// returning its body. Returns `None` if the popped value is not a `Quote`
+/// (or the stack was empty), restoring a wrongly-typed value first so the
+/// machine state is unchanged — the caller propagates the appropriate
+/// `TypeMismatch`. Never fabricates an empty quotation (no silent repair);
+/// `None` is unreachable under the arity+type-guarded callers.
 #[inline]
-fn pop_quote(vm: &mut Vm) -> Vec<Word> {
+fn pop_quote(vm: &mut Vm) -> Option<Vec<Word>> {
     match vm.stack.pop() {
-        Some(Value::Quote(q)) => q,
-        other => {
-            // Restore and treat as empty; unreachable under guarded callers.
-            if let Some(v) = other {
-                vm.stack.push(v);
-            }
-            Vec::new()
+        Some(Value::Quote(q)) => Some(q),
+        Some(v) => {
+            vm.stack.push(v);
+            None
         }
+        None => None,
     }
 }
 
