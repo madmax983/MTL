@@ -1250,6 +1250,178 @@ pub proof fn p5_simulation(prog: MProg, m0: MConf, s0: SpecState, t: nat)
     }
 }
 
+// ============================================================
+// 8. Halting correspondence (Minsky halts => MTL halts), fuel-quantified
+// ============================================================
+
+/// The encoded final stack: both counters as unary quotations.
+pub open spec fn halt_stack(m: MConf) -> Seq<SpecValue> {
+    seq![SpecValue::Quote(unary(m.c1)), SpecValue::Quote(unary(m.c2))]
+}
+
+/// Out-of-range dispatch: if `pc >= len`, every arm misses; the cascade runs
+/// through to `disp(prog, len) = [Drop, Drop]`. By induction on `len - i`.
+pub proof fn lemma_dispatch_oob(
+    prog: MProg, base2: Seq<SpecValue>, pc: nat, i: nat, rest: Seq<SpecWord>,
+)
+    requires prog.code.len() <= pc, i <= prog.code.len(),
+    ensures
+        spec_stepn(
+            SpecState { stack: base2.push(SpecValue::Int(pc as int)), cont: disp(prog, i) + rest },
+            (6 * (prog.code.len() - i)) as nat,
+        ) == SpecStep::Next(SpecState {
+            stack: base2.push(SpecValue::Int(pc as int)),
+            cont: disp(prog, prog.code.len()) + rest,
+        }),
+    decreases prog.code.len() - i,
+{
+    let s0 = SpecState {
+        stack: base2.push(SpecValue::Int(pc as int)),
+        cont: disp(prog, i) + rest,
+    };
+    if i == prog.code.len() {
+        assert(spec_stepn(s0, 0) == SpecStep::Next(s0));
+    } else {
+        lemma_disp_miss(prog, base2, pc, i, rest);
+        let s_mid = SpecState {
+            stack: base2.push(SpecValue::Int(pc as int)),
+            cont: disp(prog, (i + 1) as nat) + rest,
+        };
+        assert(spec_stepn(s0, 6) == SpecStep::Next(s_mid));
+        lemma_dispatch_oob(prog, base2, pc, (i + 1) as nat, rest);
+        let b = (6 * (prog.code.len() - (i + 1))) as nat;
+        lemma_stepn_compose(s0, 6, b);
+        assert((6 + b) == (6 * (prog.code.len() - i)) as nat) by (nonlinear_arith)
+            requires b == (6 * (prog.code.len() - (i + 1))) as nat, i < prog.code.len();
+    }
+}
+
+/// From `R(prog, m, s)` with `minsky_step(prog, m) = None` (Halt or PC out of
+/// range), the MTL machine reaches a drained state whose `spec_step` is
+/// `Halt(halt_stack(m))`.
+pub proof fn lemma_reach_halt(prog: MProg, m: MConf, s: SpecState)
+    requires rep(prog, m, s), minsky_step(prog, m) is None,
+    ensures exists|s2: SpecState|
+        reaches(s, s2) && spec_step(s2) == SpecStep::Halt(halt_stack(m)),
+{
+    reveal(compile_u);
+    let c1q = SpecValue::Quote(unary(m.c1));
+    let c2q = SpecValue::Quote(unary(m.c2));
+    let uq = SpecValue::Quote(compile_u(prog));
+    // seg 1+2: dup/apply then swap -> sB with cont = disp(prog, 0)
+    lemma_dup_apply(seq![c1q, c2q, SpecValue::Int(m.pc as int)], compile_u(prog), Seq::<SpecWord>::empty());
+    let sA = SpecState {
+        stack: seq![c1q, c2q, SpecValue::Int(m.pc as int), uq],
+        cont: compile_u(prog) + Seq::<SpecWord>::empty(),
+    };
+    assert(s == SpecState {
+        stack: seq![c1q, c2q, SpecValue::Int(m.pc as int)].push(uq),
+        cont: seq![w(SpecPrim::Dup), w(SpecPrim::Apply)] + Seq::<SpecWord>::empty(),
+    }) by {
+        assert(s.stack =~= seq![c1q, c2q, SpecValue::Int(m.pc as int)].push(uq));
+        assert(s.cont =~= seq![w(SpecPrim::Dup), w(SpecPrim::Apply)] + Seq::<SpecWord>::empty());
+    }
+    assert(spec_stepn(s, 2) == SpecStep::Next(sA));
+    reaches_from(s, 2, sA);
+    assert(sA.cont =~= seq![w(SpecPrim::Swap)] + disp(prog, 0));
+    let sB = SpecState {
+        stack: seq![c1q, c2q, uq, SpecValue::Int(m.pc as int)],
+        cont: disp(prog, 0),
+    };
+    assert(spec_stepn(sA, 1) == SpecStep::Next(sB)) by {
+        reveal_with_fuel(spec_stepn, 2);
+        assert(sA.cont[0] == w(SpecPrim::Swap));
+        let sB0 = spec_step(sA)->Next_0;
+        assert(sB0.stack =~= seq![c1q, c2q, uq, SpecValue::Int(m.pc as int)]);
+        assert(sB0.cont =~= disp(prog, 0));
+    }
+    reaches_from(sA, 1, sB);
+    lemma_reaches_trans(s, sA, sB);
+    // seg 3: reach sE = {stack: [c1q,c2q,uq,Int(pc)], cont: [Drop, Drop]}
+    let sE = SpecState {
+        stack: seq![c1q, c2q, uq].push(SpecValue::Int(m.pc as int)),
+        cont: seq![w(SpecPrim::Drop), w(SpecPrim::Drop)],
+    };
+    assert(sB == SpecState {
+        stack: seq![c1q, c2q, uq].push(SpecValue::Int(m.pc as int)),
+        cont: disp(prog, 0) + Seq::<SpecWord>::empty(),
+    }) by {
+        assert(sB.stack =~= seq![c1q, c2q, uq].push(SpecValue::Int(m.pc as int)));
+        assert(sB.cont =~= disp(prog, 0) + Seq::<SpecWord>::empty());
+    }
+    if m.pc < prog.code.len() {
+        // pc in range + minsky_step None => code[pc] == Halt => body = [Drop,Drop]
+        assert(prog.code[m.pc as int] == MInstr::Halt);
+        lemma_dispatch_select(prog, seq![c1q, c2q, uq], m.pc, 0, Seq::<SpecWord>::empty());
+        assert(body(prog, m.pc) =~= seq![w(SpecPrim::Drop), w(SpecPrim::Drop)]);
+        assert(spec_stepn(sB, (6 * m.pc + 6) as nat) == SpecStep::Next(sE));
+        reaches_from(sB, (6 * m.pc + 6) as nat, sE);
+    } else {
+        lemma_dispatch_oob(prog, seq![c1q, c2q, uq], m.pc, 0, Seq::<SpecWord>::empty());
+        assert(disp(prog, prog.code.len()) =~= seq![w(SpecPrim::Drop), w(SpecPrim::Drop)]);
+        assert(spec_stepn(sB, (6 * (prog.code.len() - 0)) as nat) == SpecStep::Next(sE));
+        reaches_from(sB, (6 * (prog.code.len() - 0)) as nat, sE);
+    }
+    lemma_reaches_trans(s, sB, sE);
+    // seg 4: two Drops drain to [c1q, c2q], cont empty; spec_step = Halt.
+    let s2 = SpecState { stack: seq![c1q, c2q], cont: Seq::<SpecWord>::empty() };
+    assert(spec_stepn(sE, 2) == SpecStep::Next(s2)) by {
+        reveal_with_fuel(spec_stepn, 3);
+        let d1 = spec_step(sE)->Next_0;
+        assert(d1.stack =~= seq![c1q, c2q, uq]);
+        let d2 = spec_step(d1)->Next_0;
+        assert(d2.stack =~= seq![c1q, c2q]);
+        assert(d2.cont =~= Seq::<SpecWord>::empty());
+    }
+    reaches_from(sE, 2, s2);
+    lemma_reaches_trans(s, sE, s2);
+    assert(s2.cont.len() == 0);
+    assert(spec_step(s2) == SpecStep::Halt(halt_stack(m))) by {
+        assert(s2.stack =~= halt_stack(m));
+    }
+}
+
+/// **Corollary P5-halt (Minsky halts => MTL halts), fuel `∃`.** If the Minsky
+/// machine halts after `t` steps with final configuration `mfinal`, then some
+/// fuel `n` makes `spec_run` observe `Halt` with the unary-encoded final stack.
+/// (brief §5.3)
+pub proof fn p5_halt_forward(prog: MProg, m0: MConf, s0: SpecState, t: nat, mfinal: MConf)
+    requires rep(prog, m0, s0), minsky_halts_with(prog, m0, t, mfinal),
+    ensures exists|n: nat| spec_run(s0, n) == SpecOutcome::Halt(halt_stack(mfinal)),
+{
+    p5_simulation(prog, m0, s0, t);
+    assert(minsky_run(prog, m0, t)->Some_0 == mfinal);
+    let sf = choose|sf: SpecState|
+        reaches(s0, sf) && rep(prog, minsky_run(prog, m0, t)->Some_0, sf);
+    assert(rep(prog, mfinal, sf));
+    lemma_reach_halt(prog, mfinal, sf);
+    let s2 = choose|s2: SpecState|
+        reaches(sf, s2) && spec_step(s2) == SpecStep::Halt(halt_stack(mfinal));
+    lemma_reaches_trans(s0, sf, s2);
+    lemma_reaches_halt(s0, s2, halt_stack(mfinal));
+}
+
+/// **Corollary P5-halt (fuel `∀ ≥ N`).** The halting observation is monotone in
+/// fuel: some `n` works and every larger fuel agrees — the honest, fuel-explicit
+/// replacement for the (impossible) claim "`run` terminates". (brief §5.3)
+pub proof fn p5_halt_forward_monotone(
+    prog: MProg, m0: MConf, s0: SpecState, t: nat, mfinal: MConf,
+)
+    requires rep(prog, m0, s0), minsky_halts_with(prog, m0, t, mfinal),
+    ensures exists|n: nat|
+        spec_run(s0, n) == SpecOutcome::Halt(halt_stack(mfinal))
+        && (forall|n2: nat| #![trigger spec_run(s0, n2)]
+            n2 >= n ==> spec_run(s0, n2) == SpecOutcome::Halt(halt_stack(mfinal))),
+{
+    p5_halt_forward(prog, m0, s0, t, mfinal);
+    let n = choose|n: nat| spec_run(s0, n) == SpecOutcome::Halt(halt_stack(mfinal));
+    assert(spec_run(s0, n) == SpecOutcome::Halt(halt_stack(mfinal)));
+    assert forall|n2: nat| #![trigger spec_run(s0, n2)] n2 >= n implies
+        spec_run(s0, n2) == SpecOutcome::Halt(halt_stack(mfinal)) by {
+        lemma_run_mono(s0, n, n2);
+    }
+}
+
 } // verus!
 
 fn main() {}
