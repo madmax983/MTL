@@ -576,6 +576,10 @@ pub open spec fn disp(prog: MProg, i: nat) -> Seq<SpecWord>
 }
 
 /// The loop quote `U(prog)`: bring the PC to the top, then dispatch.
+/// Opaque: the body lemmas carry `U` as an abstract value (they never look
+/// inside it); only `p5_lockstep` reveals it to enter the loop. Keeping it
+/// opaque keeps the symbolic states small enough for the SMT solver.
+#[verifier::opaque]
 pub open spec fn compile_u(prog: MProg) -> Seq<SpecWord> {
     seq![w(SpecPrim::Swap)] + disp(prog, 0)
 }
@@ -731,6 +735,128 @@ pub proof fn lemma_dispatch_select(
         assert((6 + b) == (6 * (pc - i) + 6) as nat) by (nonlinear_arith)
             requires b == (6 * (pc - (i + 1)) + 6) as nat, i < pc;
     }
+}
+
+// ------------------------------------------------------------
+// 6.2 Per-instruction body execution (post-dispatch → R(m'))
+// ------------------------------------------------------------
+
+/// The post-dispatch state: stack `[c1q, c2q, Quote(U), Int(pc)]`, continuation
+/// `body(prog, pc)`. This is exactly the state `lemma_dispatch_select` reaches.
+pub open spec fn post_dispatch(prog: MProg, m: MConf) -> SpecState {
+    SpecState {
+        stack: seq![
+            SpecValue::Quote(unary(m.c1)),
+            SpecValue::Quote(unary(m.c2)),
+            SpecValue::Quote(compile_u(prog))
+        ].push(SpecValue::Int(m.pc as int)),
+        cont: body(prog, m.pc),
+    }
+}
+
+/// Increment body, register c2 (9 steps): post-dispatch, the `Inc(true,j)`
+/// body increments c2 via `Dip`, installs `pc:=j`, re-establishes `R`.
+#[verifier::rlimit(30)]
+pub proof fn lemma_body_inc_c2(prog: MProg, m: MConf, j: nat)
+    requires
+        m.pc < prog.code.len(),
+        prog.code[m.pc as int] == MInstr::Inc(true, j),
+    ensures ({
+        let m2 = MConf { pc: j, c1: m.c1, c2: (m.c2 + 1) as nat };
+        &&& spec_stepn(post_dispatch(prog, m), 9) is Next
+        &&& rep(prog, m2, spec_stepn(post_dispatch(prog, m), 9)->Next_0)
+    }),
+{
+    reveal_with_fuel(spec_stepn, 10);
+    let uq = SpecValue::Quote(compile_u(prog));
+    let c1q = SpecValue::Quote(unary(m.c1));
+    let c2q = SpecValue::Quote(unary(m.c2));
+    let base = seq![c1q, c2q, uq];
+    assert(body(prog, m.pc) =~= seq![w(SpecPrim::Drop)] + on_c2(inc_words())
+        + seq![SpecWord::PushInt(j as int), w(SpecPrim::Swap),
+               w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+    let s0 = post_dispatch(prog, m);
+    assert(s0.cont =~= seq![
+        w(SpecPrim::Drop),
+        SpecWord::PushQuote(inc_words()), w(SpecPrim::Dip),
+        SpecWord::PushInt(j as int), w(SpecPrim::Swap),
+        w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+    let s1 = spec_step(s0)->Next_0;   // Drop
+    assert(s1.stack =~= base);
+    let s2 = spec_step(s1)->Next_0;   // PushQuote(inc_words)
+    let s3 = spec_step(s2)->Next_0;   // Dip: set U aside, run inc on [c1,c2]
+    assert(s3.stack =~= seq![c1q, c2q]);
+    assert(s3.cont =~= inc_words() + seq![SpecWord::PushQuote(compile_u(prog)),
+        SpecWord::PushInt(j as int), w(SpecPrim::Swap), w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+    let s4 = spec_step(s3)->Next_0;   // PushInt(0)
+    let s5 = spec_step(s4)->Next_0;   // Swap
+    assert(s5.stack =~= seq![c1q, SpecValue::Int(0int), c2q]);
+    let s6 = spec_step(s5)->Next_0;   // Cons -> unary(c2+1)
+    unary_succ(m.c2);
+    assert(s6.stack =~= seq![c1q, SpecValue::Quote(unary((m.c2 + 1) as nat))]);
+    let s7 = spec_step(s6)->Next_0;   // PushQuote(U)
+    let s8 = spec_step(s7)->Next_0;   // PushInt(j)
+    let s9 = spec_step(s8)->Next_0;   // Swap
+    assert(s9.stack =~= seq![c1q, SpecValue::Quote(unary((m.c2 + 1) as nat)),
+        SpecValue::Int(j as int), uq]);
+    assert(s9.cont =~= seq![w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+}
+
+/// Increment body, register c1 (12 steps): `Inc(false,j)` increments c1 via a
+/// nested `Dip` (reach under both `U` and c2), installs `pc:=j`.
+#[verifier::rlimit(30)]
+pub proof fn lemma_body_inc_c1(prog: MProg, m: MConf, j: nat)
+    requires
+        m.pc < prog.code.len(),
+        prog.code[m.pc as int] == MInstr::Inc(false, j),
+    ensures ({
+        let m2 = MConf { pc: j, c1: (m.c1 + 1) as nat, c2: m.c2 };
+        &&& spec_stepn(post_dispatch(prog, m), 12) is Next
+        &&& rep(prog, m2, spec_stepn(post_dispatch(prog, m), 12)->Next_0)
+    }),
+{
+    reveal_with_fuel(spec_stepn, 13);
+    let uq = SpecValue::Quote(compile_u(prog));
+    let c1q = SpecValue::Quote(unary(m.c1));
+    let c2q = SpecValue::Quote(unary(m.c2));
+    let base = seq![c1q, c2q, uq];
+    assert(body(prog, m.pc) =~= seq![w(SpecPrim::Drop)] + on_c1(inc_words())
+        + seq![SpecWord::PushInt(j as int), w(SpecPrim::Swap),
+               w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+    let s0 = post_dispatch(prog, m);
+    assert(s0.cont =~= seq![
+        w(SpecPrim::Drop),
+        SpecWord::PushQuote(on_c2(inc_words())), w(SpecPrim::Dip),
+        SpecWord::PushInt(j as int), w(SpecPrim::Swap),
+        w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+    let s1 = spec_step(s0)->Next_0;   // Drop
+    assert(s1.stack =~= base);
+    let s2 = spec_step(s1)->Next_0;   // PushQuote(on_c2(inc))
+    let s3 = spec_step(s2)->Next_0;   // Dip: set U aside
+    assert(s3.stack =~= seq![c1q, c2q]);
+    assert(s3.cont =~= on_c2(inc_words()) + seq![SpecWord::PushQuote(compile_u(prog)),
+        SpecWord::PushInt(j as int), w(SpecPrim::Swap), w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+    let s4 = spec_step(s3)->Next_0;   // PushQuote(inc_words)
+    let s5 = spec_step(s4)->Next_0;   // Dip: set c2 aside, run inc on [c1]
+    assert(s5.stack =~= seq![c1q]);
+    assert(s5.cont =~= inc_words() + seq![
+        SpecWord::PushQuote(unary(m.c2)),
+        SpecWord::PushQuote(compile_u(prog)),
+        SpecWord::PushInt(j as int), w(SpecPrim::Swap), w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+    let s6 = spec_step(s5)->Next_0;   // PushInt(0)
+    let s7 = spec_step(s6)->Next_0;   // Swap
+    assert(s7.stack =~= seq![SpecValue::Int(0int), c1q]);
+    let s8 = spec_step(s7)->Next_0;   // Cons -> unary(c1+1)
+    unary_succ(m.c1);
+    assert(s8.stack =~= seq![SpecValue::Quote(unary((m.c1 + 1) as nat))]);
+    let s9 = spec_step(s8)->Next_0;   // PushQuote(unary(c2)) -> restores c2
+    assert(s9.stack =~= seq![SpecValue::Quote(unary((m.c1 + 1) as nat)), c2q]);
+    let s10 = spec_step(s9)->Next_0;  // PushQuote(U)
+    let s11 = spec_step(s10)->Next_0; // PushInt(j)
+    let s12 = spec_step(s11)->Next_0; // Swap
+    assert(s12.stack =~= seq![SpecValue::Quote(unary((m.c1 + 1) as nat)), c2q,
+        SpecValue::Int(j as int), uq]);
+    assert(s12.cont =~= seq![w(SpecPrim::Dup), w(SpecPrim::Apply)]);
 }
 
 } // verus!
