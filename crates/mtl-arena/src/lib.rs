@@ -51,6 +51,7 @@
 //! into an [`Outcome`] identical in shape to `interp::Outcome`.
 
 mod arena;
+pub mod host;
 mod prim;
 mod run;
 mod types;

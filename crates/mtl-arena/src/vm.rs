@@ -403,6 +403,60 @@ impl Vm {
         (id.start..id.end()).filter_map(|i| self.word_at(i)).map(|w| self.reify_word(w)).collect()
     }
 
+    // ================================================= re-intern (host resume)
+    // The inverse of reification: take OWNED reference data (an `interp::Value`
+    // stack handed back by a host `Resume`) and intern it into the arena so the
+    // driver can resume in place. This is the return leg of the host Invoke seam.
+    // Cost is O(stack depth) plus O(total quote size) — a full copy IN, the
+    // mirror of the copy OUT that `reify_stack` performs (see `crate::host`).
+
+    /// Re-intern an owned reference stack (`bottom .. top`, e.g. a host `Resume`
+    /// stack) into a FRESH arena stack segment, returning the new top
+    /// [`StackPtr`]. Each `interp::Value` is interned into the arena (quote
+    /// bodies recursively appended to the tape, call names de-duplicated). Returns
+    /// `None` iff interning a quote body would overflow the u32 tape address space
+    /// (design §3.4) — the driver turns that `None` into a clean
+    /// [`Fault::Overflow`] rather than panicking.
+    pub fn reintern_stack(&mut self, values: &[itp::Value]) -> Option<StackPtr> {
+        let mut ptr = EMPTY_STACK;
+        for v in values {
+            let av = self.intern_itp_value(v)?;
+            ptr = self.push(ptr, av);
+        }
+        Some(ptr)
+    }
+
+    /// Intern one owned `interp::Value` into an arena [`Value`]. `None` on u32
+    /// tape overflow while interning a quote body.
+    pub(crate) fn intern_itp_value(&mut self, v: &itp::Value) -> Option<Value> {
+        match v {
+            itp::Value::Int(n) => Some(Value::Int(*n)),
+            itp::Value::Quote(body) => Some(Value::Quote(self.intern_itp_quote(body)?)),
+        }
+    }
+
+    /// Intern an owned reference quote body into the tape, returning its
+    /// [`QuoteId`]. Nested quotes are interned first (matching [`Vm::compile`]'s
+    /// ordering). `None` on u32 tape overflow.
+    pub(crate) fn intern_itp_quote(&mut self, body: &[itp::Word]) -> Option<QuoteId> {
+        let mut words = Vec::with_capacity(body.len());
+        for w in body {
+            words.push(self.intern_itp_word(w)?);
+        }
+        self.try_alloc(&words)
+    }
+
+    /// Intern one owned reference word into a tape [`Word`]. `None` on u32 tape
+    /// overflow while interning a nested quote body.
+    pub(crate) fn intern_itp_word(&mut self, w: &itp::Word) -> Option<Word> {
+        Some(match w {
+            itp::Word::PushInt(n) => Word::PushInt(*n),
+            itp::Word::PushQuote(body) => Word::PushQuote(self.intern_itp_quote(body)?),
+            itp::Word::Prim(p) => Word::Prim(from_itp_prim(*p)),
+            itp::Word::Call(name) => Word::Call(self.quotes.intern_call(name)),
+        })
+    }
+
     // ========================================================== generational
     /// Record the current high-water mark of every arena. Pair with
     /// [`Vm::reset_to`] to reclaim everything allocated after this point. See the
@@ -440,6 +494,37 @@ impl Vm {
         self.quotes.calls.truncate(mark.calls);
         self.stack.nodes.truncate(mark.stack_nodes.max(1)); // keep the sentinel
         self.cont.nodes.truncate(mark.cont_nodes.max(1)); // keep the NIL node
+    }
+}
+
+/// Map a reference `interp::Prim` back to an arena `Prim` (identical variants).
+/// The inverse of [`itp_prim`]; used by the host-resume re-intern path.
+#[inline]
+fn from_itp_prim(p: itp::Prim) -> Prim {
+    match p {
+        itp::Prim::Dup => Prim::Dup,
+        itp::Prim::Drop => Prim::Drop,
+        itp::Prim::Swap => Prim::Swap,
+        itp::Prim::Rot => Prim::Rot,
+        itp::Prim::Over => Prim::Over,
+        itp::Prim::Apply => Prim::Apply,
+        itp::Prim::Cat => Prim::Cat,
+        itp::Prim::Cons => Prim::Cons,
+        itp::Prim::Dip => Prim::Dip,
+        itp::Prim::Add => Prim::Add,
+        itp::Prim::Sub => Prim::Sub,
+        itp::Prim::Mul => Prim::Mul,
+        itp::Prim::Div => Prim::Div,
+        itp::Prim::Mod => Prim::Mod,
+        itp::Prim::Eq => Prim::Eq,
+        itp::Prim::Lt => Prim::Lt,
+        itp::Prim::If => Prim::If,
+        itp::Prim::PrimRec => Prim::PrimRec,
+        itp::Prim::Times => Prim::Times,
+        itp::Prim::LinRec => Prim::LinRec,
+        itp::Prim::Uncons => Prim::Uncons,
+        itp::Prim::Fold => Prim::Fold,
+        itp::Prim::Xor => Prim::Xor,
     }
 }
 
