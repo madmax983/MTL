@@ -1,0 +1,1 @@
+{"id":"comprehension/mul_add/mtl","test":"comprehension","item":"mul_add","arm":"mtl","trial":2,"prediction":{"output_int": 21, "note": "9*2=18, +3=21"}}

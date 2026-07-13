@@ -25,3 +25,5 @@ jobs:
         run: pip install -r bench/tokcount/requirements.txt
       - name: Run token report
         run: python3 bench/tokcount/report.py
+      - name: Check tokenizer drift
+        run: python3 bench/tokcount/drift.py --check

@@ -1,0 +1,14 @@
+You are being tested on your ability to READ and understand programs. Answer using ONLY your own reading. Do NOT run code, do NOT use any tools, and assume no interpreter is available. Be honest: if a program's result cannot be determined or it faults, say so rather than guessing.
+
+Study the following Python program. You will be asked to reproduce it exactly.
+
+    def solve(n):
+        x = 1
+        for _ in range(n): x *= 2
+        return x
+
+Before you answer, read the following unrelated background notes. They are provided only as intervening context and have no bearing on the task.
+
+The municipal archive keeps its records in a long, low building on the east side of the river. Each morning the clerks unlock the reading room, raise the blinds, and wheel the returns cart between the tall metal shelves. Visitors sign a ledger at the front desk and are given a numbered token in exchange for any bag they carry. The oldest ledgers are bound in grey cloth and stored flat so their spines do not crack. On quiet afternoons a single lamp is enough to light a whole aisle, and the only sound is the soft rattle of the heating pipes. The head archivist has worked here for thirty years and can name the contents of almost every box from memory. New staff spend their first week simply walking the rows, learning how the numbering scheme folds back on itself at the end of each range. Deliveries arrive on Tuesdays; repairs are logged in a separate book kept under the desk. When the building closes, the blinds come down, the ledger is locked in a drawer, and the tokens are counted back into their tray. Nothing about these notes should change your reading of the program.
+
+Reproduce the exact Python program shown above, character for character. Report only the program.

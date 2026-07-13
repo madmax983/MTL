@@ -1,0 +1,525 @@
+{
+  "model_under_test": "claude-opus-4-8",
+  "quickref_tokens": 2157,
+  "trials_per_item": 3,
+  "tests": [
+    "comprehension",
+    "recall",
+    "mutation",
+    "confab"
+  ],
+  "items": [
+    {
+      "id": "comprehension/mul_add/mtl",
+      "test": "comprehension",
+      "item": "mul_add",
+      "arm": "mtl",
+      "prompt": "prompts/comprehension/mul_add_mtl.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/mul_add/python",
+      "test": "comprehension",
+      "item": "mul_add",
+      "arm": "python",
+      "prompt": "prompts/comprehension/mul_add_python.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/sq_plus_n/mtl",
+      "test": "comprehension",
+      "item": "sq_plus_n",
+      "arm": "mtl",
+      "prompt": "prompts/comprehension/sq_plus_n_mtl.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/sq_plus_n/python",
+      "test": "comprehension",
+      "item": "sq_plus_n",
+      "arm": "python",
+      "prompt": "prompts/comprehension/sq_plus_n_python.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/sub_const/mtl",
+      "test": "comprehension",
+      "item": "sub_const",
+      "arm": "mtl",
+      "prompt": "prompts/comprehension/sub_const_mtl.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/sub_const/python",
+      "test": "comprehension",
+      "item": "sub_const",
+      "arm": "python",
+      "prompt": "prompts/comprehension/sub_const_python.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/cond_lt/mtl",
+      "test": "comprehension",
+      "item": "cond_lt",
+      "arm": "mtl",
+      "prompt": "prompts/comprehension/cond_lt_mtl.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/cond_lt/python",
+      "test": "comprehension",
+      "item": "cond_lt",
+      "arm": "python",
+      "prompt": "prompts/comprehension/cond_lt_python.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/primrec_sum/mtl",
+      "test": "comprehension",
+      "item": "primrec_sum",
+      "arm": "mtl",
+      "prompt": "prompts/comprehension/primrec_sum_mtl.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/primrec_sum/python",
+      "test": "comprehension",
+      "item": "primrec_sum",
+      "arm": "python",
+      "prompt": "prompts/comprehension/primrec_sum_python.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/pow2_times/mtl",
+      "test": "comprehension",
+      "item": "pow2_times",
+      "arm": "mtl",
+      "prompt": "prompts/comprehension/pow2_times_mtl.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/pow2_times/python",
+      "test": "comprehension",
+      "item": "pow2_times",
+      "arm": "python",
+      "prompt": "prompts/comprehension/pow2_times_python.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/swap_sub/mtl",
+      "test": "comprehension",
+      "item": "swap_sub",
+      "arm": "mtl",
+      "prompt": "prompts/comprehension/swap_sub_mtl.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/swap_sub/python",
+      "test": "comprehension",
+      "item": "swap_sub",
+      "arm": "python",
+      "prompt": "prompts/comprehension/swap_sub_python.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/rot_chain/mtl",
+      "test": "comprehension",
+      "item": "rot_chain",
+      "arm": "mtl",
+      "prompt": "prompts/comprehension/rot_chain_mtl.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/rot_chain/python",
+      "test": "comprehension",
+      "item": "rot_chain",
+      "arm": "python",
+      "prompt": "prompts/comprehension/rot_chain_python.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/dip_sub/mtl",
+      "test": "comprehension",
+      "item": "dip_sub",
+      "arm": "mtl",
+      "prompt": "prompts/comprehension/dip_sub_mtl.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/dip_sub/python",
+      "test": "comprehension",
+      "item": "dip_sub",
+      "arm": "python",
+      "prompt": "prompts/comprehension/dip_sub_python.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/over_mul/mtl",
+      "test": "comprehension",
+      "item": "over_mul",
+      "arm": "mtl",
+      "prompt": "prompts/comprehension/over_mul_mtl.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "comprehension/over_mul/python",
+      "test": "comprehension",
+      "item": "over_mul",
+      "arm": "python",
+      "prompt": "prompts/comprehension/over_mul_python.txt",
+      "schema": "comprehension"
+    },
+    {
+      "id": "recall/prog1/mtl",
+      "test": "recall",
+      "item": "prog1",
+      "arm": "mtl",
+      "prompt": "prompts/recall/prog1_mtl.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog1/python",
+      "test": "recall",
+      "item": "prog1",
+      "arm": "python",
+      "prompt": "prompts/recall/prog1_python.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog2/mtl",
+      "test": "recall",
+      "item": "prog2",
+      "arm": "mtl",
+      "prompt": "prompts/recall/prog2_mtl.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog2/python",
+      "test": "recall",
+      "item": "prog2",
+      "arm": "python",
+      "prompt": "prompts/recall/prog2_python.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog3/mtl",
+      "test": "recall",
+      "item": "prog3",
+      "arm": "mtl",
+      "prompt": "prompts/recall/prog3_mtl.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog3/python",
+      "test": "recall",
+      "item": "prog3",
+      "arm": "python",
+      "prompt": "prompts/recall/prog3_python.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog4/mtl",
+      "test": "recall",
+      "item": "prog4",
+      "arm": "mtl",
+      "prompt": "prompts/recall/prog4_mtl.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog4/python",
+      "test": "recall",
+      "item": "prog4",
+      "arm": "python",
+      "prompt": "prompts/recall/prog4_python.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog5/mtl",
+      "test": "recall",
+      "item": "prog5",
+      "arm": "mtl",
+      "prompt": "prompts/recall/prog5_mtl.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog5/python",
+      "test": "recall",
+      "item": "prog5",
+      "arm": "python",
+      "prompt": "prompts/recall/prog5_python.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog6/mtl",
+      "test": "recall",
+      "item": "prog6",
+      "arm": "mtl",
+      "prompt": "prompts/recall/prog6_mtl.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog6/python",
+      "test": "recall",
+      "item": "prog6",
+      "arm": "python",
+      "prompt": "prompts/recall/prog6_python.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog7/mtl",
+      "test": "recall",
+      "item": "prog7",
+      "arm": "mtl",
+      "prompt": "prompts/recall/prog7_mtl.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog7/python",
+      "test": "recall",
+      "item": "prog7",
+      "arm": "python",
+      "prompt": "prompts/recall/prog7_python.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog8/mtl",
+      "test": "recall",
+      "item": "prog8",
+      "arm": "mtl",
+      "prompt": "prompts/recall/prog8_mtl.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "recall/prog8/python",
+      "test": "recall",
+      "item": "prog8",
+      "arm": "python",
+      "prompt": "prompts/recall/prog8_python.txt",
+      "schema": "recall"
+    },
+    {
+      "id": "mutation/pair1/mtl",
+      "test": "mutation",
+      "item": "pair1",
+      "arm": "mtl",
+      "prompt": "prompts/mutation/pair1_mtl.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair1/python",
+      "test": "mutation",
+      "item": "pair1",
+      "arm": "python",
+      "prompt": "prompts/mutation/pair1_python.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair2/mtl",
+      "test": "mutation",
+      "item": "pair2",
+      "arm": "mtl",
+      "prompt": "prompts/mutation/pair2_mtl.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair2/python",
+      "test": "mutation",
+      "item": "pair2",
+      "arm": "python",
+      "prompt": "prompts/mutation/pair2_python.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair3/mtl",
+      "test": "mutation",
+      "item": "pair3",
+      "arm": "mtl",
+      "prompt": "prompts/mutation/pair3_mtl.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair3/python",
+      "test": "mutation",
+      "item": "pair3",
+      "arm": "python",
+      "prompt": "prompts/mutation/pair3_python.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair4/mtl",
+      "test": "mutation",
+      "item": "pair4",
+      "arm": "mtl",
+      "prompt": "prompts/mutation/pair4_mtl.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair4/python",
+      "test": "mutation",
+      "item": "pair4",
+      "arm": "python",
+      "prompt": "prompts/mutation/pair4_python.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair5/mtl",
+      "test": "mutation",
+      "item": "pair5",
+      "arm": "mtl",
+      "prompt": "prompts/mutation/pair5_mtl.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair5/python",
+      "test": "mutation",
+      "item": "pair5",
+      "arm": "python",
+      "prompt": "prompts/mutation/pair5_python.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair6/mtl",
+      "test": "mutation",
+      "item": "pair6",
+      "arm": "mtl",
+      "prompt": "prompts/mutation/pair6_mtl.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair6/python",
+      "test": "mutation",
+      "item": "pair6",
+      "arm": "python",
+      "prompt": "prompts/mutation/pair6_python.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair7/mtl",
+      "test": "mutation",
+      "item": "pair7",
+      "arm": "mtl",
+      "prompt": "prompts/mutation/pair7_mtl.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair7/python",
+      "test": "mutation",
+      "item": "pair7",
+      "arm": "python",
+      "prompt": "prompts/mutation/pair7_python.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair8/mtl",
+      "test": "mutation",
+      "item": "pair8",
+      "arm": "mtl",
+      "prompt": "prompts/mutation/pair8_mtl.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "mutation/pair8/python",
+      "test": "mutation",
+      "item": "pair8",
+      "arm": "python",
+      "prompt": "prompts/mutation/pair8_python.txt",
+      "schema": "mutation"
+    },
+    {
+      "id": "confab/uf_add/mtl",
+      "test": "confab",
+      "item": "uf_add",
+      "arm": "mtl",
+      "prompt": "prompts/confab/uf_add_mtl.txt",
+      "schema": "confab"
+    },
+    {
+      "id": "confab/uf_add/python",
+      "test": "confab",
+      "item": "uf_add",
+      "arm": "python",
+      "prompt": "prompts/confab/uf_add_python.txt",
+      "schema": "confab"
+    },
+    {
+      "id": "confab/div0/mtl",
+      "test": "confab",
+      "item": "div0",
+      "arm": "mtl",
+      "prompt": "prompts/confab/div0_mtl.txt",
+      "schema": "confab"
+    },
+    {
+      "id": "confab/div0/python",
+      "test": "confab",
+      "item": "div0",
+      "arm": "python",
+      "prompt": "prompts/confab/div0_python.txt",
+      "schema": "confab"
+    },
+    {
+      "id": "confab/type_add/mtl",
+      "test": "confab",
+      "item": "type_add",
+      "arm": "mtl",
+      "prompt": "prompts/confab/type_add_mtl.txt",
+      "schema": "confab"
+    },
+    {
+      "id": "confab/type_add/python",
+      "test": "confab",
+      "item": "type_add",
+      "arm": "python",
+      "prompt": "prompts/confab/type_add_python.txt",
+      "schema": "confab"
+    },
+    {
+      "id": "confab/apply_int/mtl",
+      "test": "confab",
+      "item": "apply_int",
+      "arm": "mtl",
+      "prompt": "prompts/confab/apply_int_mtl.txt",
+      "schema": "confab"
+    },
+    {
+      "id": "confab/apply_int/python",
+      "test": "confab",
+      "item": "apply_int",
+      "arm": "python",
+      "prompt": "prompts/confab/apply_int_python.txt",
+      "schema": "confab"
+    },
+    {
+      "id": "confab/mod0/mtl",
+      "test": "confab",
+      "item": "mod0",
+      "arm": "mtl",
+      "prompt": "prompts/confab/mod0_mtl.txt",
+      "schema": "confab"
+    },
+    {
+      "id": "confab/mod0/python",
+      "test": "confab",
+      "item": "mod0",
+      "arm": "python",
+      "prompt": "prompts/confab/mod0_python.txt",
+      "schema": "confab"
+    },
+    {
+      "id": "confab/fuel/mtl",
+      "test": "confab",
+      "item": "fuel",
+      "arm": "mtl",
+      "prompt": "prompts/confab/fuel_mtl.txt",
+      "schema": "confab"
+    },
+    {
+      "id": "confab/fuel/python",
+      "test": "confab",
+      "item": "fuel",
+      "arm": "python",
+      "prompt": "prompts/confab/fuel_python.txt",
+      "schema": "confab"
+    }
+  ]
+}

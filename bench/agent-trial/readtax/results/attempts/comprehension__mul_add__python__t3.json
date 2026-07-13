@@ -1,0 +1,1 @@
+{"id":"comprehension/mul_add/python","test":"comprehension","item":"mul_add","arm":"python","trial":3,"prediction":{"output_int": 21, "note": "9*2+3 = 21"}}

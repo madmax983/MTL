@@ -1,0 +1,1 @@
+{"id":"recall/prog6/python","test":"recall","item":"prog6","arm":"python","trial":1,"prediction":{"program": "def solve(n): return sum(range(0, n+1))"}}

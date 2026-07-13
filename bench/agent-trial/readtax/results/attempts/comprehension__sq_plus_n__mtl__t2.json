@@ -1,0 +1,1 @@
+{"id":"comprehension/sq_plus_n/mtl","test":"comprehension","item":"sq_plus_n","arm":"mtl","trial":2,"prediction":{"output_int": 42, "note": "6 dup dup mul add: 6+36=42"}}

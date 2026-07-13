@@ -1,0 +1,294 @@
+{
+  "comprehension/mul_add/mtl": {
+    "schema": "comprehension",
+    "expected_int": 21
+  },
+  "comprehension/mul_add/python": {
+    "schema": "comprehension",
+    "expected_int": 21
+  },
+  "comprehension/sq_plus_n/mtl": {
+    "schema": "comprehension",
+    "expected_int": 42
+  },
+  "comprehension/sq_plus_n/python": {
+    "schema": "comprehension",
+    "expected_int": 42
+  },
+  "comprehension/sub_const/mtl": {
+    "schema": "comprehension",
+    "expected_int": 13
+  },
+  "comprehension/sub_const/python": {
+    "schema": "comprehension",
+    "expected_int": 13
+  },
+  "comprehension/cond_lt/mtl": {
+    "schema": "comprehension",
+    "expected_int": 6
+  },
+  "comprehension/cond_lt/python": {
+    "schema": "comprehension",
+    "expected_int": 6
+  },
+  "comprehension/primrec_sum/mtl": {
+    "schema": "comprehension",
+    "expected_int": 15
+  },
+  "comprehension/primrec_sum/python": {
+    "schema": "comprehension",
+    "expected_int": 15
+  },
+  "comprehension/pow2_times/mtl": {
+    "schema": "comprehension",
+    "expected_int": 1024
+  },
+  "comprehension/pow2_times/python": {
+    "schema": "comprehension",
+    "expected_int": 1024
+  },
+  "comprehension/swap_sub/mtl": {
+    "schema": "comprehension",
+    "expected_int": -7
+  },
+  "comprehension/swap_sub/python": {
+    "schema": "comprehension",
+    "expected_int": -7
+  },
+  "comprehension/rot_chain/mtl": {
+    "schema": "comprehension",
+    "expected_int": -2
+  },
+  "comprehension/rot_chain/python": {
+    "schema": "comprehension",
+    "expected_int": -2
+  },
+  "comprehension/dip_sub/mtl": {
+    "schema": "comprehension",
+    "expected_int": 8
+  },
+  "comprehension/dip_sub/python": {
+    "schema": "comprehension",
+    "expected_int": 8
+  },
+  "comprehension/over_mul/mtl": {
+    "schema": "comprehension",
+    "expected_int": 45
+  },
+  "comprehension/over_mul/python": {
+    "schema": "comprehension",
+    "expected_int": 45
+  },
+  "recall/prog1/mtl": {
+    "schema": "recall",
+    "expected_program": "2*3+"
+  },
+  "recall/prog1/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return n*2+3"
+  },
+  "recall/prog2/mtl": {
+    "schema": "recall",
+    "expected_program": "10 3~-"
+  },
+  "recall/prog2/python": {
+    "schema": "recall",
+    "expected_program": "def solve(a, b): return b - a"
+  },
+  "recall/prog3/mtl": {
+    "schema": "recall",
+    "expected_program": "6::*+"
+  },
+  "recall/prog3/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return n*n + n"
+  },
+  "recall/prog4/mtl": {
+    "schema": "recall",
+    "expected_program": "3:5<[2*][100+]?"
+  },
+  "recall/prog4/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return n*2 if n < 5 else n + 100"
+  },
+  "recall/prog5/mtl": {
+    "schema": "recall",
+    "expected_program": "1 10[2*]."
+  },
+  "recall/prog5/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n):\n    x = 1\n    for _ in range(n): x *= 2\n    return x"
+  },
+  "recall/prog6/mtl": {
+    "schema": "recall",
+    "expected_program": "5[0][+]&"
+  },
+  "recall/prog6/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return sum(range(0, n+1))"
+  },
+  "recall/prog7/mtl": {
+    "schema": "recall",
+    "expected_program": "[>[;0][[]1]?][_0][>_][~;]|"
+  },
+  "recall/prog7/python": {
+    "schema": "recall",
+    "expected_program": "def walk(xs, acc):\n    if not xs: return acc\n    h, *t = xs\n    return walk(t, [h] + acc)"
+  },
+  "recall/prog8/mtl": {
+    "schema": "recall",
+    "expected_program": "9 4^*+"
+  },
+  "recall/prog8/python": {
+    "schema": "recall",
+    "expected_program": "def solve(a, b): return a + b*a"
+  },
+  "mutation/pair1/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "* (was +)",
+    "position": "final glyph"
+  },
+  "mutation/pair1/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "* (was +)",
+    "position": "operator before the 3"
+  },
+  "mutation/pair2/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "> (was <)",
+    "position": "the comparison glyph (4th char)"
+  },
+  "mutation/pair2/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "> (was <)",
+    "position": "the comparison operator"
+  },
+  "mutation/pair3/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "; (was :)",
+    "position": "the second stack-op glyph (3rd char)"
+  },
+  "mutation/pair3/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "- (was +)",
+    "position": "the binary operator"
+  },
+  "mutation/pair4/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "^ (was @)",
+    "position": "the stack-shuffle glyph after 3"
+  },
+  "mutation/pair4/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "1 (was 0)",
+    "position": "the index"
+  },
+  "mutation/pair5/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "3 (was 2)",
+    "position": "the multiplier digit inside the quote"
+  },
+  "mutation/pair5/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "3 (was 2)",
+    "position": "the multiplier constant"
+  },
+  "mutation/pair6/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "% (was /)",
+    "position": "final glyph"
+  },
+  "mutation/pair6/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "% (was /)",
+    "position": "the binary operator"
+  },
+  "mutation/pair7/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/pair7/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/pair8/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/pair8/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "confab/uf_add/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Underflow"
+  },
+  "confab/uf_add/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "IndexError"
+  },
+  "confab/div0/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/div0/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/type_add/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "TypeMismatch"
+  },
+  "confab/type_add/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "TypeError"
+  },
+  "confab/apply_int/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "TypeMismatch"
+  },
+  "confab/apply_int/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "TypeError"
+  },
+  "confab/mod0/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/mod0/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/fuel/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "FuelExhausted"
+  },
+  "confab/fuel/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "NonTerminating"
+  }
+}

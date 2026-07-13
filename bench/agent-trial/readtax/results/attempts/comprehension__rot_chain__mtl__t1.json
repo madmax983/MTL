@@ -1,0 +1,1 @@
+{"id":"comprehension/rot_chain/mtl","test":"comprehension","item":"rot_chain","arm":"mtl","trial":1,"prediction":{"output_int": -2, "note": "rot->[2,3,1], +->[2,4], -->2-4=-2"}}

@@ -1,0 +1,1 @@
+{"id":"recall/prog5/python","test":"recall","item":"prog5","arm":"python","trial":2,"prediction":{"program": "def solve(n):\n    x = 1\n    for _ in range(n): x *= 2\n    return x"}}

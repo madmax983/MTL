@@ -1,0 +1,1 @@
+{"id":"comprehension/sub_const/mtl","test":"comprehension","item":"sub_const","arm":"mtl","trial":1,"prediction":{"output_int": 13, "note": "push 20, push 7, subtract: 20-7=13"}}
