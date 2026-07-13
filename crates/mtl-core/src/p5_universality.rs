@@ -492,3 +492,5 @@ pub proof fn lemma_dup_apply(base: Seq<SpecValue>, q: Seq<SpecWord>, rest: Seq<S
 }
 
 } // verus!
+
+fn main() {}
