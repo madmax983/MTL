@@ -1147,6 +1147,27 @@ pub open spec fn ewords_view(s: Seq<EWord>) -> Seq<GWord>
     }
 }
 
+// Singleton unfolds (spell out the base case for the recursive-fn fuel).
+pub proof fn lemma_ewords_view_singleton(x: EWord)
+    ensures ewords_view(seq![x]) == seq![eword_view(x)],
+{
+    let s = seq![x];
+    assert(s.len() == 1 && s[0] == x);
+    assert(s.subrange(1, s.len() as int) =~= Seq::<EWord>::empty());
+    assert(ewords_view(s.subrange(1, s.len() as int)) == Seq::<GWord>::empty());
+    assert(ewords_view(s) =~= seq![eword_view(x)]);
+}
+
+pub proof fn lemma_toks_words_singleton(w: GWord)
+    ensures toks_words(seq![w]) == toks_word(w),
+{
+    let s = seq![w];
+    assert(s.len() == 1 && s[0] == w);
+    assert(s.subrange(1, s.len() as int) =~= Seq::<GWord>::empty());
+    assert(toks_words(s.subrange(1, s.len() as int)) == Seq::<Token>::empty());
+    assert(toks_words(s) =~= toks_word(w));
+}
+
 // Class of the last-emitted token in a stream (None if empty). Threaded by the
 // exec printer as its `last: Option<Cls>` boundary bookkeeping.
 pub open spec fn last_cls(prev: Option<Cls>, ts: Seq<Token>) -> Option<Cls> {
@@ -1284,6 +1305,290 @@ pub proof fn lemma_wf_words_index(s: Seq<GWord>, i: int)
         lemma_wf_words_index(s.subrange(1, s.len() as int), i - 1);
         assert(s.subrange(1, s.len() as int)[i - 1] == s[i]);
     }
+}
+
+// --- exec character predicates (mirror the spec predicates) ---
+
+fn exec_is_digit(c: char) -> (r: bool)
+    ensures r == is_digit(c),
+{
+    '0' <= c && c <= '9'
+}
+
+fn exec_is_lower(c: char) -> (r: bool)
+    ensures r == is_lower(c),
+{
+    'a' <= c && c <= 'z'
+}
+
+// exec mirror of needs_sep.
+fn exec_needs_sep(left: Cls, b: char) -> (r: bool)
+    ensures r == needs_sep(left, b),
+{
+    if exec_is_digit(b) {
+        match left { Cls::CInt => true, Cls::CName => true, Cls::CPunct => false }
+    } else if exec_is_lower(b) {
+        match left { Cls::CName => true, _ => false }
+    } else {
+        false
+    }
+}
+
+// exec glyph lookup (mirror of spec_glyph).
+fn eprim_glyph(p: &EPrim) -> (r: char)
+    ensures r == spec_glyph(p.view()),
+{
+    match p {
+        EPrim::Dup => ':', EPrim::Drop => '_', EPrim::Swap => '~', EPrim::Rot => '@',
+        EPrim::Over => '^', EPrim::Apply => '!', EPrim::Cat => ',', EPrim::Cons => ';',
+        EPrim::Dip => '\'', EPrim::Add => '+', EPrim::Sub => '-', EPrim::Mul => '*',
+        EPrim::Div => '/', EPrim::Mod => '%', EPrim::Eq => '=', EPrim::Lt => '<',
+        EPrim::If => '?', EPrim::PrimRec => '&', EPrim::Times => '.', EPrim::LinRec => '|',
+        EPrim::Uncons => '>', EPrim::Fold => '(', EPrim::Xor => '$',
+    }
+}
+
+// --- exec decimal digits (mirror of the spec `digits`) ---
+
+fn exec_digit_char(k: u64) -> (r: char)
+    requires k < 10,
+    ensures r == digit_char(k as nat),
+{
+    if k == 0 { '0' } else if k == 1 { '1' } else if k == 2 { '2' }
+    else if k == 3 { '3' } else if k == 4 { '4' } else if k == 5 { '5' }
+    else if k == 6 { '6' } else if k == 7 { '7' } else if k == 8 { '8' }
+    else { '9' }
+}
+
+// Emit the decimal representation of `n`, most-significant digit first.
+fn exec_digits(n: u64) -> (r: Vec<char>)
+    ensures r@ == digits(n as nat),
+    decreases n,
+{
+    if n < 10 {
+        let mut v: Vec<char> = Vec::new();
+        v.push(exec_digit_char(n));
+        proof { assert(v@ =~= digits(n as nat)); }
+        v
+    } else {
+        let mut v = exec_digits(n / 10);
+        v.push(exec_digit_char(n % 10));
+        proof {
+            assert((n as nat) / 10 == (n / 10) as nat);
+            assert((n as nat) % 10 == (n % 10) as nat);
+            assert(v@ =~= digits(n as nat));
+        }
+        v
+    }
+}
+
+// Append a printed token `piece` (of ghost token `t`, class `class`) to `out`,
+// inserting one separating space first iff the boundary rule demands it. Grows
+// `out` by exactly `render_h(last, seq![t])` and returns the new boundary class.
+fn emit_token(out: &mut Vec<char>, last: Option<Cls>, piece: &Vec<char>, class: Cls, t: Ghost<Token>) -> (r: Option<Cls>)
+    requires
+        valid_tok(t@),
+        piece@ == tok_piece(t@),
+        class == tok_class(t@),
+    ensures
+        final(out)@ == old(out)@ + render_h(last, seq![t@]),
+        r == last_cls(last, seq![t@]),
+        r == Some(tok_class(t@)),
+{
+    let ghost old0 = out@;
+    proof { lemma_piece_nonempty(t@); }
+    // tok_first(t@) == piece@[0] == piece[0]
+    let need: bool = match last {
+        None => false,
+        Some(l) => exec_needs_sep(l, piece[0]),
+    };
+    assert(need == needs_sep_opt(last, tok_first(t@)));
+    if need {
+        out.push(' ');
+    }
+    let ghost after_sep = out@;
+    assert(after_sep =~= old0 + (if need { seq![' '] } else { Seq::<char>::empty() }));
+    let mut j: usize = 0;
+    while j < piece.len()
+        invariant
+            0 <= j <= piece.len(),
+            out@ == after_sep + piece@.subrange(0, j as int),
+        decreases piece.len() - j,
+    {
+        out.push(piece[j]);
+        proof {
+            assert(piece@.subrange(0, (j + 1) as int) =~= piece@.subrange(0, j as int).push(piece@[j as int]));
+        }
+        j = j + 1;
+    }
+    proof {
+        assert(piece@.subrange(0, piece@.len() as int) =~= piece@);
+        lemma_render_single(last, t@);
+        assert(out@ =~= old0 + render_h(last, seq![t@]));
+        // last_cls(last, seq![t@]) : the singleton's last element is t@.
+        assert(seq![t@][seq![t@].len() - 1] == t@);
+    }
+    Some(class)
+}
+
+// Emit one word (mirrors production `emit_word`), threading `last` so nested
+// quotations share the same boundary bookkeeping. Grows `out` by exactly
+// `render_h(last, toks_word(eword_view(*w)))`.
+fn exec_emit_word(out: &mut Vec<char>, last: Option<Cls>, w: &EWord) -> (r: Option<Cls>)
+    requires wf_word(eword_view(*w)),
+    ensures
+        final(out)@ == old(out)@ + render_h(last, toks_word(eword_view(*w))),
+        r == last_cls(last, toks_word(eword_view(*w))),
+    decreases *w, 0nat,
+{
+    match w {
+        EWord::EPushInt(i) => {
+            assert(*i as int >= 0);
+            assert(*i >= 0);
+            let piece = exec_digits(*i as u64);
+            proof {
+                assert(*i as u64 == *i as int);
+                assert((*i as u64) as nat == (*i as int) as nat);
+                assert(piece@ == tok_piece(Token::TInt(*i as int)));
+            }
+            let r = emit_token(out, last, &piece, Cls::CInt, Ghost(Token::TInt(*i as int)));
+            proof { assert(toks_word(eword_view(*w)) =~= seq![Token::TInt(*i as int)]); }
+            r
+        }
+        EWord::EPrim(p) => {
+            let g = eprim_glyph(p);
+            let mut piece: Vec<char> = Vec::new();
+            piece.push(g);
+            proof { assert(piece@ =~= seq![spec_glyph(p.view())]); }
+            let r = emit_token(out, last, &piece, Cls::CPunct, Ghost(Token::TGlyph(p.view())));
+            proof { assert(toks_word(eword_view(*w)) =~= seq![Token::TGlyph(p.view())]); }
+            r
+        }
+        EWord::ECall(v) => {
+            let r = emit_token(out, last, v, Cls::CName, Ghost(Token::TName(v@)));
+            proof { assert(toks_word(eword_view(*w)) =~= seq![Token::TName(v@)]); }
+            r
+        }
+        EWord::EPushQuote(ws) => {
+            let ghost start = out@;
+            let ghost q = ewords_view(ws@);
+            let mut ob: Vec<char> = Vec::new();
+            ob.push('[');
+            proof { assert(ob@ =~= seq!['[']); }
+            let l1 = emit_token(out, last, &ob, Cls::CPunct, Ghost(Token::TOpen));
+            let l2 = exec_emit_words(out, l1, ws);
+            let mut cb: Vec<char> = Vec::new();
+            cb.push(']');
+            proof { assert(cb@ =~= seq![']']); }
+            let l3 = emit_token(out, l2, &cb, Cls::CPunct, Ghost(Token::TClose));
+            proof {
+                let a = seq![Token::TOpen];
+                let b = toks_words(q);
+                let c = seq![Token::TClose];
+                // toks_word(PushQuote(q)) == a + b + c
+                assert(toks_word(eword_view(*w)) =~= (a + b) + c);
+                // l1 == last_cls(last, a) == Some(CPunct); l2 == last_cls(l1, b).
+                lemma_render_append(l1, b, c);
+                lemma_render_append(last, a, b + c);
+                assert(last_cls(last, a) == l1);
+                assert(last_cls(l1, b) == l2);
+                // out@ == start + Rh(last,a) + Rh(l1,b) + Rh(l2,c)
+                //       == start + Rh(last, a + (b + c)) == start + Rh(last, (a+b)+c)
+                assert(a + (b + c) =~= (a + b) + c);
+                assert(out@ =~= start + render_h(last, toks_word(eword_view(*w))));
+                // l3 == last_cls(last, toks_word(PushQuote(q)))
+                lemma_last_cls_append(last, a + b, c);
+                lemma_last_cls_append(l1, b, c);
+                assert(last_cls(last, toks_word(eword_view(*w))) == l3);
+            }
+            l3
+        }
+    }
+}
+
+// Emit all words of `ws`, threading `last`. The loop invariant ties the emitted
+// prefix to `render_h` over `toks_words` of the already-processed words.
+fn exec_emit_words(out: &mut Vec<char>, last: Option<Cls>, ws: &Vec<EWord>) -> (r: Option<Cls>)
+    requires wf_words(ewords_view(ws@)),
+    ensures
+        final(out)@ == old(out)@ + render_h(last, toks_words(ewords_view(ws@))),
+        r == last_cls(last, toks_words(ewords_view(ws@))),
+    decreases ws@, ws@.len(),
+{
+    let ghost start = out@;
+    let ghost gws = ws@;
+    let mut cur: Option<Cls> = last;
+    let mut i: usize = 0;
+    while i < ws.len()
+        invariant
+            0 <= i <= ws.len(),
+            ws@ == gws,
+            wf_words(ewords_view(ws@)),
+            out@ == start + render_h(last, toks_words(ewords_view(ws@.subrange(0, i as int)))),
+            cur == last_cls(last, toks_words(ewords_view(ws@.subrange(0, i as int)))),
+        decreases ws.len() - i,
+    {
+        proof {
+            lemma_ewords_view_len_index(ws@);
+            lemma_wf_words_index(ewords_view(ws@), i as int);
+        }
+        let ci = exec_emit_word(out, cur, &ws[i]);
+        proof {
+            let x = ws@[i as int];
+            let pre = ws@.subrange(0, i as int);
+            let nx = ws@.subrange(0, (i + 1) as int);
+            assert(nx =~= pre + seq![x]);
+            lemma_ewords_view_singleton(x);
+            lemma_ewords_view_append(pre, seq![x]);
+            assert(ewords_view(nx) =~= ewords_view(pre) + seq![eword_view(x)]);
+            let st = seq![eword_view(x)];
+            lemma_toks_words_singleton(eword_view(x));
+            lemma_toks_words_append(ewords_view(pre), st);
+            let t = toks_words(ewords_view(pre));
+            let wtoks = toks_word(eword_view(x));
+            assert(toks_words(ewords_view(nx)) =~= t + wtoks);
+            lemma_render_append(last, t, wtoks);
+            lemma_last_cls_append(last, t, wtoks);
+        }
+        cur = ci;
+        i = i + 1;
+    }
+    proof { assert(ws@.subrange(0, ws.len() as int) =~= ws@); }
+    cur
+}
+
+// The executable printer, PROVEN to refine spec_print over the well-formed
+// domain: `r@ == spec_print(ewords_view(p@))`.
+pub fn exec_print(p: &Vec<EWord>) -> (r: Vec<char>)
+    requires wf_words(ewords_view(p@)),
+    ensures r@ == spec_print(ewords_view(p@)),
+{
+    let mut out: Vec<char> = Vec::new();
+    let last: Option<Cls> = None;
+    let _ = exec_emit_words(&mut out, last, p);
+    proof { assert(out@ =~= render_h(None, toks_words(ewords_view(p@)))); }
+    out
+}
+
+// Non-vacuity: the exec printer's well-formed domain is inhabited (its
+// `requires` is satisfiable), so `exec_print`'s refinement is not vacuous.
+pub proof fn exec_print_domain_nonvacuous()
+    ensures wf_words(ewords_view(seq![EWord::EPushInt(0), EWord::EPrim(EPrim::Dup)])),
+{
+    let s = seq![EWord::EPushInt(0), EWord::EPrim(EPrim::Dup)];
+    lemma_ewords_view_len_index(s);
+    let g = ewords_view(s);
+    assert(s[0] == EWord::EPushInt(0) && s[1] == EWord::EPrim(EPrim::Dup));
+    assert(g.len() == 2);
+    assert(g[0] == eword_view(s[0]) && g[0] == GWord::PushInt(0));
+    assert(g[1] == eword_view(s[1]) && g[1] == GWord::Prim(GPrim::Dup));
+    assert(wf_word(g[0]) && wf_word(g[1]));
+    let tl = g.subrange(1, g.len() as int);
+    assert(tl.len() == 1 && tl[0] == g[1]);
+    assert(tl.subrange(1, tl.len() as int) =~= Seq::<GWord>::empty());
+    assert(wf_words(tl.subrange(1, tl.len() as int)));
+    assert(wf_words(tl));
+    assert(wf_words(g));
 }
 
 fn main() {}
