@@ -1,0 +1,1 @@
+{"id":"comprehension/swap_sub/python","test":"comprehension","item":"swap_sub","arm":"python","trial":3,"prediction":{"output_int": -7, "note": "b-a = 3-10 = -7"}}

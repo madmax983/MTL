@@ -1,0 +1,1 @@
+{"id":"comprehension/pow2_times/python","test":"comprehension","item":"pow2_times","arm":"python","trial":2,"prediction":{"output_int": 1024, "note": "Doubles 1 ten times: 2^10 = 1024"}}

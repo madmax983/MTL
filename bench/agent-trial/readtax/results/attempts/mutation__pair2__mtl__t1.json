@@ -1,0 +1,1 @@
+{"id":"mutation/pair2/mtl","test":"mutation","item":"pair2","arm":"mtl","trial":1,"prediction":{"differ": true, "change": "the 4th glyph (immediately after '3:5', before '[2*]') changed from '<' (lt) in A to '>' (uncons) in B"}}

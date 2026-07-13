@@ -1,0 +1,1 @@
+{"id":"comprehension/dip_sub/python","test":"comprehension","item":"dip_sub","arm":"python","trial":1,"prediction":{"output_int": 8, "note": "(10+3)-5 = 8"}}

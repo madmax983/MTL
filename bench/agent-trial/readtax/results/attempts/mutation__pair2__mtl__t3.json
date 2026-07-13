@@ -1,0 +1,1 @@
+{"id":"mutation/pair2/mtl","test":"mutation","item":"pair2","arm":"mtl","trial":3,"prediction":{"differ": true, "change": "the operator glyph after the literal 5 changed from '<' (lt) in A to '>' (uncons) in B"}}

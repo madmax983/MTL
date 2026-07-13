@@ -1,0 +1,1 @@
+{"id":"comprehension/pow2_times/mtl","test":"comprehension","item":"pow2_times","arm":"mtl","trial":3,"prediction":{"output_int": 1024, "note": "seed 1 doubled 10 times equals 1024"}}

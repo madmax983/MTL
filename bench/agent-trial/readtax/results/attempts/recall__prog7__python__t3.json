@@ -1,0 +1,1 @@
+{"id":"recall/prog7/python","test":"recall","item":"prog7","arm":"python","trial":3,"prediction":{"program": "def walk(xs, acc):\n    if not xs: return acc\n    h, *t = xs\n    return walk(t, [h] + acc)"}}

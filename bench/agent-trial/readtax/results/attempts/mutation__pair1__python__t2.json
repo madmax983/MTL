@@ -1,0 +1,1 @@
+{"id":"mutation/pair1/python","test":"mutation","item":"pair1","arm":"python","trial":2,"prediction":{"differ": true, "change": "the '+' operator in Program A's return expression (a*2 + 3) changed to '*' in Program B (a*2 * 3)"}}

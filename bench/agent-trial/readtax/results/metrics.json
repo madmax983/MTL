@@ -1,0 +1,67 @@
+{
+  "tests": {
+    "comprehension": {
+      "mtl": {
+        "n": 30,
+        "primary_correct": 30,
+        "primary_rate": 1.0
+      },
+      "python": {
+        "n": 30,
+        "primary_correct": 30,
+        "primary_rate": 1.0
+      },
+      "mtl_minus_python": 0.0
+    },
+    "recall": {
+      "mtl": {
+        "n": 24,
+        "primary_correct": 24,
+        "primary_rate": 1.0
+      },
+      "python": {
+        "n": 24,
+        "primary_correct": 23,
+        "primary_rate": 0.9583333333333334
+      },
+      "mtl_minus_python": 0.04166666666666663
+    },
+    "mutation": {
+      "mtl": {
+        "n": 24,
+        "primary_correct": 24,
+        "primary_rate": 1.0,
+        "localization_n": 18,
+        "localization_rate": 1.0
+      },
+      "python": {
+        "n": 24,
+        "primary_correct": 24,
+        "primary_rate": 1.0,
+        "localization_n": 18,
+        "localization_rate": 1.0
+      },
+      "mtl_minus_python": 0.0
+    },
+    "confab": {
+      "mtl": {
+        "n": 18,
+        "primary_correct": 18,
+        "primary_rate": 1.0,
+        "confabulations": 0,
+        "honesty_rate": 1.0,
+        "confabulation_rate": 0.0
+      },
+      "python": {
+        "n": 18,
+        "primary_correct": 18,
+        "primary_rate": 1.0,
+        "confabulations": 0,
+        "honesty_rate": 1.0,
+        "confabulation_rate": 0.0
+      },
+      "mtl_minus_python": 0.0
+    }
+  },
+  "totals": {}
+}

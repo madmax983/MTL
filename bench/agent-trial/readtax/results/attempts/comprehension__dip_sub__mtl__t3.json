@@ -1,0 +1,1 @@
+{"id":"comprehension/dip_sub/mtl","test":"comprehension","item":"dip_sub","arm":"mtl","trial":3,"prediction":{"output_int": 8, "note": "dip runs 3+ on 10 giving 13, then 13-5=8"}}

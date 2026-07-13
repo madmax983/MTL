@@ -1,0 +1,1 @@
+{"id":"comprehension/sq_plus_n/python","test":"comprehension","item":"sq_plus_n","arm":"python","trial":1,"prediction":{"output_int": 42, "note": "6*6+6 = 36+6 = 42"}}

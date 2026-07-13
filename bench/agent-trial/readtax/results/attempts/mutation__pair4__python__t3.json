@@ -1,0 +1,1 @@
+{"id":"mutation/pair4/python","test":"mutation","item":"pair4","arm":"python","trial":3,"prediction":{"differ": true, "change": "index literal in the return: '0' in Program A (l[0]) changed to '1' in Program B (l[1])"}}

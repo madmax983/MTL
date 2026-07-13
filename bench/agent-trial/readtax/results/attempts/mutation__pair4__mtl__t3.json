@@ -1,0 +1,1 @@
+{"id":"mutation/pair4/mtl","test":"mutation","item":"pair4","arm":"mtl","trial":3,"prediction":{"differ": true, "change": "the operator right after the literal 3 changed from '@' (rot) in A to '^' (over) in B"}}

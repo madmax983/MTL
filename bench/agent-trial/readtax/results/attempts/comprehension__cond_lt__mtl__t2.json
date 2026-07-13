@@ -1,0 +1,1 @@
+{"id":"comprehension/cond_lt/mtl","test":"comprehension","item":"cond_lt","arm":"mtl","trial":2,"prediction":{"output_int": 6, "note": "3 dup 5 lt =1, run [2*]: 3*2=6"}}

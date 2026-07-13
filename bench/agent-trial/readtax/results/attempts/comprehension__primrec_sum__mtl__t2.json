@@ -1,0 +1,1 @@
+{"id":"comprehension/primrec_sum/mtl","test":"comprehension","item":"primrec_sum","arm":"mtl","trial":2,"prediction":{"output_int": 15, "note": "primrec sums 0+1+...+5 = 15"}}

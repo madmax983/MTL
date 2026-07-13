@@ -1,0 +1,1 @@
+{"id":"comprehension/cond_lt/mtl","test":"comprehension","item":"cond_lt","arm":"mtl","trial":3,"prediction":{"output_int": 6, "note": "3<5 true, run 2* on 3 gives 6"}}

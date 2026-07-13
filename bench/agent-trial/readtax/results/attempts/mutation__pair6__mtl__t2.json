@@ -1,0 +1,1 @@
+{"id":"mutation/pair6/mtl","test":"mutation","item":"pair6","arm":"mtl","trial":2,"prediction":{"differ": true, "change": "the final glyph changed from '/' (div) in Program A to '%' (mod) in Program B"}}

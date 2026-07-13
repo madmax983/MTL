@@ -1,0 +1,415 @@
+{
+  "corpus": {
+    "corpus/affine/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 4,
+      "o200k_base": 4
+    },
+    "corpus/affine/mtl/solution.mtl": {
+      "cl100k_base": 4,
+      "o200k_base": 4
+    },
+    "corpus/affine/python-idiomatic/solution.py": {
+      "cl100k_base": 13,
+      "o200k_base": 13
+    },
+    "corpus/affine/python-minified/solution.py": {
+      "cl100k_base": 9,
+      "o200k_base": 9
+    },
+    "corpus/binary_search/python-idiomatic/solution.py": {
+      "cl100k_base": 83,
+      "o200k_base": 83
+    },
+    "corpus/binary_search/python-minified/solution.py": {
+      "cl100k_base": 74,
+      "o200k_base": 74
+    },
+    "corpus/climbing_stairs/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 8,
+      "o200k_base": 8
+    },
+    "corpus/climbing_stairs/mtl-v0.3/solution.mtl": {
+      "cl100k_base": 8,
+      "o200k_base": 8
+    },
+    "corpus/climbing_stairs/python-idiomatic/solution.py": {
+      "cl100k_base": 38,
+      "o200k_base": 38
+    },
+    "corpus/climbing_stairs/python-minified/solution.py": {
+      "cl100k_base": 30,
+      "o200k_base": 28
+    },
+    "corpus/contains/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 26,
+      "o200k_base": 26
+    },
+    "corpus/contains/mtl-v0.3/solution.mtl": {
+      "cl100k_base": 10,
+      "o200k_base": 10
+    },
+    "corpus/contains/python-idiomatic/solution.py": {
+      "cl100k_base": 27,
+      "o200k_base": 27
+    },
+    "corpus/contains/python-minified/solution.py": {
+      "cl100k_base": 26,
+      "o200k_base": 26
+    },
+    "corpus/count_occurrences/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 23,
+      "o200k_base": 23
+    },
+    "corpus/count_occurrences/mtl-v0.3/solution.mtl": {
+      "cl100k_base": 7,
+      "o200k_base": 7
+    },
+    "corpus/count_occurrences/python-idiomatic/solution.py": {
+      "cl100k_base": 35,
+      "o200k_base": 35
+    },
+    "corpus/count_occurrences/python-minified/solution.py": {
+      "cl100k_base": 33,
+      "o200k_base": 33
+    },
+    "corpus/factorial/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 5,
+      "o200k_base": 5
+    },
+    "corpus/factorial/mtl/solution.mtl": {
+      "cl100k_base": 19,
+      "o200k_base": 19
+    },
+    "corpus/factorial/python-idiomatic/solution.py": {
+      "cl100k_base": 26,
+      "o200k_base": 26
+    },
+    "corpus/factorial/python-minified/solution.py": {
+      "cl100k_base": 19,
+      "o200k_base": 19
+    },
+    "corpus/fib/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 8,
+      "o200k_base": 8
+    },
+    "corpus/fib/python-idiomatic/solution.py": {
+      "cl100k_base": 36,
+      "o200k_base": 36
+    },
+    "corpus/fib/python-minified/solution.py": {
+      "cl100k_base": 19,
+      "o200k_base": 19
+    },
+    "corpus/gcd/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 10,
+      "o200k_base": 10
+    },
+    "corpus/gcd/mtl/solution.mtl": {
+      "cl100k_base": 15,
+      "o200k_base": 15
+    },
+    "corpus/gcd/python-idiomatic/solution.py": {
+      "cl100k_base": 24,
+      "o200k_base": 24
+    },
+    "corpus/gcd/python-minified/solution.py": {
+      "cl100k_base": 15,
+      "o200k_base": 15
+    },
+    "corpus/is_even/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 4,
+      "o200k_base": 4
+    },
+    "corpus/is_even/mtl/solution.mtl": {
+      "cl100k_base": 4,
+      "o200k_base": 4
+    },
+    "corpus/is_even/python-idiomatic/solution.py": {
+      "cl100k_base": 14,
+      "o200k_base": 14
+    },
+    "corpus/is_even/python-minified/solution.py": {
+      "cl100k_base": 9,
+      "o200k_base": 9
+    },
+    "corpus/length_list/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 13,
+      "o200k_base": 13
+    },
+    "corpus/length_list/mtl-v0.3/solution.mtl": {
+      "cl100k_base": 5,
+      "o200k_base": 5
+    },
+    "corpus/length_list/python-idiomatic/solution.py": {
+      "cl100k_base": 26,
+      "o200k_base": 26
+    },
+    "corpus/length_list/python-minified/solution.py": {
+      "cl100k_base": 19,
+      "o200k_base": 20
+    },
+    "corpus/max_list/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 22,
+      "o200k_base": 22
+    },
+    "corpus/max_list/mtl-v0.3/solution.mtl": {
+      "cl100k_base": 10,
+      "o200k_base": 11
+    },
+    "corpus/max_list/python-idiomatic/solution.py": {
+      "cl100k_base": 34,
+      "o200k_base": 35
+    },
+    "corpus/max_list/python-minified/solution.py": {
+      "cl100k_base": 40,
+      "o200k_base": 40
+    },
+    "corpus/min_list/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 23,
+      "o200k_base": 23
+    },
+    "corpus/min_list/mtl-v0.3/solution.mtl": {
+      "cl100k_base": 11,
+      "o200k_base": 12
+    },
+    "corpus/min_list/python-idiomatic/solution.py": {
+      "cl100k_base": 34,
+      "o200k_base": 35
+    },
+    "corpus/min_list/python-minified/solution.py": {
+      "cl100k_base": 40,
+      "o200k_base": 40
+    },
+    "corpus/palindrome_number/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 18,
+      "o200k_base": 18
+    },
+    "corpus/palindrome_number/mtl-v0.3/solution.mtl": {
+      "cl100k_base": 18,
+      "o200k_base": 18
+    },
+    "corpus/palindrome_number/python-idiomatic/solution.py": {
+      "cl100k_base": 53,
+      "o200k_base": 54
+    },
+    "corpus/palindrome_number/python-minified/solution.py": {
+      "cl100k_base": 52,
+      "o200k_base": 52
+    },
+    "corpus/power/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 7,
+      "o200k_base": 7
+    },
+    "corpus/power/python-idiomatic/solution.py": {
+      "cl100k_base": 27,
+      "o200k_base": 27
+    },
+    "corpus/power/python-minified/solution.py": {
+      "cl100k_base": 18,
+      "o200k_base": 18
+    },
+    "corpus/product_list/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 9,
+      "o200k_base": 9
+    },
+    "corpus/product_list/mtl-v0.3/solution.mtl": {
+      "cl100k_base": 3,
+      "o200k_base": 3
+    },
+    "corpus/product_list/python-idiomatic/solution.py": {
+      "cl100k_base": 25,
+      "o200k_base": 25
+    },
+    "corpus/product_list/python-minified/solution.py": {
+      "cl100k_base": 20,
+      "o200k_base": 21
+    },
+    "corpus/rev3/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 2,
+      "o200k_base": 2
+    },
+    "corpus/rev3/mtl/solution.mtl": {
+      "cl100k_base": 2,
+      "o200k_base": 2
+    },
+    "corpus/rev3/python-idiomatic/solution.py": {
+      "cl100k_base": 16,
+      "o200k_base": 16
+    },
+    "corpus/rev3/python-minified/solution.py": {
+      "cl100k_base": 11,
+      "o200k_base": 11
+    },
+    "corpus/reverse_list/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 19,
+      "o200k_base": 19
+    },
+    "corpus/reverse_list/mtl-v0.3/solution.mtl": {
+      "cl100k_base": 4,
+      "o200k_base": 4
+    },
+    "corpus/reverse_list/python-idiomatic/solution.py": {
+      "cl100k_base": 27,
+      "o200k_base": 27
+    },
+    "corpus/reverse_list/python-minified/solution.py": {
+      "cl100k_base": 22,
+      "o200k_base": 22
+    },
+    "corpus/single_number/mtl-v0.3/solution.mtl": {
+      "cl100k_base": 9,
+      "o200k_base": 9
+    },
+    "corpus/single_number/python-idiomatic/solution.py": {
+      "cl100k_base": 25,
+      "o200k_base": 25
+    },
+    "corpus/single_number/python-minified/solution.py": {
+      "cl100k_base": 20,
+      "o200k_base": 21
+    },
+    "corpus/sum_list/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 10,
+      "o200k_base": 10
+    },
+    "corpus/sum_list/mtl-v0.3/solution.mtl": {
+      "cl100k_base": 4,
+      "o200k_base": 4
+    },
+    "corpus/sum_list/python-idiomatic/solution.py": {
+      "cl100k_base": 25,
+      "o200k_base": 25
+    },
+    "corpus/sum_list/python-minified/solution.py": {
+      "cl100k_base": 20,
+      "o200k_base": 21
+    },
+    "corpus/sum_to/mtl-v0.2/solution.mtl": {
+      "cl100k_base": 5,
+      "o200k_base": 5
+    },
+    "corpus/sum_to/python-idiomatic/solution.py": {
+      "cl100k_base": 32,
+      "o200k_base": 32
+    },
+    "corpus/sum_to/python-minified/solution.py": {
+      "cl100k_base": 16,
+      "o200k_base": 16
+    },
+    "corpus/two_sum/python-idiomatic/solution.py": {
+      "cl100k_base": 48,
+      "o200k_base": 48
+    },
+    "corpus/two_sum/python-minified/solution.py": {
+      "cl100k_base": 33,
+      "o200k_base": 33
+    }
+  },
+  "encodings": [
+    "o200k_base",
+    "cl100k_base"
+  ],
+  "glyphs": {
+    "!": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "$": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "%": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "&": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "'": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "(": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "*": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "+": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    ",": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "-": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    ".": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "/": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    ":": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    ";": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "<": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "=": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    ">": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "?": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "@": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "[": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "]": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "^": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "_": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "|": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    },
+    "~": {
+      "cl100k_base": 1,
+      "o200k_base": 1
+    }
+  },
+  "tiktoken_version": "0.8.0"
+}

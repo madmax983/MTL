@@ -1,0 +1,1 @@
+{"id":"comprehension/rot_chain/python","test":"comprehension","item":"rot_chain","arm":"python","trial":2,"prediction":{"output_int": -2, "note": "b-(c+a)=2-(3+1)=-2"}}

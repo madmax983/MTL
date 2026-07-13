@@ -1,0 +1,1 @@
+{"id":"comprehension/pow2_times/mtl","test":"comprehension","item":"pow2_times","arm":"mtl","trial":1,"prediction":{"output_int": 1024, "note": "doubling 1 ten times gives 2^10"}}
