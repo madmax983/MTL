@@ -1100,7 +1100,9 @@ pub proof fn lemma_reaches_halt(s: SpecState, s2: SpecState, stk: Seq<SpecValue>
 /// the dispatch cascade to select `body(prog, m.pc)`.
 pub proof fn lemma_enter_body(prog: MProg, m: MConf, s: SpecState)
     requires rep(prog, m, s), m.pc < prog.code.len(),
-    ensures reaches(s, post_dispatch(prog, m)),
+    ensures
+        spec_stepn(s, (6 * m.pc + 9) as nat) == SpecStep::Next(post_dispatch(prog, m)),
+        reaches(s, post_dispatch(prog, m)),
 {
     reveal(compile_u);
     let c1q = SpecValue::Quote(unary(m.c1));
@@ -1156,6 +1158,11 @@ pub proof fn lemma_enter_body(prog: MProg, m: MConf, s: SpecState)
         assert(sC.cont =~= post_dispatch(prog, m).cont);
     }
     lemma_reaches_trans(s, sB, post_dispatch(prog, m));
+    // Explicit total step count: 2 + 1 + (6*pc+6) = 6*pc+9.
+    lemma_stepn_compose(s, 2, 1);
+    assert(spec_stepn(s, 3) == SpecStep::Next(sB));
+    lemma_stepn_compose(s, 3, (6 * m.pc + 6) as nat);
+    assert(spec_stepn(s, (6 * m.pc + 9) as nat) == SpecStep::Next(post_dispatch(prog, m)));
 }
 
 /// **Lemma P5-step (lock-step correspondence).** For any reachable `m` with
@@ -1299,6 +1306,7 @@ pub proof fn lemma_dispatch_oob(
 /// From `R(prog, m, s)` with `minsky_step(prog, m) = None` (Halt or PC out of
 /// range), the MTL machine reaches a drained state whose `spec_step` is
 /// `Halt(halt_stack(m))`.
+#[verifier::rlimit(50)]
 pub proof fn lemma_reach_halt(prog: MProg, m: MConf, s: SpecState)
     requires rep(prog, m, s), minsky_step(prog, m) is None,
     ensures exists|s2: SpecState|
@@ -1421,6 +1429,187 @@ pub proof fn p5_halt_forward_monotone(
         lemma_run_mono(s0, n, n2);
     }
 }
+
+// ============================================================
+// 9. Reverse correspondence: MTL halts => Minsky halts
+//    (via divergence preservation), fuel-quantified
+// ============================================================
+
+/// If `k` steps all advance (Next) and `N <= k`, then `spec_run(s, N)` runs out
+/// of fuel — in particular it is NOT `Halt` and NOT `Fault`. Induction on `N`.
+pub proof fn lemma_stepn_next_run(s: SpecState, k: nat, n: nat)
+    requires spec_stepn(s, k) is Next, n <= k,
+    ensures spec_run(s, n) == SpecOutcome::FuelExhausted,
+    decreases n,
+{
+    if n == 0 {
+    } else {
+        match spec_step(s) {
+            SpecStep::Next(s2) => {
+                lemma_stepn_next_run(s2, (k - 1) as nat, (n - 1) as nat);
+            }
+            _ => {
+                assert(spec_stepn(s, k) == spec_step(s));
+            }
+        }
+    }
+}
+
+/// Lock-step with an explicit lower bound on the step count (`k >= 1`): one
+/// Minsky step costs at least one `spec_step`.
+pub proof fn p5_lockstep_steps(prog: MProg, m: MConf, m2: MConf, s: SpecState)
+    requires rep(prog, m, s), minsky_step(prog, m) == Some(m2),
+    ensures exists|k: nat|
+        k >= 1 && spec_stepn(s, k) is Next && rep(prog, m2, spec_stepn(s, k)->Next_0),
+{
+    assert(m.pc < prog.code.len());
+    lemma_enter_body(prog, m, s);
+    let base = (6 * m.pc + 9) as nat;
+    let pd = post_dispatch(prog, m);
+    // pick the body step count for the matched instruction; compose with `base`.
+    let bstep: nat = match prog.code[m.pc as int] {
+        MInstr::Inc(reg, j) => if reg { 9 } else { 12 },
+        MInstr::DecJz(reg, jz, nz) =>
+            if reg { if m.c2 == 0 { 10 } else { 11 } }
+            else { if m.c1 == 0 { 11 } else { 12 } },
+        MInstr::Halt => 0,
+    };
+    match prog.code[m.pc as int] {
+        MInstr::Inc(reg, j) => {
+            if reg { lemma_body_inc_c2(prog, m, j); } else { lemma_body_inc_c1(prog, m, j); }
+        }
+        MInstr::DecJz(reg, jz, nz) => {
+            if reg {
+                if m.c2 == 0 { lemma_body_decjz_c2_z(prog, m, jz, nz); }
+                else { lemma_body_decjz_c2_nz(prog, m, jz, nz); }
+            } else {
+                if m.c1 == 0 { lemma_body_decjz_c1_z(prog, m, jz, nz); }
+                else { lemma_body_decjz_c1_nz(prog, m, jz, nz); }
+            }
+        }
+        MInstr::Halt => { assert(false); }
+    }
+    assert(spec_stepn(pd, bstep) is Next && rep(prog, m2, spec_stepn(pd, bstep)->Next_0));
+    lemma_stepn_compose(s, base, bstep);
+    assert(spec_stepn(s, (base + bstep) as nat) == spec_stepn(pd, bstep));
+    assert((base + bstep) as nat >= 1);
+}
+
+/// Reach the `t`-th configuration with an explicit step count `k >= t`: each of
+/// the `t` Minsky steps contributes at least one `spec_step`. Induction on `t`.
+pub proof fn p5_reach_steps(prog: MProg, m0: MConf, s0: SpecState, t: nat)
+    requires rep(prog, m0, s0), minsky_run(prog, m0, t) is Some,
+    ensures exists|k: nat|
+        k >= t && spec_stepn(s0, k) is Next
+        && rep(prog, minsky_run(prog, m0, t)->Some_0, spec_stepn(s0, k)->Next_0),
+    decreases t,
+{
+    if t == 0 {
+        assert(spec_stepn(s0, 0) == SpecStep::Next(s0));
+        assert(minsky_run(prog, m0, 0) == Some(m0));
+    } else {
+        let m1 = minsky_step(prog, m0)->Some_0;
+        assert(minsky_step(prog, m0) == Some(m1));
+        p5_lockstep_steps(prog, m0, m1, s0);
+        let k1 = choose|k1: nat|
+            k1 >= 1 && spec_stepn(s0, k1) is Next && rep(prog, m1, spec_stepn(s0, k1)->Next_0);
+        let s1 = spec_stepn(s0, k1)->Next_0;
+        p5_reach_steps(prog, m1, s1, (t - 1) as nat);
+        let k2 = choose|k2: nat|
+            k2 >= (t - 1) as nat && spec_stepn(s1, k2) is Next
+            && rep(prog, minsky_run(prog, m1, (t - 1) as nat)->Some_0, spec_stepn(s1, k2)->Next_0);
+        lemma_stepn_compose(s0, k1, k2);
+        assert(spec_stepn(s0, (k1 + k2) as nat) == spec_stepn(s1, k2));
+        assert((k1 + k2) as nat >= t);
+        assert(minsky_run(prog, m0, t)->Some_0 == minsky_run(prog, m1, (t - 1) as nat)->Some_0);
+    }
+}
+
+/// **Corollary P5-diverge (divergence preservation).** If the Minsky machine
+/// never halts (`minsky_run` is `Some` for every `t`), then for every fuel `N`
+/// the MTL run has NOT halted: `spec_run(s0, N)` is `FuelExhausted`. This is the
+/// contrapositive core of the reverse direction (brief §5.3): MTL observes
+/// `Halt` for some fuel ONLY IF the Minsky machine halts.
+pub proof fn p5_diverge(prog: MProg, m0: MConf, s0: SpecState, big_n: nat)
+    requires
+        rep(prog, m0, s0),
+        forall|t: nat| minsky_run(prog, m0, t) is Some,
+    ensures spec_run(s0, big_n) == SpecOutcome::FuelExhausted,
+{
+    // Use t = N: the N-th configuration is reached in k >= N steps, so the
+    // first N steps are all Next, hence spec_run(s0, N) exhausts fuel.
+    assert(minsky_run(prog, m0, big_n) is Some);
+    p5_reach_steps(prog, m0, s0, big_n);
+    let k = choose|k: nat|
+        k >= big_n && spec_stepn(s0, k) is Next
+        && rep(prog, minsky_run(prog, m0, big_n)->Some_0, spec_stepn(s0, k)->Next_0);
+    lemma_stepn_next_run(s0, k, big_n);
+}
+
+/// **Corollary P5-halt (reverse: MTL halts => Minsky halts).** If the MTL run
+/// observes `Halt` for some fuel, the Minsky machine is not divergent — it halts
+/// at some step `t`. (The decoded final stack is then pinned to `halt_stack` of
+/// that halting configuration by the forward direction together with the fact
+/// that `spec_run` is a function.) Stated as the contrapositive of `p5_diverge`.
+pub proof fn p5_halt_reverse(prog: MProg, m0: MConf, s0: SpecState)
+    requires
+        rep(prog, m0, s0),
+        exists|n: nat| spec_run(s0, n) is Halt,
+    ensures exists|t: nat| minsky_run(prog, m0, t) is None,
+{
+    // Suppose not: then the Minsky machine diverges, so by p5_diverge every
+    // fuel exhausts — contradicting the assumed Halt observation.
+    if forall|t: nat| minsky_run(prog, m0, t) is Some {
+        let n = choose|n: nat| spec_run(s0, n) is Halt;
+        p5_diverge(prog, m0, s0, n);
+        assert(spec_run(s0, n) == SpecOutcome::FuelExhausted);
+        assert(false);
+    }
+}
+
+// ============================================================
+// HONEST STATUS (brief §6)
+// ============================================================
+//
+// FULLY PROVED, admit-free, over the frozen `spec_step` semantics:
+//   * `minsky_step` / `minsky_run`: an arbitrary two-counter Minsky machine
+//     with UNBOUNDED `nat` counters (the source of universality).
+//   * `unary` counter encoding into quotation LENGTH (unbounded `Seq`), with
+//     the load-bearing `unary(n).len() == n` and Cons/Uncons structure lemmas.
+//   * The three counter operations as verified `spec_step` fragments
+//     (`lemma_inc_frag`, `lemma_dec_nz_frag`, `lemma_dec_z_frag`) and the six
+//     per-instruction body handlers (`lemma_body_inc_*`, `lemma_body_decjz_*`).
+//   * `lemma_dispatch_select` / `lemma_dispatch_oob`: the PC big-switch selects
+//     the right handler — the control-flow crux, by induction on the cascade.
+//   * The fuel bridge: `spec_stepn` <-> `spec_run` (`lemma_run_from_stepn`),
+//     halt monotonicity (`lemma_run_mono`), non-halt of Next-runs
+//     (`lemma_stepn_next_run`).
+//   * `p5_lockstep` (Lemma P5-step): one Minsky step <-> a bounded, R-preserving
+//     `spec_step` run — full case analysis over the 3 instruction forms.
+//   * `p5_simulation` (Theorem P5): lock-step simulation, by induction on `t`.
+//   * Halting correspondence, fuel-quantified, BOTH directions:
+//       - `p5_halt_forward` / `p5_halt_forward_monotone`: Minsky halts =>
+//         exists fuel N (and all N' >= N) making `spec_run` observe
+//         `Halt(halt_stack(mfinal))`.
+//       - `p5_diverge`: Minsky diverges => every fuel `spec_run` is
+//         `FuelExhausted` (never Halt).
+//       - `p5_halt_reverse`: MTL halts for some fuel => Minsky halts.
+//   The `exists fuel` / `forall fuel >= N` framing is the honest replacement for
+//   the impossible "`run` terminates" (TC forbids it, spec §7.1).
+//
+// NOT CLAIMED (out of P5 scope, per brief §6.4): (a) termination of the exec
+// `run`; (b) a general `:!` fixed-point-combinator theorem (we hand-build `U`
+// in recursive normal form and prove its loop step directly); (c) any
+// physical-space/heap bound (that is P6); (d) the `i64` bound still limits `Int`
+// VALUES and the PC, but NOT the counters — those live in unbounded quotation
+// length, which is exactly the repair the adversarial review demanded.
+//
+// EXECUTABLE EVIDENCE: `tests/p5_minsky.rs` runs the SAME construction (unary
+// counters + the self-applying dispatch loop `U`) as real `Vec<Word>` programs
+// through the interpreter `run` for concrete machines (double-inc, addition,
+// clear, addition of 20+37), cross-checked against a reference Minsky machine.
+//
+// `mtl_core.rs` is byte-for-byte unchanged (still 76 verified / 0 errors).
 
 } // verus!
 
