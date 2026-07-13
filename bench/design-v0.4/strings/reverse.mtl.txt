@@ -1,0 +1,55 @@
+reverse — MTL Variant A (Str in the core)
+=========================================
+DESIGN STAGE — HAND-TRACED, NOT interpreter-validated. No core code exists for
+any of these primitives; the programs are traced against the semantics sketch
+below. Every token count is a real `bench/tokcount` run (commands at bottom).
+
+VALUE MODEL ASSUMED (Variant A)
+  Value ::= Int(i64) | Quote(Seq<Word>) | Str(Seq<char>)      <-- NEW leaf variant
+  A `Str` is a leaf (like Int): no recursive structure, so it extends
+  view_value/view_word with a non-recursive arm (cheap) but still touches both
+  Clone impls, every fault-precedence arm, and the parser (§E.4/E.5 of briefing).
+  A character is surfaced as its Int codepoint (no separate Char type).
+
+MINIMAL PRIMITIVE SET THIS TASK NEEDS
+  str-cons   '#'   ( c s -- s' )       prepend codepoint c onto the front of s
+  ""               empty-string literal ( -- "" )     (new literal syntax)
+  fold '(' GENERALISED to also iterate a Str's codepoints, head-to-tail, as Int.
+  --> reverse needs exactly ONE new primitive (str-cons) + the empty literal +
+      the fold generalisation. It needs NO str-uncons, NO num-to-str, NO concat.
+
+PRIMARY SOLUTION (fold-over-str)
+  ""[~#](
+  reading:  push "" as the seed accumulator; fold the input string's codepoints
+            left-to-right; C = [~#] : ( acc c -- c#acc ) swap so acc is on top,
+            then str-cons prepends c. Prepending each head in order REVERSES.
+  This is the exact structural twin of the corpus reverse_list `[][~;](` — only
+  the value type and the cons glyph differ.  o200k 5 / cl100k 5.
+
+HAND-TRACE (design stage), input s = "abc"  (codepoints 97 98 99)
+  stack: "abc"
+  push "":           "abc" ""
+  fold [~#] over codepoints 97,98,99 with acc0 = "":
+    C("",97):  acc="" c=97 -> ~ -> 97 "" -> # -> "a"        acc = "a"
+    C("a",98): acc="a" c=98 -> ~ -> 98 "a" -> # -> "ba"     acc = "ba"
+    C("ba",99):acc="ba" c=99 -> ~ -> 99 "ba" -> # -> "cba"  acc = "cba"
+  empty spine -> push acc -> "cba"                       = reverse("abc")  ✓
+  edge "" : fold over 0 codepoints -> acc0 = "" -> ""    = reverse("")     ✓
+
+ALTERNATE SOLUTION (no fold generalisation; uses linrec + a 2nd new primitive)
+  ""~[`[#0][[]1]?][_][`_[~#]'][]|
+  needs additionally  str-uncons '`' ( s -- c s' 1 | "" -- 0 ).  This is the
+  direct transliteration of the frozen reverse_list linrec solution
+  `[]~[>[;0][[]1]?][_][>_[~;]'][]|` with []->"", >->`, ;->#.  o200k 18/cl100k 18.
+  It is 13 tokens WORSE than the fold form and needs a 2nd primitive; it exists
+  only to show reverse is expressible WITHOUT generalising fold, at a token cost.
+
+PRIMITIVE-NEED VERDICT for reverse:  in-core string COMPUTE is NOT required.
+  Reversal is a pure structural permutation of the character sequence. The moment
+  a string is modelled as a sequence (Str, or a codepoint Quote), reverse is the
+  existing reverse_list algorithm. See reverse.hostside.md: host-side needs 4
+  tokens and ZERO new primitives.
+
+REPRODUCE (run from bench/)
+  printf '%s' '""[~#](' | python3 tokcount/tokcount.py                        # 5/5
+  printf '%s' '""~[`[#0][[]1]?][_][`_[~#]'"'"'][]|' | python3 tokcount/tokcount.py  # 18/18
