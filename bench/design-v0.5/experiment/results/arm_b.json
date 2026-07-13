@@ -1,0 +1,81 @@
+{
+  "arm": "B (VM speculative search)",
+  "global_fuel_B": 50000000,
+  "tasks": [
+    {
+      "task": "a",
+      "found": true,
+      "space_exhausted": false,
+      "winning_program": "123:*15087-",
+      "validated_by_mtlrun_predicate": true,
+      "candidates_explored": 124,
+      "vm_wall_ms": [0.0413, 0.0363, 0.0344],
+      "vm_wall_ms_median": 0.0363,
+      "candidates_per_sec": 3420217.9,
+      "arena_high_water": { "tape": 620, "stack_nodes": 621, "cont_nodes": 125 },
+      "core_steps_spent": 620,
+      "oracle_checked": 124,
+      "oracle_agree": 124
+    },
+    {
+      "task": "b",
+      "found": true,
+      "space_exhausted": false,
+      "winning_program": "3 5+:*",
+      "validated_by_mtlrun_predicate": true,
+      "candidates_explored": 48,
+      "vm_wall_ms": [0.0198, 0.0182, 0.0182],
+      "vm_wall_ms_median": 0.0182,
+      "candidates_per_sec": 2630137.0,
+      "arena_high_water": { "tape": 205, "stack_nodes": 172, "cont_nodes": 49 },
+      "core_steps_spent": 163,
+      "oracle_checked": 48,
+      "oracle_agree": 48
+    },
+    {
+      "task": "c",
+      "found": false,
+      "space_exhausted": true,
+      "winning_program": "(none)",
+      "validated_by_mtlrun_predicate": false,
+      "candidates_explored": 2176,
+      "vm_wall_ms": [8.9641, 7.4373, 7.9058],
+      "vm_wall_ms_median": 7.9058,
+      "candidates_per_sec": 275241.3,
+      "arena_high_water": { "tape": 72640, "stack_nodes": 115329, "cont_nodes": 76161 },
+      "core_steps_spent": 136000,
+      "oracle_checked": 2176,
+      "oracle_agree": 2176
+    },
+    {
+      "task": "d",
+      "found": true,
+      "space_exhausted": false,
+      "winning_program": "1 3+2*3+2*3+2*2*",
+      "validated_by_mtlrun_predicate": true,
+      "candidates_explored": 318,
+      "vm_wall_ms": [0.2934, 0.2847, 0.3028],
+      "vm_wall_ms_median": 0.2934,
+      "candidates_per_sec": 1083970.2,
+      "arena_high_water": { "tape": 4326, "stack_nodes": 4327, "cont_nodes": 319 },
+      "core_steps_spent": 4326,
+      "oracle_checked": 318,
+      "oracle_agree": 318
+    },
+    {
+      "task": "e",
+      "found": false,
+      "space_exhausted": true,
+      "winning_program": "(none)",
+      "validated_by_mtlrun_predicate": false,
+      "candidates_explored": 488280,
+      "vm_wall_ms": [634.7035, 588.6471, 621.4429],
+      "vm_wall_ms_median": 621.4429,
+      "candidates_per_sec": 785719.8,
+      "arena_high_water": { "tape": 600000, "stack_nodes": 801792, "cont_nodes": 50001 },
+      "core_steps_spent": 5627783,
+      "oracle_checked": 228828,
+      "oracle_agree": 228828
+    }
+  ]
+}

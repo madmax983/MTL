@@ -1,0 +1,19 @@
+[package]
+name = "mtl-spec-experiment"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# NON-PRODUCTION. Measurement rig for the v0.5 speculation-admission experiment
+# (docs/design/v0.5-refactor.md §4). Lives under bench/ (out of the production
+# story). Depends on the non-production arena spike, the parser, and the
+# reference interpreter (used only as the differential oracle).
+
+[dependencies]
+mtl-arena-spike = { path = "../../../crates/mtl-arena-spike" }
+mtl-syntax = { path = "../../../crates/mtl-syntax" }
+mtl-core = { path = "../../../crates/mtl-core" }
+
+[[bin]]
+name = "run_arm_b"
+path = "src/bin/run_arm_b.rs"

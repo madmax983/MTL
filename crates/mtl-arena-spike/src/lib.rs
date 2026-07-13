@@ -927,3 +927,404 @@ pub fn build_stack(depth: usize) -> (Vm, VmState) {
     vm.prepend(&mut st, q);
     (vm, st)
 }
+
+// ============================================================================
+// v0.5 SPECULATION-ADMISSION EXPERIMENT — SPIKE / NON-PRODUCTION PROTOTYPE
+// ============================================================================
+//
+// **NON-PRODUCTION PROTOTYPE.** Everything below this line is an *additive*
+// prototype built for the v0.5 speculation-admission experiment
+// (`docs/design/v0.5-refactor.md` §4). It touches NO semantics: it only wraps
+// the existing private `next_word`/`exec_word`/`prepend` step machinery in a
+// single-step public entry (`Vm::step`) and layers a host-side speculation
+// driver (`mod spec`) *over* cloned `VmState`s, exactly as §4.2 sketches. The
+// core computes the same frozen semantics; the driver is untrusted scheduling
+// code (the "multiverse lives in untrusted scheduling"), and the differential
+// oracle (`tests/oracle.rs`) remains the source of truth. Not proved; validated
+// only differentially against `mtl_core::interp`.
+
+/// Public single-step outcome. NON-PRODUCTION prototype (see module banner).
+/// Wraps the private per-word [`StepR`] plus the "continuation empty" halt.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StepOutcome {
+    /// A word executed; the machine is still live. Consumes one fuel unit.
+    Next,
+    /// The continuation emptied — terminal Done. Consumes no fuel (mirrors
+    /// `run_arena`, where only executed words count as steps).
+    Halt,
+    /// A fault fired; terminal. Carries the fault kind.
+    Fault(Fault),
+    /// A `Call(name)` yielded to the host; terminal for a pure run. Carries the
+    /// capability name. Speculation buffers/defers these (see [`spec`]).
+    Invoke(String),
+}
+
+impl Vm {
+    /// **NON-PRODUCTION.** Single-step public entry: read the next word (popping
+    /// exhausted segments, which is free) and execute it. This is the minimal
+    /// `pub` seam the [`spec`] driver steps branches through — it wraps the
+    /// private `next_word` + `exec_word` and introduces no new behaviour.
+    #[inline]
+    pub fn step(&mut self, st: &mut VmState) -> StepOutcome {
+        match self.next_word(st) {
+            None => StepOutcome::Halt,
+            Some(w) => match self.exec_word(st, w) {
+                StepR::Next => StepOutcome::Next,
+                StepR::Fault(f) => StepOutcome::Fault(f),
+                StepR::Invoke(name) => StepOutcome::Invoke(name),
+            },
+        }
+    }
+
+    /// **NON-PRODUCTION.** Compile `prog` into this Vm's tape and return a fresh
+    /// `VmState` positioned to run it (program prepended onto an empty machine).
+    /// This is how the experiment turns each candidate program into a runnable
+    /// branch. Interning is append-only, so many candidates share one tape.
+    pub fn load(&mut self, prog: &[ProgWord]) -> VmState {
+        let pid = self.compile(prog);
+        let mut st = VmState::initial();
+        self.prepend(&mut st, pid);
+        st
+    }
+
+    /// **NON-PRODUCTION.** Arena high-water accessor: interned tape length.
+    pub fn tape_len(&self) -> usize {
+        self.quotes.tape.len()
+    }
+    /// **NON-PRODUCTION.** Arena high-water accessor: stack-node count.
+    pub fn stack_nodes_len(&self) -> usize {
+        self.stack.nodes.len()
+    }
+    /// **NON-PRODUCTION.** Arena high-water accessor: continuation-node count.
+    pub fn cont_nodes_len(&self) -> usize {
+        self.cont.nodes.len()
+    }
+    /// **NON-PRODUCTION.** Number of values on the stack reachable from `ptr`.
+    pub fn stack_depth(&self, ptr: StackPtr) -> usize {
+        let mut n = 0usize;
+        let mut p = ptr;
+        while p != 0 {
+            n += 1;
+            p = self.stack.nodes[p as usize].parent;
+        }
+        n
+    }
+}
+
+/// **NON-PRODUCTION PROTOTYPE** — host-layer speculation driver over cloned
+/// `VmState`s, implementing the §4.2/§4.3 design of `v0.5-refactor.md`.
+///
+/// The driver is untrusted scheduling code (TCB, exactly like the `Host`): it
+/// owns a *frontier* of branches, each a plain deterministic core state plus a
+/// fuel slice, and it decides which to step and which to keep. It can never
+/// make a branch report a result the core would not — a buggy driver is a
+/// completeness/quality defect, never a soundness one.
+///
+/// **The load-bearing invariant** (total metering, tied to #26/#27):
+/// ```text
+///     Σ_{b ∈ live} budget(b)  +  spent  ≤  total_b      (always)
+/// ```
+/// `B` is *split*, never multiplied: N branches can never collectively out-run
+/// a single sequential `drive(B)`. The invariant is asserted at every step
+/// boundary. Reclaimed budget (from culled/halted branches) returns to the pool
+/// implicitly — it re-appears as spawn headroom (`available`) without ever
+/// raising the ceiling.
+pub mod spec {
+    use super::{StepOutcome, Value, Vm, VmState};
+
+    /// Stable identifier for a branch within one search.
+    pub type BranchId = usize;
+
+    /// A live speculative branch: a plain core state + its fuel slice.
+    /// The `vm` field is 12 bytes, `Copy`; spawning copies it, O(1).
+    #[derive(Clone, Debug)]
+    pub struct Branch {
+        pub id: BranchId,
+        pub vm: VmState,
+        pub budget: u64,
+        pub score: i64,
+    }
+
+    /// The result of advancing a branch by a quota of steps.
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum BranchOutcome {
+        /// Stepped, still running (quota/budget exhausted before terminal).
+        Live,
+        /// Reached Done; result stack reified out of the arena.
+        Halted(Vec<Value>),
+        /// Faulted (or budget hit 0 mid-flight) — cull it.
+        Dead,
+        /// Yielded a capability Invoke; buffered/deferred (dry-run mode).
+        Deferred(String),
+    }
+
+    /// The speculation driver. Owns the shared arenas (`arena`), a `frontier`
+    /// of live branches, and the global fuel accounting.
+    #[derive(Debug)]
+    pub struct SpecDriver {
+        /// Shared arenas for this search generation. All branches' `VmState`s
+        /// index into these; structure is shared, only divergent suffixes
+        /// allocate.
+        pub arena: Vm,
+        /// All live branches.
+        pub frontier: Vec<Branch>,
+        /// Fuel already consumed across the whole search.
+        pub spent: u64,
+        /// The #26/#27 global budget `B` — never exceeded.
+        pub total_b: u64,
+        /// Finished branches' reified results, drained by [`collect_halts`].
+        halted: Vec<(BranchId, Vec<Value>)>,
+        /// Deferred (buffered) Invokes from speculative branches. For these
+        /// tasks nothing Invokes, so this is a record-and-drop stub for losers.
+        deferred: Vec<(BranchId, String)>,
+        next_id: BranchId,
+    }
+
+    impl SpecDriver {
+        /// Build a driver over `arena` with global budget `total_b`.
+        pub fn new(arena: Vm, total_b: u64) -> Self {
+            SpecDriver {
+                arena,
+                frontier: Vec::new(),
+                spent: 0,
+                total_b,
+                halted: Vec::new(),
+                deferred: Vec::new(),
+                next_id: 0,
+            }
+        }
+
+        /// Sum of live branches' remaining budgets.
+        #[inline]
+        fn live_budget(&self) -> u64 {
+            self.frontier.iter().map(|b| b.budget).sum()
+        }
+
+        /// Budget headroom still assignable without breaching the invariant:
+        /// `total_b − spent − Σ_live budget`. Reclaimed budget from culled
+        /// branches reappears here automatically.
+        #[inline]
+        pub fn available(&self) -> u64 {
+            self.total_b - self.spent - self.live_budget()
+        }
+
+        /// The invariant `Σ_live budget + spent ≤ total_b`.
+        #[inline]
+        pub fn invariant_holds(&self) -> bool {
+            self.live_budget() + self.spent <= self.total_b
+        }
+
+        /// **O(1): copy 12 bytes.** Spawn a branch at position `parent`, drawing
+        /// a fuel slice (clamped to `available()` so the invariant can never be
+        /// breached) and a heuristic `score`. Returns the new branch id.
+        ///
+        /// In §4.2 `spawn` partitions a *parent's* remaining budget; here the
+        /// experiment spawns candidate roots, so the slice is drawn from the
+        /// shared pool via `available()`. Either way the ceiling is `B`.
+        pub fn spawn(&mut self, parent: VmState, budget: u64, score: i64) -> BranchId {
+            let budget = budget.min(self.available());
+            let id = self.next_id;
+            self.next_id += 1;
+            self.frontier.push(Branch { id, vm: parent, budget, score });
+            debug_assert!(self.invariant_holds(), "budget invariant breached on spawn");
+            id
+        }
+
+        #[inline]
+        fn index_of(&self, id: BranchId) -> Option<usize> {
+            self.frontier.iter().position(|b| b.id == id)
+        }
+
+        /// Advance branch `id` by up to `k` core steps, drawing from its own
+        /// fuel slice. Each executed word decrements the branch's budget and
+        /// increments the shared `spent` 1:1 — so `Σ_live budget + spent` is
+        /// invariant across a `Next` step. Terminal outcomes remove the branch
+        /// from the frontier (Halted → recorded; Dead/Deferred → dropped).
+        pub fn step_with_quota(&mut self, id: BranchId, k: u64) -> BranchOutcome {
+            let idx = match self.index_of(id) {
+                Some(i) => i,
+                None => return BranchOutcome::Dead,
+            };
+            let quota = k.min(self.frontier[idx].budget);
+            let mut outcome = BranchOutcome::Live;
+            for _ in 0..quota {
+                let mut vm_state = self.frontier[idx].vm;
+                match self.arena.step(&mut vm_state) {
+                    StepOutcome::Next => {
+                        self.frontier[idx].vm = vm_state;
+                        self.frontier[idx].budget -= 1;
+                        self.spent += 1;
+                    }
+                    StepOutcome::Halt => {
+                        self.frontier[idx].vm = vm_state;
+                        let stack = self.arena.stack_values(vm_state.stack);
+                        let b = self.frontier.remove(idx);
+                        self.halted.push((b.id, stack.clone()));
+                        outcome = BranchOutcome::Halted(stack);
+                        break;
+                    }
+                    StepOutcome::Fault(f) => {
+                        let _ = f;
+                        self.frontier.remove(idx);
+                        outcome = BranchOutcome::Dead;
+                        break;
+                    }
+                    StepOutcome::Invoke(name) => {
+                        // Dry-run: buffer/defer, never commit to the real host.
+                        let b = &self.frontier[idx];
+                        self.deferred.push((b.id, name.clone()));
+                        self.frontier.remove(idx);
+                        outcome = BranchOutcome::Deferred(name);
+                        break;
+                    }
+                }
+            }
+            // If the branch ran its slice to 0 without terminating it is stuck
+            // (no fuel to make progress) — treat as Dead so callers cull it.
+            if matches!(outcome, BranchOutcome::Live) && self.frontier[idx].budget == 0 {
+                self.frontier.remove(idx);
+                outcome = BranchOutcome::Dead;
+            }
+            assert!(self.invariant_holds(), "budget invariant breached after step");
+            outcome
+        }
+
+        /// Cull branch `id`: drop its `VmState`; its unspent slice returns to the
+        /// pool (reappears as `available()`), never raising the ceiling.
+        pub fn cull(&mut self, id: BranchId) {
+            if let Some(i) = self.index_of(id) {
+                self.frontier.remove(i);
+            }
+            debug_assert!(self.invariant_holds(), "budget invariant breached on cull");
+        }
+
+        /// Drain and return the reified results of branches that have Halted.
+        pub fn collect_halts(&mut self) -> Vec<(BranchId, Vec<Value>)> {
+            std::mem::take(&mut self.halted)
+        }
+
+        /// Drain buffered (deferred) Invokes — losers' effects, dropped.
+        pub fn collect_deferred(&mut self) -> Vec<(BranchId, String)> {
+            std::mem::take(&mut self.deferred)
+        }
+    }
+
+    /// Convenience for the equality anchor / experiment: fully drive one branch
+    /// (compile `prog`, spawn it with the whole budget, step to a terminal) and
+    /// return `(terminal, final_stack)`. Uses only the public driver API.
+    pub fn drive_single(arena: Vm, prog: &[super::ProgWord], budget: u64)
+        -> (BranchTerminal, Vec<Value>)
+    {
+        let mut d = SpecDriver::new(arena, budget);
+        let st = d.arena.load(prog);
+        let id = d.spawn(st, budget, 0);
+        loop {
+            match d.step_with_quota(id, u64::MAX) {
+                BranchOutcome::Halted(s) => return (BranchTerminal::Halt, s),
+                BranchOutcome::Dead => {
+                    // Distinguish fault from budget-exhaustion by re-deriving:
+                    // if any budget was left unspent the branch had faulted.
+                    return (BranchTerminal::DeadOrExhausted, Vec::new());
+                }
+                BranchOutcome::Deferred(name) => {
+                    return (BranchTerminal::Invoke(name), Vec::new())
+                }
+                BranchOutcome::Live => { /* keep stepping (quota was u64::MAX) */ }
+            }
+        }
+    }
+
+    /// Terminal classification returned by [`drive_single`].
+    #[derive(Clone, Debug, PartialEq, Eq)]
+    pub enum BranchTerminal {
+        Halt,
+        DeadOrExhausted,
+        Invoke(String),
+    }
+
+    // ------------------------------------------------------------- unit tests
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use crate::{run_arena, ArenaEnd, ProgWord, Prim, Value, Vm};
+
+        /// (i) The budget invariant `Σ_live budget + spent ≤ total_b` holds
+        /// across a spawn / step / cull sequence, including reclamation.
+        #[test]
+        fn budget_invariant_holds() {
+            let mut d = SpecDriver::new(Vm::new(), 1000);
+            assert!(d.invariant_holds());
+            // A short terminating program: 2 3 + (2 steps to Halt).
+            let prog = [ProgWord::PushInt(2), ProgWord::PushInt(3), ProgWord::Prim(Prim::Add)];
+
+            // Spawn three branches, each asking for more than a third.
+            let st = d.arena.load(&prog);
+            let a = d.spawn(st, 500, 0);
+            let st = d.arena.load(&prog);
+            let b = d.spawn(st, 500, 0);
+            let st = d.arena.load(&prog);
+            let c = d.spawn(st, 500, 0); // clamped: only 0 left (500+500 used)
+            assert!(d.invariant_holds(), "after 3 spawns");
+            assert!(d.available() <= d.total_b);
+
+            // Step a by one: budget moves from live to spent, sum unchanged.
+            let before = d.live_budget() + d.spent;
+            let _ = d.step_with_quota(a, 1);
+            assert!(d.invariant_holds(), "after stepping a");
+            assert_eq!(before, d.live_budget() + d.spent, "step conserves Σ+spent");
+
+            // Cull b: its unspent slice returns to the pool (available rises).
+            let avail_before = d.available();
+            d.cull(b);
+            assert!(d.invariant_holds(), "after cull b");
+            assert!(d.available() >= avail_before, "cull reclaims budget");
+
+            // Drive c and a to completion; invariant must survive throughout.
+            for id in [a, c] {
+                loop {
+                    match d.step_with_quota(id, u64::MAX) {
+                        BranchOutcome::Live => {}
+                        _ => break,
+                    }
+                    assert!(d.invariant_holds());
+                }
+            }
+            assert!(d.invariant_holds(), "final");
+            assert!(d.spent <= d.total_b, "never overspent B");
+        }
+
+        /// (ii) The "one branch == drive(B)" equality anchor: a single branch
+        /// stepped to Halt yields the SAME final stack as `run_arena(prog, B)`.
+        #[test]
+        fn one_branch_equals_run_arena() {
+            // A mix exercising push / arith / dup / a Times loop.
+            let progs: Vec<Vec<ProgWord>> = vec![
+                vec![ProgWord::PushInt(2), ProgWord::PushInt(3), ProgWord::Prim(Prim::Add)],
+                vec![
+                    ProgWord::PushInt(3),
+                    ProgWord::PushInt(5),
+                    ProgWord::Prim(Prim::Add),
+                    ProgWord::Prim(Prim::Dup),
+                    ProgWord::Prim(Prim::Mul),
+                ],
+                // 1 4 [2 *] .  -> double 1 four times = 16
+                vec![
+                    ProgWord::PushInt(1),
+                    ProgWord::PushInt(4),
+                    ProgWord::PushQuote(vec![ProgWord::PushInt(2), ProgWord::Prim(Prim::Mul)]),
+                    ProgWord::Prim(Prim::Times),
+                ],
+            ];
+            const B: u64 = 1_000_000;
+            for prog in &progs {
+                let run = run_arena(prog, B);
+                let want: Vec<Value> = run.vm.stack_values(run.stack);
+                assert_eq!(run.end, ArenaEnd::Halt, "sanity: prog halts");
+
+                let (term, got) = drive_single(Vm::new(), prog, B);
+                assert_eq!(term, BranchTerminal::Halt, "driver halts too");
+                assert_eq!(got, want, "one-branch drive == run_arena final stack");
+            }
+        }
+    }
+}
