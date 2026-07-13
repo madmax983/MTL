@@ -1591,6 +1591,561 @@ pub proof fn exec_print_domain_nonvacuous()
     assert(wf_words(g));
 }
 
+// ============================================================
+// 16. Executable lexer/parser (exec-mode refinement of spec_parse).
+//
+// The exec parser mirrors the SPEC (`lex` / `group_fold` / `spec_parse`),
+// arm-for-arm and suffix-for-suffix, in the same recursion shape used for the
+// printer. Because production integer literals are i64, the executable side
+// must ERROR on any digit run whose value exceeds i64::MAX, while the ghost
+// `spec_parse` returns Ok with an unbounded int. So unconditional refinement
+// is FALSE. We therefore state refinement CONDITIONALLY on `all_ints_fit`
+// (every maximal digit run fits i64); on that domain the exec parser reproduces
+// spec_parse exactly, and off it, it diverges only by an overflow rejection.
+// The round-trip corollary (section 22) then dodges overflow entirely, because
+// `exec_print` of a `Vec<EWord>` (whose ints are i64 by construction) always
+// yields in-range digit runs.
+// ============================================================
+
+// Executable mirror of `Token`. TInt carries i64 (bounded) vs ghost `int`.
+pub enum ExecToken {
+    ETInt(i64),
+    ETName(Vec<char>),
+    ETGlyph(EPrim),
+    ETOpen,
+    ETClose,
+}
+
+impl View for ExecToken {
+    type V = Token;
+    open spec fn view(&self) -> Token {
+        match self {
+            ExecToken::ETInt(n) => Token::TInt(*n as int),
+            ExecToken::ETName(v) => Token::TName(v@),
+            ExecToken::ETGlyph(p) => Token::TGlyph(p@),
+            ExecToken::ETOpen => Token::TOpen,
+            ExecToken::ETClose => Token::TClose,
+        }
+    }
+}
+
+// Elementwise view of a token sequence. ExecToken does not nest, so a plain
+// length decreases suffices (unlike ewords_view).
+pub open spec fn etoks_view(s: Seq<ExecToken>) -> Seq<Token>
+    decreases s.len(),
+{
+    if s.len() == 0 {
+        Seq::<Token>::empty()
+    } else {
+        seq![s[0]@] + etoks_view(s.subrange(1, s.len() as int))
+    }
+}
+
+// Cons distributes over etoks_view (the lex_cons shape).
+pub proof fn lemma_etoks_view_cons(x: ExecToken, rest: Seq<ExecToken>)
+    ensures etoks_view(seq![x] + rest) == seq![x@] + etoks_view(rest),
+{
+    let s = seq![x] + rest;
+    assert(s.len() == rest.len() + 1);
+    assert(s[0] == x);
+    assert(s.subrange(1, s.len() as int) =~= rest);
+}
+
+// The i64 upper bound, as a ghost int.
+pub open spec fn imax() -> int { 9223372036854775807 }
+
+// `all_ints_fit(cs)`: mirrors `lex`'s control flow exactly, additionally
+// requiring every maximal digit run's value to be <= i64::MAX. This is the
+// precise in-range domain on which the exec lexer refines `lex`.
+pub open spec fn all_ints_fit(cs: Seq<char>) -> bool
+    decreases cs.len(),
+    via all_ints_fit_termination
+{
+    if cs.len() == 0 {
+        true
+    } else {
+        let c = cs[0];
+        if is_ws(c) {
+            all_ints_fit(cs.subrange(1, cs.len() as int))
+        } else if is_digit(c) {
+            let k = leading_digits_len(cs);
+            (nat_of_digits(cs.subrange(0, k as int)) as int <= imax())
+                && all_ints_fit(cs.subrange(k as int, cs.len() as int))
+        } else if is_lower(c) {
+            let k = leading_name_len(cs);
+            all_ints_fit(cs.subrange(k as int, cs.len() as int))
+        } else if c == '[' {
+            all_ints_fit(cs.subrange(1, cs.len() as int))
+        } else if c == ']' {
+            all_ints_fit(cs.subrange(1, cs.len() as int))
+        } else {
+            match glyph_to_gprim(c) {
+                Some(_) => all_ints_fit(cs.subrange(1, cs.len() as int)),
+                None => true,
+            }
+        }
+    }
+}
+
+#[verifier::decreases_by]
+proof fn all_ints_fit_termination(cs: Seq<char>) {
+    if cs.len() == 0 {
+    } else {
+        let c = cs[0];
+        if is_ws(c) {
+        } else if is_digit(c) {
+            ldl_bound(cs); ldl_pos(cs);
+        } else if is_lower(c) {
+            lnl_bound(cs); lnl_pos(cs);
+        } else {
+        }
+    }
+}
+
+// ============================================================
+// 17. Exec lexer helpers (character classes, digit value, munch scanners).
+// ============================================================
+
+fn exec_is_ws(c: char) -> (r: bool)
+    ensures r == is_ws(c),
+{
+    c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+fn exec_is_namechar(c: char) -> (r: bool)
+    ensures r == is_namechar(c),
+{
+    exec_is_lower(c) || exec_is_digit(c)
+}
+
+// exec digit value. The if-chain is identical to `digit_val`, so equality holds
+// for every char (no exhaustion argument needed); all branches return 0..=9.
+fn exec_digit_val(c: char) -> (r: u64)
+    ensures r as nat == digit_val(c), r < 10,
+{
+    if c == '0' { 0 } else if c == '1' { 1 } else if c == '2' { 2 }
+    else if c == '3' { 3 } else if c == '4' { 4 } else if c == '5' { 5 }
+    else if c == '6' { 6 } else if c == '7' { 7 } else if c == '8' { 8 }
+    else { 9 }
+}
+
+// exec glyph lookup (mirror of glyph_to_gprim). Same if-chain, so the view
+// relation holds branch-by-branch.
+fn exec_glyph_to_prim(c: char) -> (r: Option<EPrim>)
+    ensures
+        match r {
+            Some(p) => glyph_to_gprim(c) == Some(p@),
+            None => glyph_to_gprim(c) == None::<GPrim>,
+        },
+{
+    if c == ':' { Some(EPrim::Dup) }
+    else if c == '_' { Some(EPrim::Drop) }
+    else if c == '~' { Some(EPrim::Swap) }
+    else if c == '@' { Some(EPrim::Rot) }
+    else if c == '^' { Some(EPrim::Over) }
+    else if c == '!' { Some(EPrim::Apply) }
+    else if c == ',' { Some(EPrim::Cat) }
+    else if c == ';' { Some(EPrim::Cons) }
+    else if c == '\'' { Some(EPrim::Dip) }
+    else if c == '+' { Some(EPrim::Add) }
+    else if c == '-' { Some(EPrim::Sub) }
+    else if c == '*' { Some(EPrim::Mul) }
+    else if c == '/' { Some(EPrim::Div) }
+    else if c == '%' { Some(EPrim::Mod) }
+    else if c == '=' { Some(EPrim::Eq) }
+    else if c == '<' { Some(EPrim::Lt) }
+    else if c == '?' { Some(EPrim::If) }
+    else if c == '&' { Some(EPrim::PrimRec) }
+    else if c == '.' { Some(EPrim::Times) }
+    else if c == '|' { Some(EPrim::LinRec) }
+    else if c == '>' { Some(EPrim::Uncons) }
+    else if c == '(' { Some(EPrim::Fold) }
+    else if c == '$' { Some(EPrim::Xor) }
+    else { None }
+}
+
+// forward step of nat_of_digits: appending a digit multiplies by 10 and adds.
+pub proof fn lemma_nat_of_digits_push(s: Seq<char>, x: char)
+    ensures nat_of_digits(s.push(x)) == nat_of_digits(s) * 10 + digit_val(x),
+{
+    let t = s.push(x);
+    assert(t.len() == s.len() + 1);
+    assert(t.subrange(0, t.len() as int - 1) =~= s);
+    assert(t[t.len() as int - 1] == x);
+}
+
+// Copy the sub-slice cs[i..j] into a fresh Vec<char>.
+fn slice_copy(cs: &Vec<char>, i: usize, j: usize) -> (r: Vec<char>)
+    requires i <= j <= cs.len(),
+    ensures r@ == cs@.subrange(i as int, j as int),
+{
+    let mut r: Vec<char> = Vec::new();
+    let mut k = i;
+    while k < j
+        invariant
+            i <= k <= j <= cs.len(),
+            r@ == cs@.subrange(i as int, k as int),
+        decreases j - k,
+    {
+        r.push(cs[k]);
+        proof {
+            assert(cs@.subrange(i as int, (k + 1) as int)
+                =~= cs@.subrange(i as int, k as int).push(cs@[k as int]));
+        }
+        k = k + 1;
+    }
+    proof { assert(r@ =~= cs@.subrange(i as int, j as int)); }
+    r
+}
+
+// Maximal-munch digit scanner. Returns (end index, Option<i64> value): Some(v)
+// if the run's value fits i64, None on overflow. The end index equals
+// i + leading_digits_len of the suffix.
+fn scan_digits(cs: &Vec<char>, i: usize) -> (res: (usize, Option<i64>))
+    requires
+        i < cs.len(),
+        is_digit(cs@[i as int]),
+    ensures ({
+        let suf = cs@.subrange(i as int, cs@.len() as int);
+        let k = leading_digits_len(suf);
+        &&& i < res.0 <= cs@.len()
+        &&& i as int + k == res.0 as int
+        &&& suf.subrange(0, k as int) =~= cs@.subrange(i as int, res.0 as int)
+        &&& match res.1 {
+                Some(v) => v >= 0
+                    && (v as nat) == nat_of_digits(cs@.subrange(i as int, res.0 as int))
+                    && (v as int) <= imax(),
+                None => nat_of_digits(cs@.subrange(i as int, res.0 as int)) as int > imax(),
+            }
+    }),
+{
+    let mut j = i;
+    let mut acc: Option<i64> = Some(0i64);
+    while j < cs.len() && exec_is_digit(cs[j])
+        invariant
+            i <= j <= cs.len(),
+            forall|t: int| i <= t < j ==> is_digit(cs@[t]),
+            match acc {
+                Some(v) => v >= 0
+                    && (v as nat) == nat_of_digits(cs@.subrange(i as int, j as int))
+                    && (v as int) <= imax(),
+                None => nat_of_digits(cs@.subrange(i as int, j as int)) as int > imax(),
+            },
+        decreases cs.len() - j,
+    {
+        let ghost run = cs@.subrange(i as int, j as int);
+        let d: u64 = exec_digit_val(cs[j]);
+        proof {
+            assert(cs@.subrange(i as int, (j + 1) as int)
+                =~= run.push(cs@[j as int]));
+            lemma_nat_of_digits_push(run, cs@[j as int]);
+        }
+        let ghost gval_new = nat_of_digits(cs@.subrange(i as int, (j + 1) as int));
+        acc = match acc {
+            None => {
+                proof {
+                    // gval was > imax; gval_new = gval*10 + d >= gval > imax.
+                    assert(nat_of_digits(run) * 10 >= nat_of_digits(run)) by (nonlinear_arith);
+                }
+                None
+            }
+            Some(v) => {
+                if v > 922337203685477580 || (v == 922337203685477580 && d > 7) {
+                    proof {
+                        // v == nat_of_digits(run); gval_new = v*10 + d > imax.
+                        if v > 922337203685477580 {
+                            assert((v as int) * 10 + (d as int) > 9223372036854775807) by (nonlinear_arith)
+                                requires v as int >= 922337203685477581, d as int >= 0;
+                        } else {
+                            assert((v as int) * 10 + (d as int) > 9223372036854775807) by (nonlinear_arith)
+                                requires v as int == 922337203685477580, d as int >= 8;
+                        }
+                    }
+                    None
+                } else {
+                    // v <= q and (v < q or d <= rr): v*10 + d fits i64.
+                    proof {
+                        if v < 922337203685477580 {
+                            assert((v as int) * 10 + (d as int) <= 9223372036854775807) by (nonlinear_arith)
+                                requires v as int <= 922337203685477579, d as int <= 9;
+                        } else {
+                            assert((v as int) * 10 + (d as int) <= 9223372036854775807) by (nonlinear_arith)
+                                requires v as int == 922337203685477580, d as int <= 7;
+                        }
+                    }
+                    Some(v * 10 + (d as i64))
+                }
+            }
+        };
+        j = j + 1;
+    }
+    proof {
+        let suf = cs@.subrange(i as int, cs@.len() as int);
+        let a = cs@.subrange(i as int, j as int);
+        let b = cs@.subrange(j as int, cs@.len() as int);
+        assert(a + b =~= suf);
+        assert(b.len() == 0 || !is_digit(b[0])) by {
+            if b.len() != 0 {
+                assert(b[0] == cs@[j as int]);
+            }
+        }
+        lemma_ldl_all(a, b);
+        assert(suf.subrange(0, (j - i) as int) =~= a);
+    }
+    (j, acc)
+}
+
+// Maximal-munch name scanner. Returns end index = i + leading_name_len(suffix).
+fn scan_name(cs: &Vec<char>, i: usize) -> (j: usize)
+    requires
+        i < cs.len(),
+        is_lower(cs@[i as int]),
+    ensures ({
+        let suf = cs@.subrange(i as int, cs@.len() as int);
+        let k = leading_name_len(suf);
+        &&& i < j <= cs@.len()
+        &&& i as int + k == j as int
+        &&& suf.subrange(0, k as int) =~= cs@.subrange(i as int, j as int)
+    }),
+{
+    let mut j = i;
+    while j < cs.len() && exec_is_namechar(cs[j])
+        invariant
+            i <= j <= cs.len(),
+            forall|t: int| i <= t < j ==> is_namechar(cs@[t]),
+        decreases cs.len() - j,
+    {
+        j = j + 1;
+    }
+    proof {
+        let suf = cs@.subrange(i as int, cs@.len() as int);
+        let a = cs@.subrange(i as int, j as int);
+        let b = cs@.subrange(j as int, cs@.len() as int);
+        assert(a + b =~= suf);
+        assert(b.len() == 0 || !is_namechar(b[0])) by {
+            if b.len() != 0 {
+                assert(b[0] == cs@[j as int]);
+            }
+        }
+        // is_lower(cs[i]) ==> is_namechar, so j > i.
+        assert(is_namechar(cs@[i as int]));
+        lemma_lnl_all(a, b);
+        assert(suf.subrange(0, (j - i) as int) =~= a);
+    }
+    j
+}
+
+// ============================================================
+// 18. The exec lexer: recursive, mirrors `lex` suffix-for-suffix. On the
+// in-range domain (`all_ints_fit`) it reproduces `lex`; off it, it reports
+// overflow.
+// ============================================================
+
+pub enum ExecLexRes {
+    LOk(Vec<ExecToken>),
+    LBadChar,
+    LOverflow,
+}
+
+fn exec_lex(cs: &Vec<char>, i: usize) -> (r: ExecLexRes)
+    requires i <= cs.len(),
+    ensures ({
+        let suf = cs@.subrange(i as int, cs@.len() as int);
+        match r {
+            ExecLexRes::LOverflow => !all_ints_fit(suf),
+            ExecLexRes::LOk(ts) => all_ints_fit(suf) && lex(suf) == Some(etoks_view(ts@)),
+            ExecLexRes::LBadChar => all_ints_fit(suf) && lex(suf) == None::<Seq<Token>>,
+        }
+    }),
+    decreases cs.len() - i,
+{
+    let ghost suf = cs@.subrange(i as int, cs@.len() as int);
+    if i == cs.len() {
+        proof {
+            assert(suf =~= Seq::<char>::empty());
+            assert(etoks_view(Seq::<ExecToken>::empty()) =~= Seq::<Token>::empty());
+        }
+        return ExecLexRes::LOk(Vec::new());
+    }
+    let c = cs[i];
+    assert(suf.len() > 0 && suf[0] == c);
+    if exec_is_ws(c) {
+        let r = exec_lex(cs, i + 1);
+        proof {
+            assert(cs@.subrange((i + 1) as int, cs@.len() as int) =~= suf.subrange(1, suf.len() as int));
+        }
+        r
+    } else if exec_is_digit(c) {
+        let (j, ov) = scan_digits(cs, i);
+        let ghost k = leading_digits_len(suf);
+        let ghost blk = suf.subrange(0, k as int);
+        let ghost suf2 = cs@.subrange(j as int, cs@.len() as int);
+        proof {
+            assert(suf2 =~= suf.subrange(k as int, suf.len() as int));
+            assert(blk =~= cs@.subrange(i as int, j as int));
+        }
+        match ov {
+            None => {
+                proof {
+                    assert(nat_of_digits(blk) as int > imax());
+                    // all_ints_fit(suf) unfolds to a false first conjunct.
+                }
+                ExecLexRes::LOverflow
+            }
+            Some(v) => {
+                let rest = exec_lex(cs, j);
+                match rest {
+                    ExecLexRes::LOverflow => {
+                        ExecLexRes::LOverflow
+                    }
+                    ExecLexRes::LBadChar => {
+                        proof {
+                            assert(nat_of_digits(blk) as int <= imax());
+                            assert(lex(suf) == lex_cons(Token::TInt(nat_of_digits(blk) as int), lex(suf2)));
+                        }
+                        ExecLexRes::LBadChar
+                    }
+                    ExecLexRes::LOk(ts) => {
+                        let mut out = ts;
+                        out.insert(0, ExecToken::ETInt(v));
+                        proof {
+                            let gts = etoks_view(out@);
+                            assert(out@ =~= seq![ExecToken::ETInt(v)] + ts@);
+                            lemma_etoks_view_cons(ExecToken::ETInt(v), ts@);
+                            assert(ExecToken::ETInt(v)@ == Token::TInt(v as int));
+                            assert(v as int == nat_of_digits(blk) as int);
+                            assert(lex(suf) == lex_cons(Token::TInt(nat_of_digits(blk) as int), lex(suf2)));
+                            assert(lex(suf) == Some(seq![Token::TInt(v as int)] + etoks_view(ts@)));
+                        }
+                        ExecLexRes::LOk(out)
+                    }
+                }
+            }
+        }
+    } else if exec_is_lower(c) {
+        let j = scan_name(cs, i);
+        let ghost k = leading_name_len(suf);
+        let ghost blk = suf.subrange(0, k as int);
+        let ghost suf2 = cs@.subrange(j as int, cs@.len() as int);
+        let name = slice_copy(cs, i, j);
+        proof {
+            assert(suf2 =~= suf.subrange(k as int, suf.len() as int));
+            assert(blk =~= cs@.subrange(i as int, j as int));
+            assert(name@ == blk);
+        }
+        let rest = exec_lex(cs, j);
+        match rest {
+            ExecLexRes::LOverflow => ExecLexRes::LOverflow,
+            ExecLexRes::LBadChar => {
+                proof {
+                    assert(lex(suf) == lex_cons(Token::TName(blk), lex(suf2)));
+                }
+                ExecLexRes::LBadChar
+            }
+            ExecLexRes::LOk(ts) => {
+                let mut out = ts;
+                out.insert(0, ExecToken::ETName(name));
+                proof {
+                    assert(out@ =~= seq![ExecToken::ETName(name)] + ts@);
+                    lemma_etoks_view_cons(ExecToken::ETName(name), ts@);
+                    assert(ExecToken::ETName(name)@ == Token::TName(blk));
+                    assert(lex(suf) == lex_cons(Token::TName(blk), lex(suf2)));
+                }
+                ExecLexRes::LOk(out)
+            }
+        }
+    } else if c == '[' {
+        let ghost suf2 = cs@.subrange((i + 1) as int, cs@.len() as int);
+        proof {
+            assert(suf2 =~= suf.subrange(1, suf.len() as int));
+            assert(!is_ws('[') && !is_digit('[') && !is_lower('['));
+        }
+        let rest = exec_lex(cs, i + 1);
+        match rest {
+            ExecLexRes::LOverflow => ExecLexRes::LOverflow,
+            ExecLexRes::LBadChar => {
+                proof { assert(lex(suf) == lex_cons(Token::TOpen, lex(suf2))); }
+                ExecLexRes::LBadChar
+            }
+            ExecLexRes::LOk(ts) => {
+                let mut out = ts;
+                out.insert(0, ExecToken::ETOpen);
+                proof {
+                    assert(out@ =~= seq![ExecToken::ETOpen] + ts@);
+                    lemma_etoks_view_cons(ExecToken::ETOpen, ts@);
+                    assert(ExecToken::ETOpen@ == Token::TOpen);
+                    assert(lex(suf) == lex_cons(Token::TOpen, lex(suf2)));
+                }
+                ExecLexRes::LOk(out)
+            }
+        }
+    } else if c == ']' {
+        let ghost suf2 = cs@.subrange((i + 1) as int, cs@.len() as int);
+        proof {
+            assert(suf2 =~= suf.subrange(1, suf.len() as int));
+            assert(!is_ws(']') && !is_digit(']') && !is_lower(']') && ']' != '[');
+        }
+        let rest = exec_lex(cs, i + 1);
+        match rest {
+            ExecLexRes::LOverflow => ExecLexRes::LOverflow,
+            ExecLexRes::LBadChar => {
+                proof { assert(lex(suf) == lex_cons(Token::TClose, lex(suf2))); }
+                ExecLexRes::LBadChar
+            }
+            ExecLexRes::LOk(ts) => {
+                let mut out = ts;
+                out.insert(0, ExecToken::ETClose);
+                proof {
+                    assert(out@ =~= seq![ExecToken::ETClose] + ts@);
+                    lemma_etoks_view_cons(ExecToken::ETClose, ts@);
+                    assert(ExecToken::ETClose@ == Token::TClose);
+                    assert(lex(suf) == lex_cons(Token::TClose, lex(suf2)));
+                }
+                ExecLexRes::LOk(out)
+            }
+        }
+    } else {
+        proof {
+            assert(!is_ws(c) && !is_digit(c) && !is_lower(c) && c != '[' && c != ']');
+        }
+        match exec_glyph_to_prim(c) {
+            Some(p) => {
+                let ghost suf2 = cs@.subrange((i + 1) as int, cs@.len() as int);
+                proof {
+                    assert(suf2 =~= suf.subrange(1, suf.len() as int));
+                    assert(glyph_to_gprim(c) == Some(p@));
+                }
+                let rest = exec_lex(cs, i + 1);
+                match rest {
+                    ExecLexRes::LOverflow => ExecLexRes::LOverflow,
+                    ExecLexRes::LBadChar => {
+                        proof { assert(lex(suf) == lex_cons(Token::TGlyph(p@), lex(suf2))); }
+                        ExecLexRes::LBadChar
+                    }
+                    ExecLexRes::LOk(ts) => {
+                        let mut out = ts;
+                        out.insert(0, ExecToken::ETGlyph(p));
+                        proof {
+                            assert(out@ =~= seq![ExecToken::ETGlyph(p)] + ts@);
+                            lemma_etoks_view_cons(ExecToken::ETGlyph(p), ts@);
+                            assert(ExecToken::ETGlyph(p)@ == Token::TGlyph(p@));
+                            assert(lex(suf) == lex_cons(Token::TGlyph(p@), lex(suf2)));
+                        }
+                        ExecLexRes::LOk(out)
+                    }
+                }
+            }
+            None => {
+                proof {
+                    assert(glyph_to_gprim(c) == None::<GPrim>);
+                    assert(lex(suf) == None::<Seq<Token>>);
+                }
+                ExecLexRes::LBadChar
+            }
+        }
+    }
+}
+
 fn main() {}
 
 } // verus!
