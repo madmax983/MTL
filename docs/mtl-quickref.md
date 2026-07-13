@@ -1,4 +1,4 @@
-# MTL Quick Reference (v0.2)
+# MTL Quick Reference (v0.3)
 
 MTL is a stack-based, point-free language. A program is a flat sequence of
 words executed left to right against an operand stack. There are no variables,
@@ -25,7 +25,7 @@ names, or environments — all abstraction is done with quotations.
   `3:*` is `3 dup *`. `[1 2+]` is a quote pushing 1, 2, then Add.
 - `.` next to a digit is Times, never a decimal point: `3.` is `Int(3) Times`.
 
-## The 21 primitives
+## The 23 primitives
 
 Stack effect notation: top of stack is at the **right**. `[q]` is a quote.
 
@@ -53,6 +53,8 @@ Stack effect notation: top of stack is at the **right**. `[q]` is a quote.
 | `.` | times | `( n [Q] -- ... )` | run `[Q]` n times |
 | `\|` | linrec | `( [P][T][R1][R2] -- ... )` | linear/tail recursion |
 | `>` | uncons | `( [w …] -- w [ … ] 1 )` or `( [] -- 0 )` | split a quote |
+| `(` | fold | `( [seq] init [C] -- r )` | native left fold; `C:( acc w -- acc' )` runs once per element left-to-right; `[]` gives `init` |
+| `$` | xor | `( a b -- a$b )` | bitwise XOR on the i64 two's-complement; total (no Overflow, no DivByZero) |
 
 ## Recursion combinators (exact rewrites)
 
