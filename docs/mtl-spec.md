@@ -1,6 +1,6 @@
-# MTL: Minimal Token Language — Specification v0.3-draft
+# MTL: Minimal Token Language — Specification v0.4-draft
 
-**Status:** Draft for review — revised in response to the 2026-07-11 adversarial review (`docs/reviews/2026-07-11-adversarial-review.md`). v0.2-draft added the four recursion primitives (`primrec`, `times`, `linrec`, `uncons`) admitted by `docs/design/v0.2-recursion-primitives.md` (merged PR #8). v0.3-draft adds the two sequence primitives (`fold`, `xor`) admitted by `docs/design/v0.3-sequences.md` (merged PR #13) and implemented in the core (`spec_step_prim` + `crate::interp`).
+**Status:** Draft for review — revised in response to the 2026-07-11 adversarial review (`docs/reviews/2026-07-11-adversarial-review.md`). v0.2-draft added the four recursion primitives (`primrec`, `times`, `linrec`, `uncons`) admitted by `docs/design/v0.2-recursion-primitives.md` (merged PR #8). v0.3-draft adds the two sequence primitives (`fold`, `xor`) admitted by `docs/design/v0.3-sequences.md` (merged PR #13) and implemented in the core (`spec_step_prim` + `crate::interp`). v0.4-draft adds the effects boundary admitted by `docs/design/v0.4-effects.md`: `Invoke`, a fourth `SpecStep` outcome, so every `Call` suspends the pure core for an unverified host runner (§8), implemented in the core and the `mtl-core::host` seam.
 **North star:** Turing complete (conjectured — see §6). Minimize expected total LLM inference tokens to a correct solution over a benchmark task distribution.
 **Verification target:** Reference semantics and interpreter verified in Verus (SPEC → PROOF → RED → GREEN → REFACTOR). The normative artifact is `crates/mtl-core/src/mtl_core.rs`: where this prose and `spec_step` disagree, `spec_step` is authoritative and the prose is the defect.
 
@@ -102,16 +102,17 @@ There are no variables and no environments. This is a design consequence of the 
 
 ## 4. Small-Step Operational Semantics
 
-The semantics is a **total step function** — this is the load-bearing decision for Verus verification. Every state maps to exactly one of three outcomes:
+The semantics is a **total step function** — this is the load-bearing decision for Verus verification. Every state maps to exactly one of four outcomes:
 
 ```
 Step  ::= Next(State) | Halt(stack) | Fault(Error)
+        | Invoke(name, stack, cont)   -- host suspension (v0.4); every Call yields this
 
 Error ::= Underflow | TypeMismatch | Overflow | DivByZero
         | UnknownWord | FuelExhausted   -- FuelExhausted: driver only, not step
 ```
 
-`Invoke(name, stack, cont)` — a fourth, host-suspension outcome — is a **v0.2 addition** (§8.2). In the v0.1 core there is no successful `Call` transition: every `Call(name)` faults with `UnknownWord` (this is exactly what `spec_step` does).
+`Invoke(name, stack, cont)` — the fourth, host-suspension outcome — is the **v0.4 effects boundary** (§8): as of v0.4 every `Call(name)` yields `Invoke`, suspending the pure core for the host runner (this is exactly what `spec_step` does). `UnknownWord` remains in the `Error` enum but is **no longer reachable from the `Call` arm** — grant/deny is a host-side decision (§8.3).
 
 ### 4.1 Step rules
 
@@ -440,33 +441,89 @@ Per review §20, the proof program is layered so that universality, typing, heap
 
 ## 8. Effects: Host-Injected Capabilities
 
-The core is pure — `spec_step` closes over nothing — and in v0.1 it has **no successful rule for `Call(name)`**: every `Call` faults with `UnknownWord`. This is the actual behavior of `spec_step` in `mtl_core.rs` and is the normative v0.1 core semantics. Effects are therefore not yet part of the verified core; §8.2 specifies the v0.2 design.
+The core is pure — `spec_step` closes over nothing. As of **v0.4** every `Call(name)` is a **suspension**, not a fault: `spec_step`'s `Call` arm yields the fourth outcome `Invoke(name, stack, cont)` (§8.2). The core does **not** decide whether a name is bound — there is no in-core dictionary — so `Error::UnknownWord` (still present in the `Error` enum) is **no longer reachable from the `Call` arm**; grant/deny is a host-side decision returned as a `HostFault` (§8.3). This is the actual behavior of `spec_step` in `mtl_core.rs` and is the normative core semantics; the older sketch in which `Call` faulted with `UnknownWord`, and in which a separate `CoreStep`/`HostResult`-threading-`host_state` machine was proposed, is superseded by what follows.
 
-### 8.1 v0.1: Call is UnknownWord
+### 8.1 The pure core and the trust boundary
 
-`State = (stack, cont)` carries no word dictionary, host state, effect trace, or capability signature. There is consequently no successful `Call` transition, and the pure-core theorems (P1–P3) hold **independently of any host**. The v0.1 draft's phrase "the verified core's theorems are unconditional" is replaced by the more precise:
+`SpecState = { stack: Seq<SpecValue>, cont: Seq<SpecWord> }` carries no word dictionary, host state, effect trace, or capability signature. The pure-core theorems (P1 determinism, P2 refinement, P3 progress) hold **independently of any host** — they are unconditional statements *about the core*. The v0.1 draft's phrase "the verified core's theorems are unconditional" is made precise as:
 
-> The pure-core theorems are independent of host behavior. End-to-end guarantees about a *running* MTL program additionally require assumptions about the host contract (§8.2): a host word may panic, diverge, return a malformed value, violate its declared stack effect, leak a resource, or mutate ambient state. Trusted or external components remain part of the trusted computing base; they are not discharged by the core proofs.
+> The pure-core theorems are independent of host behavior. End-to-end guarantees about a *running* MTL program additionally require assumptions about the host contract (§8.3): a host word may panic, diverge, return a malformed value, violate its declared stack effect, leak a resource, or mutate ambient state. Trusted or external components remain part of the trusted computing base; they are not discharged by the core proofs.
 
-### 8.2 v0.2: two-machine split (pure core + host runner)
+The **only** channel between the verified core and the untrusted host is the `Invoke` value: it carries `(name, stack_snapshot, cont)` *out* of the core, and the host returns `Resume(result_stack)` or `HostFault(code)` back *in*. Host state **never enters the core**; `cont` is opaque to the host, which must hand it back untouched at resume. This is the load-bearing design choice (design `docs/design/v0.4-effects.md` §2.4): the core closes over nothing, so P1/P2/P3 remain intact.
 
-The v0.2 effects design separates a **verified pure core** from an **untrusted host runner**, making the trust boundary explicit rather than blurred:
+### 8.2 `Invoke`: the fourth `SpecStep` outcome
+
+`Invoke` is the **fourth constructor of `SpecStep`** (not a parallel `CoreStep` enum — the earlier §8.2 sketch is superseded). `SpecState` (stack + cont, closing over nothing) *is* the core state; a parallel enum would duplicate the whole `spec_step → exec_step → run` spine for no gain. Its exact shape in `mtl_core.rs`:
 
 ```
-CoreStep   ::= Next(CoreState)
-             | Halt(stack)
-             | Fault(CoreError)
-             | Invoke(name, stack, cont)     -- new: core suspends, names a capability
+SpecStep ::= Next(SpecState)
+           | Halt(Seq<SpecValue>)
+           | Fault(Error)
+           | Invoke(Seq<char>, Seq<SpecValue>, Seq<SpecWord>)   -- (name, stack snapshot, continuation)
 
-HostResult ::= Resume(stack, host_state)     -- host returns a new stack
-             | HostFault(error, host_state)
+SpecWord::Call(name) => SpecStep::Invoke(name, s.stack, rest)   -- rest == cont after the consumed Call
 ```
 
-The core steps deterministically until it reaches `Invoke(name, stack, cont)`, at which point it suspends and hands `(name, stack)` to the host runner. The host runner — outside the verified core, part of the TCB — executes the named capability and returns a `HostResult`; the core resumes from `cont` with the returned stack. Capability style is unchanged: a program can only affect what its host explicitly granted, which is what makes agent-generated MTL safe to run (subject to resource metering — fuel, heap quota, max quotation/stack size, output bytes, per-capability call budget, host timeout — listed as future work per review §19).
+Three properties define the outcome:
 
-**Host contract.** For end-to-end theorems, each host word declares a stack effect and a capability signature, and the host runner is *assumed* to conform: return the declared arity/types, not leak linear resources, and either terminate or signal `HostFault`. These assumptions are the price of the trust boundary; the core proofs do not establish them. Verus's own discipline is the model — specification, proof, and executable code are distinct, and trusted external components stay in the TCB rather than disappearing by declaration.
+- **Every `Call` yields.** The `Call` arm stopped faulting; it now suspends unconditionally. The core does not distinguish bound from unbound names (no in-core dictionary). `Invoke` carries an immutable **snapshot** of the whole stack (a `Seq<SpecValue>`, not a delta) and the continuation `rest` — the tail *after* the `Call` word, so the `Call` is already consumed and is never re-executed on resume.
+- **Terminal-within-a-run.** `Invoke` is a **base case** of `spec_run` (it terminates the run like `Halt`/`Fault`), so `spec_run`'s `decreases fuel` measure is **byte-untouched** — the core never threads `host_state` and never loops on host results. The mirrored exec-side enums (`SpecOutcome`, `StepResult`, `Outcome`) each gain the matching `Invoke` arm, and `spec_run`/`run` suspend (return, not recurse).
+- **Resumption is a fresh run.** Continuing after a host call is a **new** `spec_run`/`run` seeded with `SpecState { stack: result_stack, cont }` — never a re-entry into the suspended step. This is what makes at-most-once hold in-core (§8.5).
 
-This split lands in v0.2; v0.1 ships the pure core with `Call → UnknownWord`.
+The verified core re-verifies at **76 verified, 0 errors** with this arm added: P3 stays exhaustive (`… || is Invoke`), P1 stays deterministic (the new arm is non-overlapping), and P2 reuses the existing `view_stack`/`view_words` homomorphism lemmas to image the `Invoke` snapshot and `cont` under `deep_view`. `Invoke` introduces no new `Value` or `Word` constructor, so the deep-view termination measure and both `Clone` stubs are untouched (design §4).
+
+### 8.3 The host seam and the drive loop
+
+The impure host runner lives *above* the verified core, in the TCB (`crates/mtl-core/src/host.rs`). The seam, exactly as implemented — note `HostResult` does **not** thread `host_state` (it stays host-local):
+
+```rust
+pub enum HostCode {                    // host-side fault codes (never raised by the core)
+    InputClosed, OutputCapExceeded, BudgetExhausted, ToolError, Timeout, NotGranted,
+}
+pub enum HostResult { Resume(Vec<Value>), HostFault(HostCode) }   // host_state stays host-local
+pub trait Host { fn service(&mut self, name: &str, stack: Vec<Value>) -> HostResult; }
+pub struct CapabilitySig {             // a capability signature as data (declarations live host-side)
+    pub name: String, pub consumes: usize, pub produces: usize, pub faults: Vec<HostCode>,
+}
+pub enum RunResult { Done(Vec<Value>), Faulted(Fault), Cancelled, HostFaulted(HostCode) }
+
+pub fn drive(mut vm: Vm, fuel: u64, host: &mut dyn Host) -> RunResult {
+    loop {
+        match run(vm, fuel) {
+            Outcome::Halt(stk)              => return RunResult::Done(stk),
+            Outcome::Fault(info)            => return RunResult::Faulted(info.fault),
+            Outcome::FuelExhausted { .. }   => return RunResult::Cancelled,   // clean, BETWEEN steps
+            Outcome::Invoke { name, stack, cont } => match host.service(&name, stack) {
+                HostResult::Resume(result_stack) =>
+                    vm = Vm { stack: result_stack, cont },   // fresh re-entry from cont
+                HostResult::HostFault(code) => return RunResult::HostFaulted(code),
+            },
+        }
+    }
+}
+```
+
+The loop: run the pure core to a boundary → on `Invoke{name,stack,cont}` call `host.service(name, stack)` → `Resume(stack')` reseeds a **fresh** `run` from `cont`, `HostFault(code)` terminates the drive. The `NotGranted` code is how a host rejects an ungranted capability host-side, since the core yields on *every* `Call`. `HostFault` performs **no** effect and leaves the drive terminated (`HostFaulted`).
+
+**Host contract.** For end-to-end theorems, each capability declares a stack effect (`consumes`/`produces`) and a fault contract (`faults`), and the host runner is *assumed* to conform: preserve the untouched stack prefix, return the declared arity/shapes, raise only faults in its contract, not leak linear resources, service each yielded `Invoke` **at most once**, resume with exactly the carried `cont`, and either terminate or signal `HostFault`. These assumptions (design §3.2, the P9 host-conformance sub-judgment / Layer F) are the price of the trust boundary; the core proofs do not establish them for arbitrary Rust hosts. `CapabilitySig` is the minimal data shape a sibling host crate builds its registry from; the checker may later carry these as effect rows (review §19: `emit : Str -> Unit ! {output}`).
+
+### 8.4 Capability-name grammar (lexer-safe NAME tokens)
+
+Capability names are **bare `Call` name tokens** — there is no invoke sigil (design §9: a sigil spends a scarce glyph to make programs *longer*). A capability name is therefore exactly a NAME token as produced by the `mtl-syntax` lexer, whose token class is:
+
+> **NAME** = `[a-z][a-z0-9]*` — a leading ASCII lowercase letter (`a`–`z`) followed by zero or more ASCII lowercase letters or ASCII digits.
+
+This is the maximal-munch rule at `crates/mtl-syntax/src/parse.rs:186–200` (arm `'a'..='z'`, continuation predicate `is_ascii_lowercase() || is_ascii_digit()`, producing `Word::Call(name)`). No uppercase, no underscore, no hyphen, no `?`, no other punctuation is part of a NAME.
+
+**Consequence — the design doc's illustrative capability names do not lex.** The sketches `read-line`, `read-state`, `done?` in `docs/design/v0.4-effects.md` (§3.1, §8) are *illustrative only*: the lexer reads each self-delimiting glyph separately, so `-` lexes as `Prim::Sub` and `?` lexes as `Prim::If` (`crates/mtl-syntax/src/ast.rs`: `('-', Prim::Sub)`, `('?', Prim::If)`, `('_', Prim::Drop)`). Thus `read-line` parses as `Call("read") · Sub · Call("line")` — three words, not one capability call — and `done?` as `Call("done") · If`. **Real capability names must be lexer-safe single NAME tokens**: e.g. `readline`, `readstate`, `emit`, `done`, `step`, `tokenize`, `emitint`. Future tasks must not copy the hyphen/`?` sketch names into program text.
+
+### 8.5 Fuel, host metering, and cancellation
+
+**Fuel is a pure in-core step counter** (design §6, Option B). `spec_run(s, fuel)` still `decreases fuel`; the same `fuel` is re-supplied to each fresh `run` across resumptions, and host cost is **never** folded into it. Host work — per-capability call budgets, output-byte caps, service time — is bounded by a **separate host-side meter**, debited only at `Invoke` yield points, surfacing as a `HostCode` (`BudgetExhausted`, `OutputCapExceeded`, `Timeout`) via `HostResult::HostFault`. In-core instructions and host effects are orthogonal budgets; a single scalar cannot price both.
+
+**Cancellation is clean between steps.** Fuel is checked *between* steps (`fuel == 0 => FuelExhausted` before `spec_step`), so exhaustion occurs only at a step boundary — either before the core emits an `Invoke` or after it has fully re-entered from a prior `Resume`. It can **never** occur mid-capability, because the core is suspended while the host acts (they are separate machines). Cancellation therefore cancels with **zero partial effect**: `drive` returns `Cancelled`, no `(name, stack)` was handed to the host, invocation count is 0, and at-most-once holds trivially. A host that bounds its *own* service time uses a host timeout resolving to `HostFault(Timeout)`; the core's fuel accounting is untouched.
+
+**Host contract assumptions remain the TCB.** As in §8.1, end-to-end guarantees still rest on the conforming-host assumption; the core proves only P1/P2/P3 about itself.
 
 ---
 
@@ -665,7 +722,7 @@ Before expanding the language or publishing quantitative claims, these gates mus
 
 - **G1** Deterministic lexer specification with test vectors (§2.3). — ✅ specified in this revision.
 - **G2** Complete step semantics including fault precedence (§4.4). — ✅ specified in this revision.
-- **G3** Separated pure-core / host-call boundary (§8.2). — ◑ v0.1 documents `Call → UnknownWord`; the `Invoke` split is specified for v0.2.
+- **G3** Separated pure-core / host-call boundary (§8). — ✅ implemented in v0.4: `spec_step`'s `Call` arm yields `Invoke` (the fourth `SpecStep` outcome), and the unverified host seam (`mtl-core::host`) drives it. Core re-verifies at 76 verified, 0 errors.
 - **G4** Corrected TC theorem, or explicit withdrawal of the claim (§6). — ✅ claim withdrawn to a conjecture; repair route specified.
 - **G5** Five real programs written entirely in the stated v0 primitive set (T_v0). — ☐ open.
 - **G6** Reproducible tokenizer measurements for those programs against pinned tokenizers (§11). — ☐ open.
@@ -676,6 +733,7 @@ Before expanding the language or publishing quantitative claims, these gates mus
 
 ## 16. Changelog
 
+- **v0.4-draft** (2026-07-13) — Added the v0.4 effects boundary admitted by `docs/design/v0.4-effects.md`: **`Invoke`, a fourth `SpecStep` constructor** in the verified ghost model (mirrored on `SpecOutcome`/`StepResult`/`Outcome`), with the exact shape `Invoke(Seq<char>, Seq<SpecValue>, Seq<SpecWord>)` = (name, stack snapshot, continuation after the consumed `Call`). **Every `Call(name)` now yields `Invoke(name, stack, cont)`** instead of `Fault(UnknownWord)`: the pure core suspends at the call site with an immutable stack snapshot, holds no in-core dictionary, and never threads host state — so `Error::UnknownWord` remains in the enum but is no longer reachable from the `Call` arm (grant/deny is a host-side `HostFault`). `Invoke` is **terminal-within-a-run** (a base case of `spec_run` like `Halt`/`Fault`), leaving `spec_run`'s `decreases fuel` byte-untouched; resumption is a **fresh** `spec_run`/`run` seeded with `SpecState { stack: result_stack, cont }`. Added the unverified **host seam** `mtl-core::host` (`crates/mtl-core/src/host.rs`, in the TCB): `HostResult { Resume(Vec<Value>) | HostFault(HostCode) }` (host state stays host-local — no `host_state` threaded back), `HostCode { InputClosed, OutputCapExceeded, BudgetExhausted, ToolError, Timeout, NotGranted }`, the `Host` service trait, `CapabilitySig` (name/consumes/produces/faults declaration data), `RunResult { Done | Faulted | Cancelled | HostFaulted }`, and the impure `drive` loop (run core → on `Invoke` call `host.service` → `Resume` reseeds a fresh run from `cont`, `HostFault` terminates). Fuel stays a **pure in-core step counter** re-supplied per resumption (design §6 Option B); host cost is metered separately host-side, never folded into fuel. §8 rewritten to the implemented semantics (superseding the older `CoreStep`/`host_state`-threading sketch), with an explicit capability-name grammar paragraph (§8.4): capability names are bare `Call` NAME tokens `[a-z][a-z0-9]*` (`crates/mtl-syntax/src/parse.rs`), so the design doc's illustrative `read-line`/`read-state`/`done?` do **not** lex (`-`→`Sub`, `?`→`If`) — real names must be lexer-safe (`readline`, `emit`, `done`, `step`, `tokenize`). §4 outcome set updated to four outcomes; G3 gate (§15) marked implemented. Verified core re-verifies at **76 verified, 0 errors** (`Invoke` adds no `Value`/`Word` constructor, so deep-view termination and both `Clone` stubs are untouched); `cargo test --workspace` green. **11 new tests**: `crates/mtl-core/tests/interpreter.rs` gains `call_yields_invoke_with_snapshot` and `call_invoke_carries_continuation`; new `crates/mtl-core/tests/invoke_host.rs` adds 9 drive-loop tests (bound-name yields `Invoke`, resume-continues, `HostFault` surfaces with no partial effect, multiple `Invoke`s reseed, fault precedence unchanged).
 - **v0.3-draft** (2026-07-12) — Added the two v0.3 sequence primitives admitted by `docs/design/v0.3-sequences.md` (merged PR #13) and implemented in the verified ghost model (`SpecPrim::{Fold, Xor}` + `spec_step_prim` arms), the exec twin, and the cargo interpreter `crate::interp`: **`fold` (`(`)** native **LEFT** fold `( [seq] init [C] -- r )` — total and terminating on a finite list (the sequence spine strictly shrinks each step, the same well-founded measure `primrec`/`times` use; it recurses by re-emitting itself and does **not** desugar into `linrec`), affine in `seq` and multiplicative in `[C]`, with a non-value sequence head faulting `TypeMismatch` (as `uncons`) and no Overflow arm (Overflow arises only inside `C`); and **`xor` (`$`)** bitwise XOR `( a b -- a^b )` on the i64 two's-complement representation — **total**, arity → type only, with **no Overflow or DivByZero arm** because the XOR of two in-range i64 values is always in i64 range (contrast `+`/`*`). Step rules added to §4.1, primitive table and multiplicity notes to §5, fault-precedence worked examples to §4.4 (each new arm checks arity → types; `fold` has no semantic-fault arm, `xor` is total). Golden (max/min/reverse/contains/count via `fold`, `single_number` via `xor`), boundary (empty-sequence `fold` returns `init`, i64 XOR edges incl. `MIN^MAX`, `x^x==0`, `x^0==x`, `MIN^-1`), fault-precedence, and differential-proptest-oracle coverage added in `crates/mtl-core/tests/interpreter.rs`. Smoke theorems for the new arms (`smoke_fold_base`, `smoke_fold_step`, `smoke_xor`) and the `i64_bitxor` spec helper stated in `mtl_core.rs` for the Verus CI job. Note (deviation from the design doc's §10.2 framing): `fold` is documented and proven as **terminating like `primrec`/`times`** (spine-decreases measure), not as "partial, no termination claim" — the small-step semantics are byte-identical to the design sketch; only the termination framing is strengthened.
 - **v0.2-draft** (2026-07-11) — Added the four v0.2 recursion primitives admitted by `docs/design/v0.2-recursion-primitives.md` (merged PR #8) and implemented in the verified ghost model (`SpecPrim::{PrimRec, Times, LinRec, Uncons}` + `spec_step_prim` arms), the exec twin, and the cargo interpreter `crate::interp`: **`primrec` (`&`)** bounded primitive recursion `( n [I] [C] -- r )`, **`times` (`.`)** bounded iteration `( n [Q] -- … )` — both total and terminating (count strictly decreases; checked i64, no Overflow arm since `k-1` is provably in range); **`linrec` (`\|`)** linear recursion `( [P] [T] [R1] [R2] -- … )` that **desugars into `if`** (inherits its verified branch semantics, adds no control operator; partial, fuel-bounded); and **`uncons` (`>`)** quotation deconstructor `( [w …] -- w [ … ] 1 ) | ( [] -- 0 )` — structural, affine, and the TC-proof enabler (§6.2). Step rules added to §4.1, primitive table and multiplicity notes to §5, fault-precedence worked examples to §4.4 (each new arm checks arity → types → semantics). Golden (incl. factorial-via-primrec, gcd-via-linrec, fib-via-times, sum_to, power), boundary (i64 edges, non-positive/`i64::MIN` counts, empty-quotation uncons), fault-precedence, and differential-proptest-oracle coverage added in `crates/mtl-core/tests/interpreter.rs`. Uncons open decision (non-value head) resolved to `TypeMismatch` per the design's faithful reading. Smoke theorems for the new arms (`smoke_primrec_*`, `smoke_times_*`, `smoke_linrec_desugar`, `smoke_uncons_*`) stated in `mtl_core.rs` for the Verus CI job.
 - **v0.1.1** (2026-07-11) — Revision in response to the adversarial review (`docs/reviews/2026-07-11-adversarial-review.md`). TC "theorem" withdrawn to a conjecture with a quotation-encoded repair route and a v0.2 `uncons` candidate (§6). Deterministic lexer with unsigned integer literals (Option A) and test vectors; `-` is always `Sub` (§2.3). Normative fault precedence arity → types → semantics with worked examples (§4.4). `Call → UnknownWord` documented as v0.1 core behavior; two-machine `Invoke`/host-runner split specified for v0.2; "unconditional theorems" reworded (§8). `: !` reframed as a self-application kernel with a recursive-normal-form definition; "proper tail calls for free" made conditional on a loop normal form (P6) (§4.2, §6.3). §14 frozen as v0.2+ exploratory future work with claim-by-claim softening (Perceus "resembles"; `dip` = non-access interval; `over` = duplicate; P8 → P8a/b/c; P9 split into static / guarded / host-conformance / normal-exit; linear = at-most-once + exactly-once-on-normal-halt). Definitions `#f[...]` deferred out of v0.1 (§9). Benchmark redesigned with corpus splits, versioned task sets (T_v0 / T_v0.2), a baseline panel, warm/cold protocol, total-token accounting, and the headline metric *correct solutions per million inference tokens* (§10–§11). Layered proof hierarchy A–F (§7.5) and Go/No-Go gates (§15) added. String literals / `Str` clarified as not part of the v0.1 core (parser rejects; §2–§3, §7.1). Verification-status caveat added and the Verus pin corrected to the full build id `0.2026.07.05.49b8806` (the date-shaped `0.2026.07.05` named no downloadable asset → HTTP 403; fixed in CI #5), satisfying the review's "pin a precise commit, not a date-shaped version"; GREEN-phase proofs remain contract-stated and differential-proptest-evidenced pending the interpreter (§7.3, G7).
