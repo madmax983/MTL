@@ -2376,6 +2376,93 @@ fn exec_group(ts: &Vec<ExecToken>, idx: usize, levels: Vec<Vec<EWord>>) -> (r: O
     }
 }
 
+// ============================================================
+// 21. The exec parser and its refinement of spec_parse.
+// ============================================================
+
+// Executable parse outcome; views to the ghost ParseOutcome.
+pub enum ExecOutcome {
+    EOk(Vec<EWord>),
+    EErr,
+}
+
+impl View for ExecOutcome {
+    type V = ParseOutcome;
+    open spec fn view(&self) -> ParseOutcome {
+        match self {
+            ExecOutcome::EOk(p) => ParseOutcome::Ok(ewords_view(p@)),
+            ExecOutcome::EErr => ParseOutcome::Err,
+        }
+    }
+}
+
+// The executable parser. On the in-range domain (`all_ints_fit`) it refines
+// `spec_parse` exactly; off it, it rejects (EErr) — the ONLY way the exec parser
+// diverges from the unbounded spec is by rejecting an i64-overflowing literal.
+pub fn exec_parse(cs: &Vec<char>) -> (r: ExecOutcome)
+    ensures
+        all_ints_fit(cs@) ==> r@ == spec_parse(cs@),
+        !all_ints_fit(cs@) ==> r == ExecOutcome::EErr,
+{
+    proof { assert(cs@.subrange(0, cs@.len() as int) =~= cs@); }
+    match exec_lex(cs, 0) {
+        ExecLexRes::LOverflow => ExecOutcome::EErr,
+        ExecLexRes::LBadChar => {
+            // all_ints_fit(cs@) holds; lex(cs@) == None ==> spec_parse == Err.
+            ExecOutcome::EErr
+        }
+        ExecLexRes::LOk(ts) => {
+            // all_ints_fit(cs@); lex(cs@) == Some(etoks_view(ts@)).
+            let mut init: Vec<Vec<EWord>> = Vec::new();
+            let ghost pre = init@;
+            let e: Vec<EWord> = Vec::new();
+            init.push(e);
+            proof {
+                lemma_stack_view_push(pre, e);
+                assert(pre =~= Seq::<Vec<EWord>>::empty());
+                assert(stack_view(pre) =~= Seq::<Seq<GWord>>::empty());
+                assert(ewords_view(e@) =~= Seq::<GWord>::empty());
+                assert(stack_view(init@) =~= seq![Seq::<GWord>::empty()]);
+                assert(ts@.subrange(0, ts@.len() as int) =~= ts@);
+            }
+            match exec_group(&ts, 0, init) {
+                None => {
+                    proof {
+                        assert(group_fold(etoks_view(ts@), seq![Seq::<GWord>::empty()])
+                            == None::<Seq<Seq<GWord>>>);
+                    }
+                    ExecOutcome::EErr
+                }
+                Some(levels) => {
+                    let ghost gl = levels@;
+                    proof {
+                        assert(group_fold(etoks_view(ts@), seq![Seq::<GWord>::empty()])
+                            == Some(stack_view(gl)));
+                        lemma_stack_view_len_index(gl);
+                    }
+                    if levels.len() == 1 {
+                        let mut lv = levels;
+                        let prog = lv.pop().unwrap();
+                        proof {
+                            assert(gl.len() == 1);
+                            assert(gl.last() == gl[0]);
+                            assert(prog@ == gl[0]@);
+                            assert(stack_view(gl)[0] == ewords_view(gl[0]@));
+                            assert(stack_view(gl).len() == 1);
+                        }
+                        ExecOutcome::EOk(prog)
+                    } else {
+                        proof {
+                            assert(stack_view(gl).len() != 1);
+                        }
+                        ExecOutcome::EErr
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn main() {}
 
 } // verus!
