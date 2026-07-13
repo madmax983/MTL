@@ -1084,6 +1084,208 @@ pub proof fn p4_audit_all_glyphs() {
     assert(prims.len() == 23);
 }
 
+// ============================================================
+// 15. Executable printer (exec-mode refinement of spec_print).
+//
+// Exec datatypes mirror the ghost AST but use Vec/i64 (executable) instead of
+// Seq/int (ghost). Their `view()` maps back to the ghost types, and
+// `exec_print` is PROVEN to produce exactly `spec_print` of the viewed program.
+// ============================================================
+
+// Executable mirror of GPrim (23 variants, identical order).
+pub enum EPrim {
+    Dup, Drop, Swap, Rot, Over, Apply, Cat, Cons, Dip,
+    Add, Sub, Mul, Div, Mod, Eq, Lt, If,
+    PrimRec, Times, LinRec, Uncons, Fold, Xor,
+}
+
+impl View for EPrim {
+    type V = GPrim;
+    open spec fn view(&self) -> GPrim {
+        match self {
+            EPrim::Dup => GPrim::Dup, EPrim::Drop => GPrim::Drop, EPrim::Swap => GPrim::Swap,
+            EPrim::Rot => GPrim::Rot, EPrim::Over => GPrim::Over, EPrim::Apply => GPrim::Apply,
+            EPrim::Cat => GPrim::Cat, EPrim::Cons => GPrim::Cons, EPrim::Dip => GPrim::Dip,
+            EPrim::Add => GPrim::Add, EPrim::Sub => GPrim::Sub, EPrim::Mul => GPrim::Mul,
+            EPrim::Div => GPrim::Div, EPrim::Mod => GPrim::Mod, EPrim::Eq => GPrim::Eq,
+            EPrim::Lt => GPrim::Lt, EPrim::If => GPrim::If, EPrim::PrimRec => GPrim::PrimRec,
+            EPrim::Times => GPrim::Times, EPrim::LinRec => GPrim::LinRec, EPrim::Uncons => GPrim::Uncons,
+            EPrim::Fold => GPrim::Fold, EPrim::Xor => GPrim::Xor,
+        }
+    }
+}
+
+// Executable mirror of GWord.
+pub enum EWord {
+    EPushInt(i64),
+    EPushQuote(Vec<EWord>),
+    EPrim(EPrim),
+    ECall(Vec<char>),
+}
+
+// View of one exec word to its ghost. Mirrors the toks_word/toks_words
+// lexicographic decreases pattern (word measure `(w, 0)`, seq measure
+// `(s, s.len())`) so the mutual recursion through PushQuote terminates.
+pub open spec fn eword_view(w: EWord) -> GWord
+    decreases w, 0nat,
+{
+    match w {
+        EWord::EPushInt(i) => GWord::PushInt(i as int),
+        EWord::EPrim(p) => GWord::Prim(p.view()),
+        EWord::ECall(v) => GWord::Call(v@),
+        EWord::EPushQuote(ws) => GWord::PushQuote(ewords_view(ws@)),
+    }
+}
+
+pub open spec fn ewords_view(s: Seq<EWord>) -> Seq<GWord>
+    decreases s, s.len(),
+{
+    if s.len() == 0 {
+        Seq::<GWord>::empty()
+    } else {
+        seq![eword_view(s[0])] + ewords_view(s.subrange(1, s.len() as int))
+    }
+}
+
+// Class of the last-emitted token in a stream (None if empty). Threaded by the
+// exec printer as its `last: Option<Cls>` boundary bookkeeping.
+pub open spec fn last_cls(prev: Option<Cls>, ts: Seq<Token>) -> Option<Cls> {
+    if ts.len() == 0 { prev } else { Some(tok_class(ts[ts.len() as int - 1])) }
+}
+
+// toks_words distributes over sequence concatenation.
+pub proof fn lemma_toks_words_append(a: Seq<GWord>, b: Seq<GWord>)
+    ensures toks_words(a + b) == toks_words(a) + toks_words(b),
+    decreases a.len(),
+{
+    if a.len() == 0 {
+        assert(a + b =~= b);
+        assert(toks_words(a) =~= Seq::<Token>::empty());
+    } else {
+        let arest = a.subrange(1, a.len() as int);
+        assert((a + b)[0] == a[0]);
+        assert((a + b).subrange(1, (a + b).len() as int) =~= arest + b);
+        lemma_toks_words_append(arest, b);
+        // toks_words(a+b) = toks_word(a[0]) + toks_words(arest + b)
+        //                 = toks_word(a[0]) + toks_words(arest) + toks_words(b)
+        assert(toks_words(a + b) =~= toks_words(a) + toks_words(b));
+    }
+}
+
+// last_cls composes over concatenation.
+pub proof fn lemma_last_cls_append(prev: Option<Cls>, a: Seq<Token>, b: Seq<Token>)
+    ensures last_cls(prev, a + b) == last_cls(last_cls(prev, a), b),
+{
+    if b.len() == 0 {
+        assert(a + b =~= a);
+    } else {
+        assert((a + b)[(a + b).len() - 1] == b[b.len() - 1]);
+    }
+}
+
+// The central "loop = fold" identity: rendering a concatenation is the render of
+// the first part, followed by the render of the second part started from the
+// boundary class left behind by the first.
+pub proof fn lemma_render_append(prev: Option<Cls>, a: Seq<Token>, b: Seq<Token>)
+    ensures render_h(prev, a + b) == render_h(prev, a) + render_h(last_cls(prev, a), b),
+    decreases a.len(),
+{
+    if a.len() == 0 {
+        assert(a + b =~= b);
+        assert(render_h(prev, a) =~= Seq::<char>::empty());
+        assert(last_cls(prev, a) == prev);
+        assert(render_h(prev, a) + render_h(prev, b) =~= render_h(prev, b));
+    } else {
+        let t = a[0];
+        let arest = a.subrange(1, a.len() as int);
+        assert((a + b)[0] == t);
+        assert((a + b).subrange(1, (a + b).len() as int) =~= arest + b);
+        let sep = if needs_sep_opt(prev, tok_first(t)) { seq![' '] } else { Seq::<char>::empty() };
+        lemma_render_append(Some(tok_class(t)), arest, b);
+        assert(last_cls(prev, a) == last_cls(Some(tok_class(t)), arest)) by {
+            if arest.len() == 0 {
+                assert(a[a.len() - 1] == t);
+            } else {
+                assert(a[a.len() - 1] == arest[arest.len() - 1]);
+            }
+        }
+        // render_h(prev, a+b) = sep + piece(t) + render_h(Some class, arest + b)
+        //   = sep + piece(t) + [render_h(Some class, arest) + render_h(last_cls(prev,a), b)]
+        //   = [sep + piece(t) + render_h(Some class, arest)] + render_h(last_cls(prev,a), b)
+        //   = render_h(prev, a) + render_h(last_cls(prev, a), b)
+        assert(render_h(prev, a + b) =~= render_h(prev, a) + render_h(last_cls(prev, a), b));
+    }
+}
+
+// Rendering a single token: an optional leading space plus the token's piece.
+pub proof fn lemma_render_single(prev: Option<Cls>, t: Token)
+    requires valid_tok(t),
+    ensures render_h(prev, seq![t]) ==
+        (if needs_sep_opt(prev, tok_first(t)) { seq![' '] } else { Seq::<char>::empty() }) + tok_piece(t),
+{
+    let ts = seq![t];
+    lemma_piece_nonempty(t);
+    assert(ts.len() == 1);
+    assert(ts[0] == t);
+    assert(ts.subrange(1, ts.len() as int) =~= Seq::<Token>::empty());
+    assert(render_h(Some(tok_class(t)), Seq::<Token>::empty()) =~= Seq::<char>::empty());
+    assert(render_h(prev, ts) =~=
+        (if needs_sep_opt(prev, tok_first(t)) { seq![' '] } else { Seq::<char>::empty() }) + tok_piece(t));
+}
+
+// ewords_view distributes over concatenation; and its length/indexing agree
+// elementwise with eword_view.
+pub proof fn lemma_ewords_view_append(a: Seq<EWord>, b: Seq<EWord>)
+    ensures ewords_view(a + b) == ewords_view(a) + ewords_view(b),
+    decreases a.len(),
+{
+    if a.len() == 0 {
+        assert(a + b =~= b);
+        assert(ewords_view(a) =~= Seq::<GWord>::empty());
+    } else {
+        let arest = a.subrange(1, a.len() as int);
+        assert((a + b)[0] == a[0]);
+        assert((a + b).subrange(1, (a + b).len() as int) =~= arest + b);
+        lemma_ewords_view_append(arest, b);
+        assert(ewords_view(a + b) =~= ewords_view(a) + ewords_view(b));
+    }
+}
+
+pub proof fn lemma_ewords_view_len_index(s: Seq<EWord>)
+    ensures
+        ewords_view(s).len() == s.len(),
+        forall|i: int| 0 <= i < s.len() ==> ewords_view(s)[i] == eword_view(#[trigger] s[i]),
+    decreases s.len(),
+{
+    if s.len() == 0 {
+    } else {
+        let srest = s.subrange(1, s.len() as int);
+        lemma_ewords_view_len_index(srest);
+        assert forall|i: int| 0 <= i < s.len() implies
+            ewords_view(s)[i] == eword_view(#[trigger] s[i]) by {
+            if i == 0 {
+                assert(ewords_view(s)[0] == eword_view(s[0]));
+            } else {
+                assert(ewords_view(s)[i] == ewords_view(srest)[i - 1]);
+                assert(srest[i - 1] == s[i]);
+            }
+        }
+    }
+}
+
+// wf_words gives wf_word of every element.
+pub proof fn lemma_wf_words_index(s: Seq<GWord>, i: int)
+    requires wf_words(s), 0 <= i < s.len(),
+    ensures wf_word(s[i]),
+    decreases s.len(),
+{
+    if i == 0 {
+    } else {
+        lemma_wf_words_index(s.subrange(1, s.len() as int), i - 1);
+        assert(s.subrange(1, s.len() as int)[i - 1] == s[i]);
+    }
+}
+
 fn main() {}
 
 } // verus!
