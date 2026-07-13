@@ -21,3 +21,11 @@ pub const VERUS_VERSION: &str = "0.2026.07.05";
 /// of the Verus-verified `exec_step`/`run` in `src/mtl_core.rs` (which is checked
 /// by `verus`, not compiled by `cargo`). See the module docs for the split.
 pub mod interp;
+
+/// The v0.4 host seam (design `docs/design/v0.4-effects.md` §2.3/§3).
+///
+/// The **unverified** two-machine boundary above the verified core: the `Host`
+/// trait, `HostResult`/`HostCode`, `CapabilitySig`, and the impure `drive` loop.
+/// Part of the TCB. The capability registry and full host runtime live in a
+/// sibling crate built against this seam; this is just the seam.
+pub mod host;
