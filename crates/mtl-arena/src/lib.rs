@@ -60,6 +60,11 @@ mod vm;
 // ---- arena types (the policed internal mirrors; pub for conformance + oracle) --
 pub use types::{Fault, Prim, ProgWord, QuoteId, Value, Word};
 
+// ---- policed reflection surface (design §5: the arena Prim mirror, exposed so
+//      `mtl-conformance` can assert names/order/arity vs the manifest without
+//      re-reading engine internals). ----
+pub use types::{arena_prim_arity, arena_prim_name, ARENA_PRIMS};
+
 // ---- arenas + machine position ----
 pub use arena::{
     ContArena, ContPtr, Mark, QuoteArena, StackArena, StackPtr, VmState,
