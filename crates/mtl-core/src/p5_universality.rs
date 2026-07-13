@@ -1051,6 +1051,205 @@ pub proof fn lemma_body_decjz_c1_z(prog: MProg, m: MConf, jz: nat, nz: nat)
     assert(s11.cont =~= seq![w(SpecPrim::Dup), w(SpecPrim::Apply)]);
 }
 
+// ============================================================
+// 7. Composition: reachability, lock-step, simulation
+// ============================================================
+
+/// `reaches(s, s2)`: some finite number of `spec_step`s advances `s` to `s2`
+/// (all Next, never Halt/Fault in between).
+pub open spec fn reaches(s: SpecState, s2: SpecState) -> bool {
+    exists|k: nat| spec_stepn(s, k) == SpecStep::Next(s2)
+}
+
+pub proof fn reaches_from(s: SpecState, k: nat, s2: SpecState)
+    requires spec_stepn(s, k) == SpecStep::Next(s2),
+    ensures reaches(s, s2),
+{
+}
+
+pub proof fn lemma_reaches_refl(s: SpecState)
+    ensures reaches(s, s),
+{
+    assert(spec_stepn(s, 0) == SpecStep::Next(s));
+}
+
+pub proof fn lemma_reaches_trans(a: SpecState, b: SpecState, c: SpecState)
+    requires reaches(a, b), reaches(b, c),
+    ensures reaches(a, c),
+{
+    let k1 = choose|k: nat| spec_stepn(a, k) == SpecStep::Next(b);
+    let k2 = choose|k: nat| spec_stepn(b, k) == SpecStep::Next(c);
+    lemma_stepn_compose(a, k1, k2);
+    assert(spec_stepn(a, (k1 + k2) as nat) == SpecStep::Next(c));
+}
+
+/// Reachability composes with a final Halt step into a fuel-bounded `spec_run`
+/// Halt observation.
+pub proof fn lemma_reaches_halt(s: SpecState, s2: SpecState, stk: Seq<SpecValue>)
+    requires reaches(s, s2), spec_step(s2) == SpecStep::Halt(stk),
+    ensures exists|n: nat| spec_run(s, n) == SpecOutcome::Halt(stk),
+{
+    let k = choose|k: nat| spec_stepn(s, k) == SpecStep::Next(s2);
+    lemma_run_from_stepn(s, k, 1);
+    assert(spec_run(s2, 1) == SpecOutcome::Halt(stk));
+    assert(spec_run(s, (k + 1) as nat) == SpecOutcome::Halt(stk));
+}
+
+/// Loop entry: from `R(prog, m, s)` with a valid PC, the `:!` loop drives to
+/// `post_dispatch(prog, m)` — i.e. dup/apply into `U`, swap the PC up, and run
+/// the dispatch cascade to select `body(prog, m.pc)`.
+pub proof fn lemma_enter_body(prog: MProg, m: MConf, s: SpecState)
+    requires rep(prog, m, s), m.pc < prog.code.len(),
+    ensures reaches(s, post_dispatch(prog, m)),
+{
+    reveal(compile_u);
+    let c1q = SpecValue::Quote(unary(m.c1));
+    let c2q = SpecValue::Quote(unary(m.c2));
+    let uq = SpecValue::Quote(compile_u(prog));
+    // seg 1: dup, apply (2 steps) -> cont = U = [Swap] + disp(0)
+    lemma_dup_apply(seq![c1q, c2q, SpecValue::Int(m.pc as int)], compile_u(prog), Seq::<SpecWord>::empty());
+    let sA = SpecState {
+        stack: seq![c1q, c2q, SpecValue::Int(m.pc as int), uq],
+        cont: compile_u(prog) + Seq::<SpecWord>::empty(),
+    };
+    assert(s == SpecState {
+        stack: seq![c1q, c2q, SpecValue::Int(m.pc as int)].push(uq),
+        cont: seq![w(SpecPrim::Dup), w(SpecPrim::Apply)] + Seq::<SpecWord>::empty(),
+    }) by {
+        assert(s.stack =~= seq![c1q, c2q, SpecValue::Int(m.pc as int)].push(uq));
+        assert(s.cont =~= seq![w(SpecPrim::Dup), w(SpecPrim::Apply)] + Seq::<SpecWord>::empty());
+    }
+    assert(spec_stepn(s, 2) == SpecStep::Next(sA));
+    reaches_from(s, 2, sA);
+    // seg 2: swap (1 step) -> [c1q, c2q, U, Int(pc)], cont = disp(0)
+    assert(sA.cont =~= seq![w(SpecPrim::Swap)] + disp(prog, 0));
+    let sB = SpecState {
+        stack: seq![c1q, c2q, uq, SpecValue::Int(m.pc as int)],
+        cont: disp(prog, 0),
+    };
+    assert(spec_stepn(sA, 1) == SpecStep::Next(sB)) by {
+        reveal_with_fuel(spec_stepn, 2);
+        assert(sA.cont[0] == w(SpecPrim::Swap));
+        let sB0 = spec_step(sA)->Next_0;
+        assert(sB0.stack =~= seq![c1q, c2q, uq, SpecValue::Int(m.pc as int)]);
+        assert(sB0.cont =~= disp(prog, 0));
+    }
+    reaches_from(sA, 1, sB);
+    lemma_reaches_trans(s, sA, sB);
+    // seg 3: dispatch select (6*pc+6 steps) -> body(prog, pc)
+    lemma_dispatch_select(prog, seq![c1q, c2q, uq], m.pc, 0, Seq::<SpecWord>::empty());
+    let sC = SpecState {
+        stack: seq![c1q, c2q, uq].push(SpecValue::Int(m.pc as int)),
+        cont: body(prog, m.pc) + Seq::<SpecWord>::empty(),
+    };
+    assert(sB == SpecState {
+        stack: seq![c1q, c2q, uq].push(SpecValue::Int(m.pc as int)),
+        cont: disp(prog, 0) + Seq::<SpecWord>::empty(),
+    }) by {
+        assert(sB.stack =~= seq![c1q, c2q, uq].push(SpecValue::Int(m.pc as int)));
+        assert(sB.cont =~= disp(prog, 0) + Seq::<SpecWord>::empty());
+    }
+    assert(spec_stepn(sB, (6 * m.pc + 6) as nat) == SpecStep::Next(sC));
+    reaches_from(sB, (6 * m.pc + 6) as nat, sC);
+    assert(sC == post_dispatch(prog, m)) by {
+        assert(sC.stack =~= post_dispatch(prog, m).stack);
+        assert(sC.cont =~= post_dispatch(prog, m).cont);
+    }
+    lemma_reaches_trans(s, sB, post_dispatch(prog, m));
+}
+
+/// **Lemma P5-step (lock-step correspondence).** For any reachable `m` with
+/// `R(prog, m, s)`, one Minsky step `m -> m2` corresponds to a bounded run of
+/// `spec_step`s reaching some `s2` with `R(prog, m2, s2)`. (brief §5.2)
+pub proof fn p5_lockstep(prog: MProg, m: MConf, m2: MConf, s: SpecState)
+    requires rep(prog, m, s), minsky_step(prog, m) == Some(m2),
+    ensures exists|s2: SpecState| reaches(s, s2) && rep(prog, m2, s2),
+{
+    // minsky_step Some => pc in range and the instruction is not Halt.
+    assert(m.pc < prog.code.len());
+    lemma_enter_body(prog, m, s);
+    let pd = post_dispatch(prog, m);
+    match prog.code[m.pc as int] {
+        MInstr::Inc(reg, j) => {
+            if reg {
+                lemma_body_inc_c2(prog, m, j);
+                let s2 = spec_stepn(pd, 9)->Next_0;
+                reaches_from(pd, 9, s2);
+                lemma_reaches_trans(s, pd, s2);
+                assert(rep(prog, m2, s2));
+            } else {
+                lemma_body_inc_c1(prog, m, j);
+                let s2 = spec_stepn(pd, 12)->Next_0;
+                reaches_from(pd, 12, s2);
+                lemma_reaches_trans(s, pd, s2);
+                assert(rep(prog, m2, s2));
+            }
+        }
+        MInstr::DecJz(reg, jz, nz) => {
+            if reg {
+                if m.c2 == 0 {
+                    lemma_body_decjz_c2_z(prog, m, jz, nz);
+                    let s2 = spec_stepn(pd, 10)->Next_0;
+                    reaches_from(pd, 10, s2);
+                    lemma_reaches_trans(s, pd, s2);
+                    assert(rep(prog, m2, s2));
+                } else {
+                    lemma_body_decjz_c2_nz(prog, m, jz, nz);
+                    let s2 = spec_stepn(pd, 11)->Next_0;
+                    reaches_from(pd, 11, s2);
+                    lemma_reaches_trans(s, pd, s2);
+                    assert(rep(prog, m2, s2));
+                }
+            } else {
+                if m.c1 == 0 {
+                    lemma_body_decjz_c1_z(prog, m, jz, nz);
+                    let s2 = spec_stepn(pd, 11)->Next_0;
+                    reaches_from(pd, 11, s2);
+                    lemma_reaches_trans(s, pd, s2);
+                    assert(rep(prog, m2, s2));
+                } else {
+                    lemma_body_decjz_c1_nz(prog, m, jz, nz);
+                    let s2 = spec_stepn(pd, 12)->Next_0;
+                    reaches_from(pd, 12, s2);
+                    lemma_reaches_trans(s, pd, s2);
+                    assert(rep(prog, m2, s2));
+                }
+            }
+        }
+        MInstr::Halt => {
+            assert(false);  // minsky_step would be None
+        }
+    }
+}
+
+/// **Theorem P5 (lock-step simulation).** If the Minsky machine is still running
+/// after `t` steps (`minsky_run = Some(m_t)`), then from any `s0` with
+/// `R(prog, m0, s0)` the MTL machine reaches some `s_t` with `R(prog, m_t, s_t)`.
+/// (brief §5.3) Proved by induction on `t`, composing `p5_lockstep`.
+pub proof fn p5_simulation(prog: MProg, m0: MConf, s0: SpecState, t: nat)
+    requires rep(prog, m0, s0), minsky_run(prog, m0, t) is Some,
+    ensures exists|st: SpecState|
+        reaches(s0, st) && rep(prog, minsky_run(prog, m0, t)->Some_0, st),
+    decreases t,
+{
+    if t == 0 {
+        lemma_reaches_refl(s0);
+        assert(minsky_run(prog, m0, 0) == Some(m0));
+    } else {
+        // minsky_run(m0,t) = Some => minsky_step(m0) = Some(m1) and
+        // minsky_run(m1, t-1) is Some.
+        let m1 = minsky_step(prog, m0)->Some_0;
+        assert(minsky_step(prog, m0) == Some(m1));
+        p5_lockstep(prog, m0, m1, s0);
+        let s1 = choose|s1: SpecState| reaches(s0, s1) && rep(prog, m1, s1);
+        p5_simulation(prog, m1, s1, (t - 1) as nat);
+        let st = choose|st: SpecState|
+            reaches(s1, st) && rep(prog, minsky_run(prog, m1, (t - 1) as nat)->Some_0, st);
+        lemma_reaches_trans(s0, s1, st);
+        assert(minsky_run(prog, m0, t)->Some_0 == minsky_run(prog, m1, (t - 1) as nat)->Some_0);
+    }
+}
+
 } // verus!
 
 fn main() {}
