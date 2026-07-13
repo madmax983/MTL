@@ -3,8 +3,11 @@
 //!
 //! This file discharges proof-obligation **P5** (spec §6.5, §7.3): it turns the
 //! MTL Turing-completeness *conjecture* into a *theorem* at the `spec_step`
-//! level, by exhibiting a faithful lock-step simulation of an arbitrary
-//! two-counter Minsky machine (which are classically Turing complete).
+//! level, by exhibiting a faithful bounded-stutter (multi-step) simulation of an
+//! arbitrary two-counter Minsky machine (which are classically Turing complete).
+//! One Minsky transition maps to a bounded run of `spec_step`s — `K ≈ 6*pc +
+//! loop-entry + handler`, linear in the PC (see `p5_stutter_step`) — not a
+//! literal one-to-one lock-step; the name reflects that.
 //!
 //! It is a **purely additive** proof over the FROZEN spec layer
 //! [`mtl_core`]: it introduces no new primitive and does not touch
@@ -30,6 +33,17 @@
 //!     instruction table is finite so the PC ranges over a finite set.
 //!   * The bound does **not** limit the simulation: the two counters live in
 //!     `unary(n).len()`, an unbounded `nat`.
+//!   * **Ghost casts do not truncate (item b / ghost-cast note).** The spec-level
+//!     PC and jump targets are written `SpecWord::PushInt(j as int)` — a ghost
+//!     `nat -> int` cast into MTL's *mathematical* integer, which is UNBOUNDED
+//!     and never truncates (`spec_step`'s `PushInt` pushes `Int(n)` with no
+//!     `in_i64` check; `Eq` compares mathematical ints — see `mtl_core.rs`). So
+//!     the spec-level theorem is **not** silently bounded at those casts: it
+//!     quantifies over an unbounded-`int` PC and needs NO `len(prog) <= i64::MAX`
+//!     precondition. That i64 concern is categorically distinct and lives ONLY on
+//!     the executable side (`usize -> i64` in `tests/p5_minsky.rs`), where it
+//!     bounds only the instruction-ADDRESS space and is handled by `validate_prog`
+//!     (checked conversions). Counter MAGNITUDE is never involved.
 //!   * The theorem is about the `spec_step` semantics over unbounded `Seq`. The
 //!     executable `run` (mtl_core.rs:2672) is memory-bounded like any real
 //!     machine and is not claimed to terminate — TC forbids that. All halting
@@ -49,7 +63,7 @@
 //!   * The fuel bridge: `spec_stepn` (concrete step count) ↔ `spec_run` (fuel)
 //!     composition (`lemma_run_from_stepn`) and halt monotonicity
 //!     (`lemma_run_mono`).
-//!   * The lock-step simulation theorem and the fuel-quantified halting
+//!   * The bounded-stutter (multi-step) simulation theorem and the fuel-quantified halting
 //!     correspondence assembled from the above.
 //!
 //! See the module-level `HONEST STATUS` comment near the theorems for the exact
@@ -341,6 +355,27 @@ pub proof fn lemma_inc_frag(base: Seq<SpecValue>, n: nat, rest: Seq<SpecWord>)
 
 /// Decrement/zero-test fragment `> [THEN] [ELSE] ?` (brief §3.ii/iii).
 /// The fragment word sequence, parameterized by the two branch bodies.
+///
+/// **`Uncons` is load-bearing here — its exact stack effect (item c).** Read off
+/// the frozen core `spec_step_prim` (`mtl_core.rs`, `SpecPrim::Uncons`):
+///
+///   * NON-EMPTY quote whose head is a VALUE word (`PushInt`/`PushQuote`):
+///         `[.. Quote(q)]  ->  [.. head_value, Quote(tail), Int(1)]`
+///     Result ordering (deepest → top): the decoded head value, then the
+///     `Quote` of the tail `q.subrange(1, len)`, then the flag `Int(1)`.
+///   * EMPTY quote:   `[.. Quote([])]  ->  [.. Int(0)]`   (flag `0` only; no
+///     head, no tail — the empty-case shape is a single `Int(0)`).
+///   * MALFORMED quote (head is a bare `Prim`/`Call`, not a value word):
+///         faults `TypeMismatch`. `uncons` accepts ANY quote whose head, if
+///     present, is a value word; our counters are all `PushInt(0)` markers, so
+///     the head is always a value and this fault arm is never taken.
+///   * Non-`Quote` operand → `TypeMismatch`; empty stack → `Underflow`.
+///
+/// So on a counter `Quote(unary(n))`: `n == 0` yields `Int(0)` (zero test true),
+/// `n > 0` yields `Int(0) Quote(unary(n-1)) Int(1)` (marker, decremented tail,
+/// flag). The sum-type flag (`0` vs `1`) drives the `If`; the two branches leave
+/// DIFFERENT stack shapes (empty-case vs nonempty-case) — acknowledged in spec
+/// §14.5 for the future stack-effect checker.
 pub open spec fn decjz_frag(then_q: Seq<SpecWord>, else_q: Seq<SpecWord>) -> Seq<SpecWord> {
     seq![
         SpecWord::Prim(SpecPrim::Uncons),
@@ -561,7 +596,26 @@ pub open spec fn body(prog: MProg, i: nat) -> Seq<SpecWord> {
 }
 
 /// The dispatch cascade from index `i`: a fixed finite `If`-chain, one arm per
-/// instruction index. Out-of-range PC drops `U` and halts.
+/// instruction index.
+///
+/// **Cost (item e).** The cascade is a linear comparison chain: selecting the
+/// arm for PC `pc` walks `pc - i` misses then one hit, so ONE simulated Minsky
+/// step costs `O(program length)` `spec_step`s (`6*(pc-i)+6`, see
+/// `lemma_dispatch_select`). This is adequate for universality — the bound is
+/// finite and computable — but it is quadratic-per-step, not constant.
+///
+/// **Out-of-range PC model (item d) — `finite-code Minsky machine with implicit
+/// halt outside the code domain`.** When `i >= prog.code.len()` the cascade
+/// falls through to `[Drop, Drop]`, draining `U` and the PC so the machine
+/// `Halt`s. This mirrors `minsky_step`, which returns `None` (halt) for any
+/// `pc >= code.len()`. Out-of-range PCs are therefore NOT faults — they are a
+/// deliberate, documented *implicit halt*: a `DecJz`/`Inc` jump target beyond
+/// the code is a legal way to stop. The SAME model is stated by name in the
+/// Minsky small-step (`minsky_step`), the executable compiler and reference
+/// interpreter (`tests/p5_minsky.rs`), and spec §6.4/§6.5. (The alternative —
+/// making the fallback fault — was rejected: it would break `lemma_reach_halt`,
+/// which maps every `minsky_step is None`, INCLUDING out-of-range PC, to
+/// `Halt(halt_stack)`.)
 pub open spec fn disp(prog: MProg, i: nat) -> Seq<SpecWord>
     decreases prog.code.len() - i,
 {
@@ -577,7 +631,7 @@ pub open spec fn disp(prog: MProg, i: nat) -> Seq<SpecWord>
 
 /// The loop quote `U(prog)`: bring the PC to the top, then dispatch.
 /// Opaque: the body lemmas carry `U` as an abstract value (they never look
-/// inside it); only `p5_lockstep` reveals it to enter the loop. Keeping it
+/// inside it); only `p5_stutter_step` reveals it to enter the loop. Keeping it
 /// opaque keeps the symbolic states small enough for the SMT solver.
 #[verifier::opaque]
 pub open spec fn compile_u(prog: MProg) -> Seq<SpecWord> {
@@ -1052,7 +1106,7 @@ pub proof fn lemma_body_decjz_c1_z(prog: MProg, m: MConf, jz: nat, nz: nat)
 }
 
 // ============================================================
-// 7. Composition: reachability, lock-step, simulation
+// 7. Composition: reachability, bounded-stutter step, simulation
 // ============================================================
 
 /// `reaches(s, s2)`: some finite number of `spec_step`s advances `s` to `s2`
@@ -1165,10 +1219,22 @@ pub proof fn lemma_enter_body(prog: MProg, m: MConf, s: SpecState)
     assert(spec_stepn(s, (6 * m.pc + 9) as nat) == SpecStep::Next(post_dispatch(prog, m)));
 }
 
-/// **Lemma P5-step (lock-step correspondence).** For any reachable `m` with
-/// `R(prog, m, s)`, one Minsky step `m -> m2` corresponds to a bounded run of
-/// `spec_step`s reaching some `s2` with `R(prog, m2, s2)`. (brief §5.2)
-pub proof fn p5_lockstep(prog: MProg, m: MConf, m2: MConf, s: SpecState)
+/// **Lemma P5-step (bounded-stutter / multi-step correspondence).** For any
+/// reachable `m` with `R(prog, m, s)`, one Minsky step `m -> m2` corresponds to
+/// a *bounded* run of `spec_step`s reaching some `s2` with `R(prog, m2, s2)`.
+/// (brief §5.2)
+///
+/// This is a *stuttering* (not literal one-to-one lock-step) simulation: one
+/// Minsky transition maps to `K(prog, m.pc, instr)` MTL steps, where — reading
+/// off `lemma_enter_body` (`6*pc + 9`) plus the fixed per-body cost (9..=12,
+/// see the `lemma_body_*` step counts) —
+///
+///     K(prog, pc, instr) = 6*pc + 9 + body_cost(instr),   body_cost ∈ {9,10,11,12}
+///
+/// i.e. K is **linear in the program counter** (the `6*pc` dispatch-cascade
+/// walk) plus a small constant. `p5_stutter_step_bounded` below re-exposes the
+/// existence of such a `k >= 1`; the exact `K` is surfaced here for the record.
+pub proof fn p5_stutter_step(prog: MProg, m: MConf, m2: MConf, s: SpecState)
     requires rep(prog, m, s), minsky_step(prog, m) == Some(m2),
     ensures exists|s2: SpecState| reaches(s, s2) && rep(prog, m2, s2),
 {
@@ -1229,10 +1295,10 @@ pub proof fn p5_lockstep(prog: MProg, m: MConf, m2: MConf, s: SpecState)
     }
 }
 
-/// **Theorem P5 (lock-step simulation).** If the Minsky machine is still running
+/// **Theorem P5 (bounded-stutter / multi-step simulation).** If the Minsky machine is still running
 /// after `t` steps (`minsky_run = Some(m_t)`), then from any `s0` with
 /// `R(prog, m0, s0)` the MTL machine reaches some `s_t` with `R(prog, m_t, s_t)`.
-/// (brief §5.3) Proved by induction on `t`, composing `p5_lockstep`.
+/// (brief §5.3) Proved by induction on `t`, composing `p5_stutter_step`.
 pub proof fn p5_simulation(prog: MProg, m0: MConf, s0: SpecState, t: nat)
     requires rep(prog, m0, s0), minsky_run(prog, m0, t) is Some,
     ensures exists|st: SpecState|
@@ -1247,7 +1313,7 @@ pub proof fn p5_simulation(prog: MProg, m0: MConf, s0: SpecState, t: nat)
         // minsky_run(m1, t-1) is Some.
         let m1 = minsky_step(prog, m0)->Some_0;
         assert(minsky_step(prog, m0) == Some(m1));
-        p5_lockstep(prog, m0, m1, s0);
+        p5_stutter_step(prog, m0, m1, s0);
         let s1 = choose|s1: SpecState| reaches(s0, s1) && rep(prog, m1, s1);
         p5_simulation(prog, m1, s1, (t - 1) as nat);
         let st = choose|st: SpecState|
@@ -1455,9 +1521,9 @@ pub proof fn lemma_stepn_next_run(s: SpecState, k: nat, n: nat)
     }
 }
 
-/// Lock-step with an explicit lower bound on the step count (`k >= 1`): one
+/// Bounded-stutter step with an explicit lower bound on the step count (`k >= 1`): one
 /// Minsky step costs at least one `spec_step`.
-pub proof fn p5_lockstep_steps(prog: MProg, m: MConf, m2: MConf, s: SpecState)
+pub proof fn p5_stutter_step_bounded(prog: MProg, m: MConf, m2: MConf, s: SpecState)
     requires rep(prog, m, s), minsky_step(prog, m) == Some(m2),
     ensures exists|k: nat|
         k >= 1 && spec_stepn(s, k) is Next && rep(prog, m2, spec_stepn(s, k)->Next_0),
@@ -1510,7 +1576,7 @@ pub proof fn p5_reach_steps(prog: MProg, m0: MConf, s0: SpecState, t: nat)
     } else {
         let m1 = minsky_step(prog, m0)->Some_0;
         assert(minsky_step(prog, m0) == Some(m1));
-        p5_lockstep_steps(prog, m0, m1, s0);
+        p5_stutter_step_bounded(prog, m0, m1, s0);
         let k1 = choose|k1: nat|
             k1 >= 1 && spec_stepn(s0, k1) is Next && rep(prog, m1, spec_stepn(s0, k1)->Next_0);
         let s1 = spec_stepn(s0, k1)->Next_0;
@@ -1584,9 +1650,9 @@ pub proof fn p5_halt_reverse(prog: MProg, m0: MConf, s0: SpecState)
 //   * The fuel bridge: `spec_stepn` <-> `spec_run` (`lemma_run_from_stepn`),
 //     halt monotonicity (`lemma_run_mono`), non-halt of Next-runs
 //     (`lemma_stepn_next_run`).
-//   * `p5_lockstep` (Lemma P5-step): one Minsky step <-> a bounded, R-preserving
+//   * `p5_stutter_step` (Lemma P5-step): one Minsky step <-> a bounded, R-preserving
 //     `spec_step` run — full case analysis over the 3 instruction forms.
-//   * `p5_simulation` (Theorem P5): lock-step simulation, by induction on `t`.
+//   * `p5_simulation` (Theorem P5): bounded-stutter (multi-step) simulation, by induction on `t`.
 //   * Halting correspondence, fuel-quantified, BOTH directions:
 //       - `p5_halt_forward` / `p5_halt_forward_monotone`: Minsky halts =>
 //         exists fuel N (and all N' >= N) making `spec_run` observe
@@ -1596,6 +1662,34 @@ pub proof fn p5_halt_reverse(prog: MProg, m0: MConf, s0: SpecState)
 //       - `p5_halt_reverse`: MTL halts for some fuel => Minsky halts.
 //   The `exists fuel` / `forall fuel >= N` framing is the honest replacement for
 //   the impossible "`run` terminates" (TC forbids it, spec §7.1).
+//
+// HALTING-CORRESPONDENCE DECOMPOSITION (item g) — the four requirements a
+// halting-correspondence proof needs, mapped onto the landed theorems:
+//
+//   (1) FORWARD SIMULATION — Minsky runs t steps => MTL reaches the encoded
+//       t-th config:  `p5_stutter_step` (one step) + `p5_simulation` (t steps).
+//         ensures: exists st. reaches(s0, st) && rep(prog, minsky_run(..t)->Some_0, st)
+//   (2) BOUNDARY PRESERVATION — the representation invariant `rep` holds at
+//       EVERY `[Dup, Apply]` loop boundary:  `p5_stutter_step`'s postcondition
+//       is exactly `rep(prog, m2, s2)`, re-established at each boundary; carried
+//       inductively by `p5_simulation`.
+//   (3) HALT PRESERVATION — Minsky halts => MTL halts with encoded output:
+//       `p5_halt_forward` / `p5_halt_forward_monotone`.
+//         ensures: exists n. spec_run(s0, n) == Halt(halt_stack(mfinal))
+//   (4) REFLECTION / NO-SPURIOUS-HALT — MTL halts => Minsky is (eventually)
+//       halted; MTL cannot silently terminate early at a non-halt Minsky state:
+//       `p5_halt_reverse`.
+//         requires: exists n. spec_run(s0, n) is Halt
+//         ensures : exists t. minsky_run(prog, m0, t) is None
+//       This is PROVED, not asserted by symmetry: `p5_halt_reverse` derives it
+//       through the strictly stronger DIVERGENCE theorem `p5_diverge` (Minsky
+//       diverges => every fuel `spec_run` is `FuelExhausted`, i.e. never Halt),
+//       which itself rests on `p5_reach_steps` (t Minsky steps cost k >= t MTL
+//       steps, all `Next`) and `lemma_stepn_next_run` (k all-`Next` steps =>
+//       `spec_run(_, N<=k)` is `FuelExhausted`). Contrapositive: a Halt
+//       observation forces the Minsky machine to halt. NON-VACUOUS — the
+//       `p5_diverge` chain genuinely bounds the pre-halt run length below.
+//   No paper-over: all four are genuinely covered; there is no open halting gap.
 //
 // NOT CLAIMED (out of P5 scope, per brief §6.4): (a) termination of the exec
 // `run`; (b) a general `:!` fixed-point-combinator theorem (we hand-build `U`
