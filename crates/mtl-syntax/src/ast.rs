@@ -105,12 +105,13 @@ pub fn glyph_to_prim(c: char) -> Option<Prim> {
 }
 
 /// Map a primitive to its canonical glyph. Total: every [`Prim`] has a glyph.
+///
+/// Sourced from the checked [`crate::manifest`], whose [`meta_of`] is an
+/// exhaustive match with no wildcard — so this is compile-time total with no
+/// silent `\u{FFFD}` fallback. The manifest is the single glyph source; the
+/// conformance suite asserts `GLYPHS` agrees with it.
+///
+/// [`meta_of`]: crate::manifest::meta_of
 pub fn prim_to_glyph(p: Prim) -> char {
-    GLYPHS
-        .iter()
-        .find(|&&(_, q)| q == p)
-        .map(|&(g, _)| g)
-        // Unreachable: GLYPHS covers all 23 primitives. Total fallback keeps
-        // this panic-free regardless.
-        .unwrap_or('\u{FFFD}')
+    crate::manifest::meta_of(p).glyph
 }
