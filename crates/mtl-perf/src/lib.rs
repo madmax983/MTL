@@ -19,6 +19,8 @@ pub enum Ending {
     Halt,
     Fault,
     Exhausted,
+    /// v0.4 effects: the VM suspended at a `Call`, yielding to the host.
+    Invoke,
 }
 
 /// Result of driving a VM: exact steps executed and peak `cont` length reached.
@@ -52,6 +54,9 @@ pub fn drive(mut vm: Vm, fuel: u64) -> RunStats {
             }
             Step::Fault(_) => {
                 return RunStats { steps, max_cont, final_stack: vm.stack, outcome: Ending::Fault };
+            }
+            Step::Invoke(_) => {
+                return RunStats { steps, max_cont, final_stack: vm.stack, outcome: Ending::Invoke };
             }
         }
     }
