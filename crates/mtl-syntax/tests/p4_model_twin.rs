@@ -1,24 +1,38 @@
 //! P4 differential oracle: pins the production parser/printer to an EXECUTABLE
-//! twin of the proved Verus `Seq<char>` model in `proofs/p4_verus.rs`.
+//! twin of the PROVEN Verus exec model in `proofs/p4_verus.rs`.
 //!
-//! The Verus spec functions cannot be called from cargo, so this file is a
-//! plain-Rust mirror of them — line-for-line faithful to the model's structure:
+//! The Verus exec functions cannot be called from cargo, so this file is a
+//! plain-Rust transcription of them — line-for-line faithful to the *proven*
+//! executable functions (which are themselves machine-checked to refine the
+//! `Seq<char>` spec, so twin == exec == spec on the well-formed domain):
 //!
-//!   * `twin_print`  mirrors `spec_print` = `render_h(None, toks_words(p))`
-//!     (the token-flattening + the h0 separator rule `needs_sep`).
-//!   * `twin_parse`  mirrors `spec_parse` = `group_fold(lex(cs), [[]])`
-//!     (maximal-munch lexer + the `[`/`]` quotation-stack grouper).
+//!   * `twin_print`  mirrors `exec_print` (proofs/p4_verus.rs §15, lines
+//!     ~1562), built from `exec_digits` (§15), `exec_needs_sep` (§15), and the
+//!     `emit_token`/`exec_emit_word` token-flattening. `exec_print` carries
+//!     `ensures r@ == spec_print(ewords_view(p@))`.
+//!   * `twin_lex`    mirrors `exec_lex` + `scan_digits`/`scan_name` (§17–18),
+//!     the maximal-munch tokenizer whose overflow-detection (`scan_digits`) is
+//!     the i64 bound proven equivalent to spec `lex` on the in-range domain.
+//!   * `twin_group`  mirrors `exec_group` (§20), the `[`/`]` quotation-stack
+//!     grouper folded from the initial `[[]]` state.
+//!   * `twin_parse`  mirrors `exec_parse` (§21): `exec_group(exec_lex(cs), [[]])`.
 //!
-//! The proptests then assert that PRODUCTION `print`/`parse` agree with this
-//! independent oracle. This is the P2 oracle-pin pattern applied to P4: the
-//! machine-checked model (proofs/p4_verus.rs) states the theorem; these tests
-//! pin the real Rust code to that same model.
+//! The proven exec round-trip `exec_roundtrip` (§22) states
+//! `exec_parse(exec_print(p)) == Ok(p)` for every `p : Vec<EWord>`; the
+//! `production_roundtrip` proptest below is its executable analogue on real
+//! production `parse`/`print`.
 //!
-//! NOTE on integers: the Verus model treats a digit run as an unbounded natural
-//! (round-trip holds for every n >= 0). The executable twin additionally applies
-//! production's i64 bound (a digit run that overflows i64 is an error), so the
-//! twin matches production byte-for-byte on ALL strings while coinciding with
-//! the model on the well-formed domain (values 0..=i64::MAX).
+//! This is the P2 oracle-pin pattern applied to P4: the machine-checked model
+//! (proofs/p4_verus.rs) states the theorem; these tests pin the real Rust code
+//! to that same PROVEN exec surface across many thousands of random cases plus
+//! deterministic adversarial boundary/malformed inputs.
+//!
+//! NOTE on integers: the Verus spec treats a digit run as an unbounded natural
+//! (round-trip holds for every n >= 0). The proven exec functions (and this
+//! twin) additionally apply production's i64 bound (a digit run that overflows
+//! i64 is an error — `scan_digits` returns `None`/`LOverflow`), so the twin
+//! matches production byte-for-byte on ALL strings while coinciding with the
+//! spec on the well-formed domain (values 0..=i64::MAX).
 
 use mtl_syntax::ast::{glyph_to_prim, prim_to_glyph, Prim};
 use mtl_syntax::{parse, print, Word};
@@ -258,12 +272,32 @@ fn program_strategy() -> impl Strategy<Value = Vec<Word>> {
 }
 
 proptest! {
+    // Widened coverage: run every property on many thousands of cases per test.
+    // At ~20k cases the three proptests below explore far more of the
+    // print/lex/group state space than the default 256 while keeping the crate's
+    // `cargo test` wall-clock comfortably under the 2-minute budget.
+    #![proptest_config(ProptestConfig::with_cases(20_000))]
+
     /// Printer pin: production `print` equals the model twin, byte-for-byte,
     /// over the whole well-formed domain (all 23 glyphs, nested quotes, the h0
     /// separator cases, integer boundaries).
     #[test]
     fn twin_print_matches_production(p in program_strategy()) {
         prop_assert_eq!(print(&p), twin_print(&p));
+    }
+
+    /// Executable analogue of the proven `exec_roundtrip` (§22):
+    /// `parse(print(p)) == Ok(p)` for every generated well-formed program.
+    /// Also pins production `print` to the twin on the same program.
+    #[test]
+    fn production_roundtrip(p in program_strategy()) {
+        let s = print(&p);
+        prop_assert_eq!(s.clone(), twin_print(&p));
+        prop_assert_eq!(parse(&s).map_err(|_| ()), Ok(p.clone()));
+        // print is idempotent on its own canonical output: printing the parsed
+        // AST reproduces the string byte-for-byte.
+        let reparsed = parse(&s).expect("wf program must reparse");
+        prop_assert_eq!(print(&reparsed), s);
     }
 
     /// Parser pin (canonical forms): the model twin recovers the AST from the
@@ -322,5 +356,224 @@ fn twin_spot_checks() {
         assert_eq!(print(&prog), s.clone());
         assert_eq!(twin_parse(&s), Ok(prog.clone()));
         assert_eq!(parse(&s).map_err(|_| ()), Ok(prog));
+    }
+}
+
+// ==================================================================
+// ADVERSARIAL / BOUNDARY suite (deterministic).
+//
+// Every case asserts that production and the proven-exec twin agree on BOTH the
+// accept/reject partition AND the exact parsed AST / error class (`Err(())` is
+// the single error class production and twin collapse to). Where a program is
+// involved we additionally pin production `print` to the twin, byte-for-byte.
+// ==================================================================
+
+/// Assert production `parse` and the twin agree exactly on a string: same
+/// accept/reject decision and, on accept, the identical AST.
+fn agree_parse(s: &str) {
+    assert_eq!(
+        parse(s).map_err(|_| ()),
+        twin_parse(s),
+        "parse partition/AST disagreement on {s:?}"
+    );
+}
+
+/// Assert production `print` and the twin agree byte-for-byte on a program.
+fn agree_print(p: &[Word]) {
+    assert_eq!(print(p), twin_print(p), "print disagreement on {p:?}");
+}
+
+#[test]
+fn adversarial_i64_boundaries() {
+    // i64::MAX and MAX-adjacent literals: the largest values that still fit.
+    let max = i64::MAX; // 9_223_372_036_854_775_807  (19 digits)
+    for n in [0i64, 1, 9, 10, max - 1, max] {
+        let prog = vec![Word::PushInt(n)];
+        agree_print(&prog);
+        let s = print(&prog);
+        agree_parse(&s);
+        assert_eq!(parse(&s).map_err(|_| ()), Ok(prog));
+    }
+
+    // Exact-fit and just-over literals as raw source strings (maximal munch of
+    // the digit run + the scan_digits overflow boundary).
+    agree_parse("9223372036854775807"); // == i64::MAX  -> Ok
+    agree_parse("9223372036854775808"); // == i64::MAX+1 -> overflow -> Err
+    assert_eq!(parse("9223372036854775807").map_err(|_| ()), Ok(vec![Word::PushInt(max)]));
+    assert!(parse("9223372036854775808").is_err());
+    assert_eq!(twin_parse("9223372036854775808"), Err(()));
+
+    // Digit runs of length 19 (may fit) and 20 (always overflows), straddling
+    // the i64 bound. The all-nines 19-run overflows; the all-zeros run is 0.
+    agree_parse("9999999999999999999"); // 19 nines  > i64::MAX -> Err
+    agree_parse("1000000000000000000"); // 19 digits < i64::MAX -> Ok
+    agree_parse("10000000000000000000"); // 20 digits -> overflow -> Err
+    agree_parse("00000000000000000000"); // 20 zeros  -> value 0 fits -> Ok
+    // Leading-zero padded max (still parses to i64::MAX).
+    agree_parse("009223372036854775807");
+    // A very long digit run cannot possibly fit.
+    agree_parse(&"9".repeat(40));
+
+    // Adjacent-in-stream literals (space-separated) around the boundary.
+    agree_parse("9223372036854775807 9223372036854775808");
+    agree_parse("9223372036854775806 1 2");
+}
+
+#[test]
+fn adversarial_i64_min_printing() {
+    // i64::MIN and negative ints are outside the parser's image but the printer
+    // must render them totally (leading `-` + unsigned magnitude). Pin print,
+    // then confirm re-parsing the printed form lands in the SAME partition for
+    // production and twin (the `-` lexes as Sub; the magnitude of MIN overflows).
+    for n in [i64::MIN, i64::MIN + 1, -1, -9, -10, -9223372036854775807] {
+        let prog = vec![Word::PushInt(n)];
+        agree_print(&prog);
+        let s = print(&prog);
+        agree_parse(&s);
+    }
+
+    // i64::MIN specifically prints as "-9223372036854775808"; re-parsing gives
+    // Sub then an overflowing magnitude -> Err for both production and twin.
+    let min_prog = vec![Word::PushInt(i64::MIN)];
+    assert_eq!(print(&min_prog), "-9223372036854775808");
+    assert_eq!(twin_print(&min_prog), "-9223372036854775808");
+    assert!(parse("-9223372036854775808").is_err());
+    assert_eq!(twin_parse("-9223372036854775808"), Err(()));
+
+    // -1 prints "-1" and re-parses as [Sub, PushInt(1)] for both.
+    let neg_prog = vec![Word::PushInt(-1)];
+    assert_eq!(print(&neg_prog), "-1");
+    agree_parse("-1");
+    assert_eq!(
+        twin_parse("-1"),
+        Ok(vec![Word::Prim(Prim::Sub), Word::PushInt(1)])
+    );
+}
+
+#[test]
+fn adversarial_name_digit_adjacency() {
+    // Names ending in every digit h0..h9, each followed by an int literal: the
+    // h0 boundary rule (needs_sep after a Name whose successor is a digit) must
+    // insert exactly one space so the round-trip is exact.
+    for d in 0u8..=9 {
+        let name = vec!['h', (b'0' + d) as char];
+        let prog = vec![Word::Call(name.clone()), Word::PushInt(7)];
+        agree_print(&prog);
+        let s = print(&prog);
+        // Must be separated: "hN 7".
+        assert_eq!(s, format!("h{d} 7"));
+        agree_parse(&s);
+        assert_eq!(parse(&s).map_err(|_| ()), Ok(prog));
+
+        // Int-then-name needs NO space (int stops at a letter): "7hN".
+        let prog2 = vec![Word::PushInt(7), Word::Call(name.clone())];
+        agree_print(&prog2);
+        assert_eq!(print(&prog2), format!("7h{d}"));
+
+        // Name-then-name needs a space (would otherwise merge): "hN hN".
+        let prog3 = vec![Word::Call(name.clone()), Word::Call(name.clone())];
+        agree_print(&prog3);
+        let s3 = print(&prog3);
+        agree_parse(&s3);
+        assert_eq!(parse(&s3).map_err(|_| ()), Ok(prog3));
+    }
+}
+
+#[test]
+fn adversarial_deep_nesting() {
+    // Deeply nested quotations: [[[...[]...]]] to depth 64.
+    for depth in [1usize, 2, 8, 32, 64] {
+        let mut prog = vec![Word::PushInt(0)];
+        for _ in 0..depth {
+            prog = vec![Word::PushQuote(prog)];
+        }
+        agree_print(&prog);
+        let s = print(&prog);
+        agree_parse(&s);
+        assert_eq!(parse(&s).map_err(|_| ()), Ok(prog.clone()));
+        // The printed form is exactly `depth` opens, then "0", then `depth` closes.
+        assert_eq!(s, format!("{}0{}", "[".repeat(depth), "]".repeat(depth)));
+    }
+
+    // Empty nested quotations of increasing depth, e.g. "[[[]]]".
+    for depth in [1usize, 2, 16, 48] {
+        let mut prog = vec![];
+        for _ in 0..depth {
+            prog = vec![Word::PushQuote(prog)];
+        }
+        agree_print(&prog);
+        let s = print(&prog);
+        agree_parse(&s);
+        assert_eq!(parse(&s).map_err(|_| ()), Ok(prog));
+    }
+}
+
+#[test]
+fn adversarial_empty_and_whitespace() {
+    // Empty program prints to "" and parses back to [].
+    let empty: Vec<Word> = vec![];
+    agree_print(&empty);
+    assert_eq!(print(&empty), "");
+    agree_parse("");
+    assert_eq!(parse("").map_err(|_| ()), Ok(vec![]));
+
+    // Whitespace-only and whitespace-collapsing inputs: all forms of ws are
+    // skipped identically by production and twin.
+    for s in [
+        " ", "   ", "\t", "\n", "\r", "\r\n", " \t\n\r ", "  1  2  ", "\t1\n2\r3",
+        "  [  1  2  ]  ", "1\n\n\n2", " : ~ + ",
+    ] {
+        agree_parse(s);
+    }
+    // Collapsing: many spaces between two ints parse to the same AST as one.
+    assert_eq!(
+        parse("1          2").map_err(|_| ()),
+        parse("1 2").map_err(|_| ())
+    );
+    assert_eq!(twin_parse("1          2"), twin_parse("1 2"));
+}
+
+#[test]
+fn adversarial_malformed_inputs() {
+    // Every malformed / rejected input: production and twin must agree it is
+    // rejected (Err) — same reject partition, single error class.
+    let rejects = [
+        "[",            // unclosed open
+        "[[",           // two unclosed opens
+        "]",            // stray close
+        "]]",           // two stray closes
+        "1]",           // close with nothing open
+        "[1",           // unclosed with content
+        "[1]]",         // extra close
+        "[[1]",         // missing close
+        "\"",           // bare double-quote (unsupported char)
+        "\"abc\"",      // quoted string (unsupported)
+        "#",            // hash (unsupported char)
+        "# comment",    // hash-comment (unsupported)
+        "1 # 2",        // hash mid-stream
+        "A",            // uppercase (not a namechar and not a glyph)
+        "Abc",          // uppercase-led name
+        "aBc",          // uppercase mid-name
+        "\u{00e9}",     // multibyte 'é'
+        "a\u{00e9}",    // name then 'é'
+        "\u{1F600}",    // multibyte '😀'
+        "[\u{1F600}]",  // emoji inside quote
+        "1\u{00e9}2",   // 'é' between ints
+        "`",            // backtick (unsupported)
+        "{",            // brace (unsupported)
+        "}",            // brace (unsupported)
+        "\\",           // backslash (unsupported)
+    ];
+    for s in rejects {
+        agree_parse(s);
+        assert!(parse(s).is_err(), "expected production reject for {s:?}");
+        assert_eq!(twin_parse(s), Err(()), "expected twin reject for {s:?}");
+    }
+
+    // A few well-formed inputs interleaved to confirm agree_parse also pins
+    // ACCEPTED cases (not just rejects).
+    for s in ["[]", "[1]", "1 2 3", ":~+", "[[1]2]", "abc 1", "[a][b]"] {
+        agree_parse(s);
+        assert!(parse(s).is_ok(), "expected production accept for {s:?}");
     }
 }
