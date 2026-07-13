@@ -1,0 +1,30 @@
+{
+  "note": "Arm-B is one fixed framing prompt + one tiny completion per task. Token cost of Arm B ~= tokens(completion). The framing_prompt equals the shared task statement both arms receive.",
+  "tasks": [
+    {
+      "task": "a",
+      "arm_b_framing_prompt": "MTL search task (a) — Halting constant.\n\nConsider the MTL program\n\n    k:*15087-\n\nwhich means: push the integer k, dup, multiply (so k*k is on the stack),\npush 15087, subtract (leaving k*k - 15087). Find the single integer\nk in [0, 65536) for which this program halts with the operand stack equal\nto [42] (equivalently, k such that k*k - 15087 == 42).\n\nDeliverable: a complete MTL program of the form `<k>:*15087-` with your k\nfilled in that, run through mtlrun, prints exactly:\n\n    HALT: 42\n",
+      "arm_b_completion": "space: k in [0,65536); program template: k:*15087- ; target stack: [42]"
+    },
+    {
+      "task": "b",
+      "arm_b_framing_prompt": "MTL search task (b) — Operator-sequence synthesis.\n\nStart stack: [3 5] (bottom 3, top 5). Target stack: [64].\n\nAlphabet: the 5 primitives\n    add '+'   sub '-'   mul '*'   dup ':'   swap '~'\nA program is a sequence of these glyphs of length at most 6.\n\nFind a program P such that the MTL program `3 5` followed by P halts with\nthe operand stack equal to [64].\n\nDeliverable: the full MTL program `3 5<P>` that, run through mtlrun, prints\nexactly:\n\n    HALT: 64\n",
+      "arm_b_completion": "start stack: [3 5]; alphabet: + - * : ~ ; program length <= 6; target stack: [64]"
+    },
+    {
+      "task": "c",
+      "arm_b_framing_prompt": "MTL search task (c) — Loop coefficients.\n\nConsider the loop  x := a*x + b,  started at x0 = 1 and repeated n times.\nFind integers (a, b, n) with\n\n    a in [1, 8],   b in [-8, 8],   n in [1, 16]\n\nsuch that the final value x equals 1000.\n\nEmit the answer as an MTL program using Times ('.'):\n\n    1 <n>[<a>*<b>+].\n\nThat is: push 1 (x0), push n, push the quote [a * b +] (multiply by a then\nadd b), then Times runs the quote n times. For negative b use '-' instead\nof '+' (e.g. b = -3 becomes `3-`); for b = 0 omit the add entirely.\n\nDeliverable: the full MTL program that, run through mtlrun, prints exactly:\n\n    HALT: 1000\n",
+      "arm_b_completion": "loop x:=a*x+b from x0=1 repeated n times; a in [1,8], b in [-8,8], n in [1,16]; emit as 1 n[a*b+]. ; target x = 1000 (stack [1000])"
+    },
+    {
+      "task": "d",
+      "arm_b_framing_prompt": "MTL search task (d) — Reachability puzzle.\n\nStarting from 1, reach 100 using the operations {+3, ×2, −1} in at most\n12 moves. As MTL glyphs:\n\n    +3  is  `3+`      (push 3, add)\n    ×2  is  `2*`      (push 2, multiply)\n    −1  is  `1-`      (push 1, subtract)\n\nFind a sequence S of at most 12 such ops so that the MTL program `1`\nfollowed by S halts with the operand stack equal to [100].\n\nDeliverable: the full MTL program `1<S>` that, run through mtlrun, prints\nexactly:\n\n    HALT: 100\n",
+      "arm_b_completion": "start: 1; ops: 3+ (=+3), 2* (=x2), 1- (=-1); at most 12 moves; target stack: [100]"
+    },
+    {
+      "task": "e",
+      "arm_b_framing_prompt": "MTL search task (e) — Stack routing (reversal).\n\nStart stack: [1 2 3 4] (bottom 1, top 4). Target stack: [4 3 2 1]\n(the full reversal).\n\nAlphabet: the 5 primitives\n    swap '~'   rot '@'   over '^'   drop '_'   dup ':'\nA program is a sequence of these glyphs of length at most 8.\n\nFind a program P such that the MTL program `1 2 3 4` followed by P halts\nwith the operand stack equal to [4 3 2 1].\n\nDeliverable: the full MTL program `1 2 3 4<P>` that, run through mtlrun,\nprints exactly:\n\n    HALT: 4 3 2 1\n",
+      "arm_b_completion": "start stack: [1 2 3 4]; alphabet: ~ @ ^ _ : ; program length <= 8; target stack: [4 3 2 1]"
+    }
+  ]
+}
