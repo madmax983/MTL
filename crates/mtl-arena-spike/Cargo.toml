@@ -1,0 +1,20 @@
+[package]
+name = "mtl-arena-spike"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "SPIKE / NON-PRODUCTION arena-backend measurement vehicle for the MTL v0.5 refactor design. Validated only by a differential oracle vs the reference interpreter."
+
+# The library itself is dependency-free and self-contained: it mirrors the AST
+# shapes locally so the arena VM stands alone. `mtl-core` (the reference
+# interpreter, the oracle of truth) and `mtl-perf` (the canonical PERF-BASELINE
+# scenario builders + corpus) are dev-dependencies, available to the oracle test
+# and the measurement example without coupling the arena backend to them.
+[dependencies]
+
+[dev-dependencies]
+mtl-core = { path = "../mtl-core" }
+mtl-perf = { path = "../mtl-perf" }
+
+[lib]
+bench = false
