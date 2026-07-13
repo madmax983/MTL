@@ -67,6 +67,7 @@ pub enum SpecStep {
     Next(SpecState),
     Halt(Seq<SpecValue>),
     Fault(Error),
+    Invoke(Seq<char>, Seq<SpecValue>, Seq<SpecWord>),   // (name, stack snapshot, continuation `rest`)
 }
 
 // ------------------------------------------------------------
@@ -153,10 +154,12 @@ pub open spec fn spec_step(s: SpecState) -> SpecStep {
                 cont: rest,
             }),
             SpecWord::Prim(p) => spec_step_prim(s.stack, p, rest),
-            SpecWord::Call(_) =>
-                // Core semantics: unknown. Host binding is a trusted
-                // boundary outside the verified core (spec §8).
-                SpecStep::Fault(Error::UnknownWord),
+            SpecWord::Call(name) =>
+                // v0.4 effects: every Call yields to the host (spec §8.2).
+                // Terminal-within-a-run: carry the immutable stack snapshot and
+                // the continuation `rest` (the tail AFTER the consumed Call).
+                // The core does NOT distinguish bound vs unbound names.
+                SpecStep::Invoke(name, s.stack, rest),
         }
     }
 }
@@ -668,7 +671,7 @@ pub struct Vm {
     pub cont: Vec<Word>,
 }
 
-pub enum StepResult { Next, Halt, Fault(Error) }
+pub enum StepResult { Next, Halt, Fault(Error), Invoke(Vec<char>) }
 
 // ------------------------------------------------------------
 // Deep view of the exec machine state into the ghost model.
@@ -838,6 +841,7 @@ pub enum Outcome {
     Halt(Vec<Value>),
     Fault(Error),
     FuelExhausted,
+    Invoke(Vec<char>, Vec<Value>, Vec<Word>),   // (name, stack snapshot, continuation)
 }
 
 // ============================================================
@@ -863,6 +867,10 @@ pub fn exec_step(vm: &mut Vm) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Halt(_) => r is Halt,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Invoke(name, stk, cont) =>
+                r is Invoke
+                && r->Invoke_0@ == name
+                && final(vm).deep_view() == (SpecState { stack: stk, cont: cont }),
         },
 {
     // Faithful mirror of spec_step / spec_step_prim (see crate::interp for the
@@ -905,7 +913,16 @@ pub fn exec_step(vm: &mut Vm) -> (r: StepResult)
             }
             StepResult::Next
         }
-        Word::Call(_) => StepResult::Fault(Error::UnknownWord),
+        Word::Call(cs) => {
+            // v0.4 effects: yield. Stack unchanged (Call consumes nothing);
+            // drop the Call word so cont becomes `rest`. Mirrors spec_step.
+            vm.cont.remove(0);
+            proof {
+                assert(vm.cont@ =~= c0.subrange(1, c0.len() as int));
+                assert(vm.stack@ =~= s0);
+            }
+            StepResult::Invoke(cs)
+        }
         Word::Prim(p) => {
             // exec_prim's precondition: n == stack.len(), cont non-empty,
             // cont[0] views as Prim(p). Its ensures is exactly the Prim arm of
@@ -933,6 +950,7 @@ pub fn exec_prim(vm: &mut Vm, p: SpecPrim, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -981,6 +999,7 @@ pub fn exec_dup(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1012,6 +1031,7 @@ pub fn exec_drop(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1039,6 +1059,7 @@ pub fn exec_swap(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1082,6 +1103,7 @@ pub fn exec_rot(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1133,6 +1155,7 @@ pub fn exec_over(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1165,6 +1188,7 @@ pub fn exec_apply(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1206,6 +1230,7 @@ pub fn exec_cat(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1257,6 +1282,7 @@ pub fn exec_cons(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1311,6 +1337,7 @@ pub fn exec_dip(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1363,6 +1390,7 @@ pub fn exec_if(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1419,6 +1447,7 @@ pub fn exec_xor(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1524,6 +1553,7 @@ pub fn exec_primrec(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1704,6 +1734,7 @@ pub fn exec_times(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -1892,6 +1923,7 @@ pub fn exec_linrec(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -2022,6 +2054,7 @@ pub fn exec_uncons(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -2109,6 +2142,7 @@ pub fn exec_fold(vm: &mut Vm, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -2284,6 +2318,7 @@ pub fn exec_arith(vm: &mut Vm, p: SpecPrim, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -2486,6 +2521,7 @@ pub fn exec_divmod(vm: &mut Vm, is_div: bool, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -2582,6 +2618,7 @@ pub fn exec_cmp(vm: &mut Vm, is_eq: bool, n: usize) -> (r: StepResult)
             SpecStep::Next(s2) => r is Next && final(vm).deep_view() == s2,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
             SpecStep::Halt(_) => false,
+            SpecStep::Invoke(..) => false,
         }
     }),
 {
@@ -2648,6 +2685,7 @@ pub enum SpecOutcome {
     Halt(Seq<SpecValue>),
     Fault(Error),
     FuelExhausted,
+    Invoke(Seq<char>, Seq<SpecValue>, Seq<SpecWord>),
 }
 
 pub open spec fn spec_run(s: SpecState, fuel: nat) -> SpecOutcome
@@ -2659,6 +2697,7 @@ pub open spec fn spec_run(s: SpecState, fuel: nat) -> SpecOutcome
         match spec_step(s) {
             SpecStep::Halt(stk) => SpecOutcome::Halt(stk),
             SpecStep::Fault(e) => SpecOutcome::Fault(e),
+            SpecStep::Invoke(name, stk, cont) => SpecOutcome::Invoke(name, stk, cont),
             SpecStep::Next(s2) => spec_run(s2, (fuel - 1) as nat),
         }
     }
@@ -2675,6 +2714,11 @@ pub fn run(vm: &mut Vm, fuel: u64) -> (res: Outcome)
             SpecOutcome::Halt(stk) => res is Halt && view_stack((res->Halt_0)@) == stk,
             SpecOutcome::Fault(e) => res == Outcome::Fault(e),
             SpecOutcome::FuelExhausted => res is FuelExhausted,
+            SpecOutcome::Invoke(name, stk, cont) =>
+                res is Invoke
+                && res->Invoke_0@ == name
+                && view_stack((res->Invoke_1)@) == stk
+                && view_words((res->Invoke_2)@) == cont,
         },
 {
     let ghost s0 = old(vm).deep_view();
@@ -2733,6 +2777,30 @@ pub fn run(vm: &mut Vm, fuel: u64) -> (res: Outcome)
                 }
                 return Outcome::Fault(e);
             }
+            StepResult::Invoke(name) => {
+                let ghost sp = spec_step(pre);
+                proof {
+                    assert((fuel - steps) as nat >= 1);
+                    assert(sp is Invoke);
+                    assert(spec_run(pre, (fuel - steps) as nat)
+                        == SpecOutcome::Invoke(sp->Invoke_0, sp->Invoke_1, sp->Invoke_2));
+                    assert(spec_run(s0, fuel as nat)
+                        == SpecOutcome::Invoke(sp->Invoke_0, sp->Invoke_1, sp->Invoke_2));
+                }
+                // exec_step left vm.stack == snapshot (sp->Invoke_1) and
+                // vm.cont == rest (sp->Invoke_2); drain both into the outcome.
+                let ghost vm_stack_pre = vm.stack@;
+                let ghost vm_cont_pre = vm.cont@;
+                let mut out_stack: Vec<Value> = Vec::new();
+                out_stack.append(&mut vm.stack);
+                let mut out_cont: Vec<Word> = Vec::new();
+                out_cont.append(&mut vm.cont);
+                proof {
+                    assert(out_stack@ =~= vm_stack_pre);
+                    assert(out_cont@ =~= vm_cont_pre);
+                }
+                return Outcome::Invoke(name, out_stack, out_cont);
+            }
         }
     }
     proof {
@@ -2753,7 +2821,8 @@ pub proof fn p3_progress(s: SpecState)
     ensures
         spec_step(s) is Next
         || spec_step(s) is Halt
-        || spec_step(s) is Fault,
+        || spec_step(s) is Fault
+        || spec_step(s) is Invoke,
 {
 }
 
@@ -3094,6 +3163,9 @@ pub proof fn p2_refinement(vm: Vm, vm2: Vm, r: StepResult)
             SpecStep::Next(s2) => r is Next && vm2.deep_view() == s2,
             SpecStep::Halt(_) => r is Halt,
             SpecStep::Fault(e) => r == StepResult::Fault(e),
+            SpecStep::Invoke(name, stk, cont) =>
+                r is Invoke && r->Invoke_0@ == name
+                && vm2.deep_view() == (SpecState { stack: stk, cont: cont }),
         },
     ensures
         // FAULT iff, with error equality.
@@ -3102,6 +3174,15 @@ pub proof fn p2_refinement(vm: Vm, vm2: Vm, r: StepResult)
             ==> r == StepResult::Fault(spec_step(vm.deep_view())->Fault_0),
         // HALT iff.
         (r is Halt) <==> (spec_step(vm.deep_view()) is Halt),
+        // INVOKE iff, with name + snapshot/cont equality.
+        (r is Invoke) <==> (spec_step(vm.deep_view()) is Invoke),
+        (spec_step(vm.deep_view()) is Invoke)
+            ==> (r is Invoke
+                 && r->Invoke_0@ == spec_step(vm.deep_view())->Invoke_0
+                 && vm2.deep_view() == (SpecState {
+                        stack: spec_step(vm.deep_view())->Invoke_1,
+                        cont: spec_step(vm.deep_view())->Invoke_2,
+                    })),
         // NEXT: exec advances and the post-state deep_view PINS the spec successor.
         (spec_step(vm.deep_view()) is Next)
             ==> (r is Next && vm2.deep_view() == spec_step(vm.deep_view())->Next_0),
@@ -3111,6 +3192,7 @@ pub proof fn p2_refinement(vm: Vm, vm2: Vm, r: StepResult)
                 match spec_step(vm.deep_view()) {
                     SpecStep::Halt(stk) => SpecOutcome::Halt(stk),
                     SpecStep::Fault(e) => SpecOutcome::Fault(e),
+                    SpecStep::Invoke(name, stk, cont) => SpecOutcome::Invoke(name, stk, cont),
                     SpecStep::Next(_) => spec_run(vm2.deep_view(), fuel),
                 }),
 {
@@ -3122,6 +3204,7 @@ pub proof fn p2_refinement(vm: Vm, vm2: Vm, r: StepResult)
             match spec_step(vm.deep_view()) {
                 SpecStep::Halt(stk) => SpecOutcome::Halt(stk),
                 SpecStep::Fault(e) => SpecOutcome::Fault(e),
+                SpecStep::Invoke(name, stk, cont) => SpecOutcome::Invoke(name, stk, cont),
                 SpecStep::Next(_) => spec_run(vm2.deep_view(), fuel),
             }) by {
         // `spec_run(s, fuel+1)` unfolds (fuel+1 > 0) to a match on

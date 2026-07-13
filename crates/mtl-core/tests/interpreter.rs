@@ -30,6 +30,8 @@ mod oracle {
         Next { stack: Vec<Value>, cont: Vec<Word> },
         Halt(Vec<Value>),
         Fault(Fault),
+        // v0.4 effects: a Call yields to the host, carrying (name, stack, cont).
+        Invoke { name: String, stack: Vec<Value>, cont: Vec<Word> },
     }
 
     fn in_i64(n: i128) -> bool {
@@ -61,7 +63,11 @@ mod oracle {
                 s.push(Value::Quote(q.clone()));
                 RefStep::Next { stack: s, cont: rest }
             }
-            Word::Call(_) => RefStep::Fault(Fault::UnknownWord),
+            Word::Call(name) => RefStep::Invoke {
+                name: name.clone(),
+                stack: stack.to_vec(),
+                cont: rest,
+            },
             Word::Prim(p) => ref_prim(stack, *p, rest),
         }
     }
@@ -452,6 +458,9 @@ mod oracle {
                         stack,
                         cont,
                     })
+                }
+                RefStep::Invoke { name, stack: s, cont: c } => {
+                    return Outcome::Invoke { name, stack: s, cont: c }
                 }
             }
         }
@@ -1435,12 +1444,38 @@ mod boundary {
     }
 
     #[test]
-    fn unknown_word_faults_with_state() {
-        // Call in the pure v0.1 core -> UnknownWord (spec §8), state carried.
-        let fi = expect_fault(vec![i(1)], vec![int(2), call("emit")]);
-        assert_eq!(fi.fault, Fault::UnknownWord);
-        assert_eq!(fi.stack, vec![i(1), i(2)]);
-        assert_eq!(fi.cont, vec![call("emit")]); // faulting word at cont[0]
+    fn call_yields_invoke_with_snapshot() {
+        // v0.4 effects: executing a Call yields to the host (spec §8.2) instead
+        // of faulting. The stack snapshot is carried unchanged; the Call word is
+        // consumed, so cont is the tail after it (empty here). Mirrors
+        // SpecStep::Invoke / Outcome::Invoke in mtl_core.rs.
+        let out = run(Vm::with_stack(vec![i(1)], vec![int(2), call("emit")]), FUEL);
+        match out {
+            Outcome::Invoke { name, stack, cont } => {
+                assert_eq!(name, "emit".to_string());
+                assert_eq!(stack, vec![i(1), i(2)]); // full unchanged snapshot
+                assert!(cont.is_empty()); // Call consumed; nothing after it
+            }
+            other => panic!("expected Invoke, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn call_invoke_carries_continuation() {
+        // The continuation AFTER the Call is carried verbatim, so a host runner
+        // can re-seed a fresh run from it.
+        let out = run(
+            Vm::with_stack(vec![], vec![int(7), call("read"), int(9), add()]),
+            FUEL,
+        );
+        match out {
+            Outcome::Invoke { name, stack, cont } => {
+                assert_eq!(name, "read".to_string());
+                assert_eq!(stack, vec![i(7)]);
+                assert_eq!(cont, vec![int(9), add()]);
+            }
+            other => panic!("expected Invoke, got {:?}", other),
+        }
     }
 }
 
@@ -1692,6 +1727,14 @@ mod differential {
                         stack = ns;
                         cont = nc;
                     }
+                    oracle::RefStep::Invoke { name, stack: ns, cont: nc } => {
+                        // v0.4 effects: exec yields Invoke(name) with the stack
+                        // unchanged and the Call word consumed from cont.
+                        prop_assert_eq!(st, Step::Invoke(name));
+                        prop_assert_eq!(&vm.stack, &ns);
+                        prop_assert_eq!(&vm.cont, &nc);
+                        break;
+                    }
                 }
             }
         }
@@ -1717,7 +1760,7 @@ mod differential {
         ) {
             let (st, _vm) = exec_once(init_stack, prog);
             match st {
-                Step::Next | Step::Halt | Step::Fault(_) => {}
+                Step::Next | Step::Halt | Step::Fault(_) | Step::Invoke(_) => {}
             }
         }
     }

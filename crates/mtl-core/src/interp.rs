@@ -66,8 +66,11 @@ pub enum Word {
     PushInt(i64),
     PushQuote(Vec<Word>),
     Prim(Prim),
-    /// Host capability / definition name. In the pure v0.1 core this always
-    /// faults with `UnknownWord` (spec §8) — no host/dictionary machinery.
+    /// Host capability / definition name. v0.4 effects: executing a `Call`
+    /// yields `Step::Invoke(name)` to the host (spec §8.2) — the pure core has
+    /// no host/dictionary machinery and does not distinguish bound vs unbound
+    /// names. `Fault::UnknownWord` is retained in the enum but unreachable from
+    /// the `Call` path.
     Call(String),
 }
 
@@ -124,11 +127,18 @@ impl Vm {
 /// direct tag/state equality. The *machine state at the fault* (stack + remaining
 /// continuation) is carried by [`Outcome::Fault`] instead (see below), which is
 /// what an LLM writer needs to self-correct.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// v0.4 effects: `Invoke(name)` is the fourth outcome — a `Call(name)` word
+/// yields to the host instead of faulting. It carries the capability name;
+/// the `Call` word is consumed by `exec_step` and the stack is left unchanged
+/// (mirrors `SpecStep::Invoke` in `mtl_core.rs`). Because it carries an owned
+/// `String`, `Step` is no longer `Copy`.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Step {
     Next,
     Halt,
     Fault(Fault),
+    Invoke(String),
 }
 
 /// A fault together with the machine state captured at the moment of the fault.
@@ -156,6 +166,15 @@ pub enum Outcome {
     /// Fuel ran out before Halt/Fault. Carries the live machine state so
     /// execution could be resumed with more fuel.
     FuelExhausted { stack: Vec<Value>, cont: Vec<Word> },
+    /// v0.4 effects: a `Call(name)` word yielded to the host. Carries the
+    /// capability name, the stack snapshot at the yield point, and the
+    /// continuation (the tail AFTER the consumed `Call`), so a host runner can
+    /// service the capability and re-seed a fresh `run` from `cont`.
+    Invoke {
+        name: String,
+        stack: Vec<Value>,
+        cont: Vec<Word>,
+    },
 }
 
 /// `value_to_word`: the reification used by `cons` and `dip`. Mirrors
@@ -200,7 +219,15 @@ pub fn exec_step(vm: &mut Vm) -> Step {
             }
             Step::Next
         }
-        Word::Call(_) => Step::Fault(Fault::UnknownWord),
+        Word::Call(_) => {
+            // v0.4 effects: yield to the host. Stack unchanged (Call consumes
+            // nothing); consume the Call word so cont becomes `rest`.
+            let head = vm.cont.remove(0);
+            match head {
+                Word::Call(name) => Step::Invoke(name),
+                _ => unreachable!("matched Call above"),
+            }
+        }
         Word::Prim(p) => {
             let p = *p;
             exec_prim(vm, p)
@@ -692,6 +719,15 @@ pub fn run(mut vm: Vm, fuel: u64) -> Outcome {
                     stack: vm.stack,
                     cont: vm.cont,
                 })
+            }
+            // v0.4 effects: the core suspended at a Call; hand the snapshot +
+            // continuation out so a host runner can service and re-seed.
+            Step::Invoke(name) => {
+                return Outcome::Invoke {
+                    name,
+                    stack: vm.stack,
+                    cont: vm.cont,
+                }
             }
         }
     }

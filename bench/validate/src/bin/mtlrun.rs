@@ -106,5 +106,13 @@ fn main() {
                 cont.len()
             );
         }
+        Outcome::Invoke { name, stack, cont } => {
+            println!(
+                "INVOKE: {}\n  stack: {}\n  cont:  {}",
+                name,
+                show_stack(&stack),
+                show_quote(&cont)
+            );
+        }
     }
 }
