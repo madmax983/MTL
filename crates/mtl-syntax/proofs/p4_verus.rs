@@ -2146,6 +2146,236 @@ fn exec_lex(cs: &Vec<char>, i: usize) -> (r: ExecLexRes)
     }
 }
 
+// ============================================================
+// 19. Exec grouper machinery: the level stack and its view.
+// ============================================================
+
+// View of a level stack (Vec<Vec<EWord>>) to the ghost Seq<Seq<GWord>>.
+pub open spec fn stack_view(levels: Seq<Vec<EWord>>) -> Seq<Seq<GWord>>
+    decreases levels.len(),
+{
+    if levels.len() == 0 {
+        Seq::<Seq<GWord>>::empty()
+    } else {
+        seq![ewords_view(levels[0]@)] + stack_view(levels.subrange(1, levels.len() as int))
+    }
+}
+
+pub proof fn lemma_stack_view_len_index(s: Seq<Vec<EWord>>)
+    ensures
+        stack_view(s).len() == s.len(),
+        forall|i: int| 0 <= i < s.len() ==> stack_view(s)[i] == ewords_view(#[trigger] s[i]@),
+    decreases s.len(),
+{
+    if s.len() == 0 {
+    } else {
+        let srest = s.subrange(1, s.len() as int);
+        lemma_stack_view_len_index(srest);
+        assert forall|i: int| 0 <= i < s.len() implies
+            stack_view(s)[i] == ewords_view(#[trigger] s[i]@) by {
+            if i == 0 {
+                assert(stack_view(s)[0] == ewords_view(s[0]@));
+            } else {
+                assert(stack_view(s)[i] == stack_view(srest)[i - 1]);
+                assert(srest[i - 1] == s[i]);
+            }
+        }
+    }
+}
+
+pub proof fn lemma_stack_view_push(s: Seq<Vec<EWord>>, v: Vec<EWord>)
+    ensures stack_view(s.push(v)) == stack_view(s).push(ewords_view(v@)),
+    decreases s.len(),
+{
+    if s.len() == 0 {
+        let sv = s.push(v);
+        assert(sv =~= seq![v]);
+        assert(sv.len() == 1 && sv[0] == v);
+        assert(sv.subrange(1, sv.len() as int) =~= Seq::<Vec<EWord>>::empty());
+        assert(stack_view(sv.subrange(1, sv.len() as int)) == Seq::<Seq<GWord>>::empty());
+        assert(stack_view(sv) =~= seq![ewords_view(v@)]);
+        assert(stack_view(s) =~= Seq::<Seq<GWord>>::empty());
+        assert(stack_view(s).push(ewords_view(v@)) =~= seq![ewords_view(v@)]);
+    } else {
+        let srest = s.subrange(1, s.len() as int);
+        assert((s.push(v))[0] == s[0]);
+        assert((s.push(v)).subrange(1, (s.push(v)).len() as int) =~= srest.push(v));
+        lemma_stack_view_push(srest, v);
+        assert(stack_view(s.push(v)) =~= stack_view(s).push(ewords_view(v@)));
+    }
+}
+
+pub proof fn lemma_stack_view_last_drop(s: Seq<Vec<EWord>>)
+    requires s.len() >= 1,
+    ensures
+        stack_view(s).last() == ewords_view(s.last()@),
+        stack_view(s).drop_last() == stack_view(s.drop_last()),
+{
+    assert(s =~= s.drop_last().push(s.last()));
+    lemma_stack_view_push(s.drop_last(), s.last());
+}
+
+// ewords_view distributes over Seq::push (derived from append + singleton).
+pub proof fn lemma_ewords_view_push(s: Seq<EWord>, x: EWord)
+    ensures ewords_view(s.push(x)) == ewords_view(s).push(eword_view(x)),
+{
+    assert(s.push(x) =~= s + seq![x]);
+    lemma_ewords_view_append(s, seq![x]);
+    lemma_ewords_view_singleton(x);
+    assert(ewords_view(s).push(eword_view(x)) =~= ewords_view(s) + seq![eword_view(x)]);
+}
+
+// Reconstruct an owned EPrim from a reference (EPrim has no Copy derive here).
+fn clone_eprim(p: &EPrim) -> (r: EPrim)
+    ensures r@ == p@,
+{
+    match p {
+        EPrim::Dup => EPrim::Dup, EPrim::Drop => EPrim::Drop, EPrim::Swap => EPrim::Swap,
+        EPrim::Rot => EPrim::Rot, EPrim::Over => EPrim::Over, EPrim::Apply => EPrim::Apply,
+        EPrim::Cat => EPrim::Cat, EPrim::Cons => EPrim::Cons, EPrim::Dip => EPrim::Dip,
+        EPrim::Add => EPrim::Add, EPrim::Sub => EPrim::Sub, EPrim::Mul => EPrim::Mul,
+        EPrim::Div => EPrim::Div, EPrim::Mod => EPrim::Mod, EPrim::Eq => EPrim::Eq,
+        EPrim::Lt => EPrim::Lt, EPrim::If => EPrim::If, EPrim::PrimRec => EPrim::PrimRec,
+        EPrim::Times => EPrim::Times, EPrim::LinRec => EPrim::LinRec, EPrim::Uncons => EPrim::Uncons,
+        EPrim::Fold => EPrim::Fold, EPrim::Xor => EPrim::Xor,
+    }
+}
+
+// Push a word onto the top (last) level, mirroring `push_word` on the view.
+fn push_top(levels: Vec<Vec<EWord>>, w: EWord) -> (r: Vec<Vec<EWord>>)
+    requires levels.len() >= 1,
+    ensures
+        stack_view(r@) == push_word(stack_view(levels@), eword_view(w)),
+        r.len() == levels.len(),
+{
+    let ghost gw = eword_view(w);
+    let mut lv = levels;
+    let ghost bigl = lv@;
+    let mut top = lv.pop().unwrap();
+    top.push(w);
+    lv.push(top);
+    proof {
+        lemma_stack_view_push(bigl.drop_last(), top);
+        lemma_stack_view_last_drop(bigl);
+        lemma_ewords_view_push(bigl.last()@, w);
+        assert(stack_view(lv@) =~= push_word(stack_view(bigl), gw));
+    }
+    lv
+}
+
+// ============================================================
+// 20. The exec grouper: recursive, mirrors `group_fold` token-for-token.
+// ============================================================
+
+fn exec_group(ts: &Vec<ExecToken>, idx: usize, levels: Vec<Vec<EWord>>) -> (r: Option<Vec<Vec<EWord>>>)
+    requires
+        idx <= ts.len(),
+        levels.len() >= 1,
+    ensures ({
+        let sub = etoks_view(ts@.subrange(idx as int, ts@.len() as int));
+        match r {
+            Some(out) => group_fold(sub, stack_view(levels@)) == Some(stack_view(out@)),
+            None => group_fold(sub, stack_view(levels@)) == None::<Seq<Seq<GWord>>>,
+        }
+    }),
+    decreases ts.len() - idx,
+{
+    let ghost sub = etoks_view(ts@.subrange(idx as int, ts@.len() as int));
+    if idx == ts.len() {
+        proof {
+            assert(ts@.subrange(idx as int, ts@.len() as int) =~= Seq::<ExecToken>::empty());
+            assert(sub =~= Seq::<Token>::empty());
+        }
+        return Some(levels);
+    }
+    let ghost sub2 = etoks_view(ts@.subrange((idx + 1) as int, ts@.len() as int));
+    let ghost head = ts@[idx as int]@;
+    let ghost sv = stack_view(levels@);
+    proof {
+        assert(ts@.subrange(idx as int, ts@.len() as int)
+            =~= seq![ts@[idx as int]] + ts@.subrange((idx + 1) as int, ts@.len() as int));
+        lemma_etoks_view_cons(ts@[idx as int], ts@.subrange((idx + 1) as int, ts@.len() as int));
+        // sub == seq![head] + sub2
+        assert(sub[0] == head);
+        assert(sub.subrange(1, sub.len() as int) =~= sub2);
+        lemma_stack_view_len_index(levels@);
+        assert(sv.len() == levels.len());
+    }
+    match &ts[idx] {
+        ExecToken::ETOpen => {
+            let mut lv = levels;
+            let ghost pre = lv@;
+            let empty_level: Vec<EWord> = Vec::new();
+            proof { assert(ewords_view(empty_level@) =~= Seq::<GWord>::empty()); }
+            lv.push(empty_level);
+            proof {
+                lemma_stack_view_push(pre, empty_level);
+                assert(stack_view(lv@) =~= sv.push(Seq::<GWord>::empty()));
+                assert(head == Token::TOpen);
+                assert(group_fold(sub, sv) == group_fold(sub2, sv.push(Seq::<GWord>::empty())));
+            }
+            exec_group(ts, idx + 1, lv)
+        }
+        ExecToken::ETClose => {
+            if levels.len() <= 1 {
+                proof {
+                    assert(head == Token::TClose);
+                    assert(sv.len() <= 1);
+                    assert(group_fold(sub, sv) == None::<Seq<Seq<GWord>>>);
+                }
+                None
+            } else {
+                let mut lv = levels;
+                let ghost bigl = lv@;
+                let inner = lv.pop().unwrap();
+                let lv2 = push_top(lv, EWord::EPushQuote(inner));
+                proof {
+                    lemma_stack_view_last_drop(bigl);
+                    // stack_view(lv@) == sv.drop_last(); inner@ views to sv.last()
+                    assert(eword_view(EWord::EPushQuote(inner)) == GWord::PushQuote(sv.last()));
+                    assert(stack_view(lv2@) == push_word(sv.drop_last(), GWord::PushQuote(sv.last())));
+                    assert(head == Token::TClose);
+                    assert(sv.len() > 1);
+                    assert(group_fold(sub, sv)
+                        == group_fold(sub2, push_word(sv.drop_last(), GWord::PushQuote(sv.last()))));
+                }
+                exec_group(ts, idx + 1, lv2)
+            }
+        }
+        ExecToken::ETInt(n) => {
+            let lv = push_top(levels, EWord::EPushInt(*n));
+            proof {
+                assert(head == Token::TInt(*n as int));
+                assert(eword_view(EWord::EPushInt(*n)) == GWord::PushInt(*n as int));
+                assert(group_fold(sub, sv) == group_fold(sub2, push_word(sv, GWord::PushInt(*n as int))));
+            }
+            exec_group(ts, idx + 1, lv)
+        }
+        ExecToken::ETName(v) => {
+            let name = slice_copy(v, 0, v.len());
+            proof { assert(name@ == v@); }
+            let lv = push_top(levels, EWord::ECall(name));
+            proof {
+                assert(head == Token::TName(v@));
+                assert(eword_view(EWord::ECall(name)) == GWord::Call(v@));
+                assert(group_fold(sub, sv) == group_fold(sub2, push_word(sv, GWord::Call(v@))));
+            }
+            exec_group(ts, idx + 1, lv)
+        }
+        ExecToken::ETGlyph(p) => {
+            let ep = clone_eprim(p);
+            proof { assert(ep@ == p@); }
+            let lv = push_top(levels, EWord::EPrim(ep));
+            proof {
+                assert(head == Token::TGlyph(p@));
+                assert(eword_view(EWord::EPrim(ep)) == GWord::Prim(p@));
+                assert(group_fold(sub, sv) == group_fold(sub2, push_word(sv, GWord::Prim(p@))));
+            }
+            exec_group(ts, idx + 1, lv)
+        }
+    }
+}
+
 fn main() {}
 
 } // verus!
