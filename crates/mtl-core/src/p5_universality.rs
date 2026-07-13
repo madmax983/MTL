@@ -491,6 +491,248 @@ pub proof fn lemma_dup_apply(base: Seq<SpecValue>, q: Seq<SpecWord>, rest: Seq<S
     assert(s2.cont =~= q + rest);
 }
 
+// ============================================================
+// 6. The compilation Minsky -> MTL  (spec-level `U(prog)`)
+// ============================================================
+//
+// A single self-applying dispatch-loop quote `U`. The whole configuration
+// stays on the stack; one `:!` loop drives a big-switch on the PC (brief §4.2).
+// This is the EXACT construction validated executably in tests/p5_minsky.rs.
+
+pub open spec fn w(p: SpecPrim) -> SpecWord {
+    SpecWord::Prim(p)
+}
+
+pub open spec fn empty_quote() -> SpecWord {
+    SpecWord::PushQuote(Seq::<SpecWord>::empty())
+}
+
+/// Operate the top-of-stack fragment on counter c2 (slot 1 of [c1,c2,U]).
+pub open spec fn on_c2(frag: Seq<SpecWord>) -> Seq<SpecWord> {
+    seq![SpecWord::PushQuote(frag), w(SpecPrim::Dip)]
+}
+
+/// Operate the fragment on counter c1 (slot 0 of [c1,c2,U]).
+pub open spec fn on_c1(frag: Seq<SpecWord>) -> Seq<SpecWord> {
+    seq![SpecWord::PushQuote(on_c2(frag)), w(SpecPrim::Dip)]
+}
+
+pub open spec fn inc_words() -> Seq<SpecWord> {
+    seq![SpecWord::PushInt(0int), w(SpecPrim::Swap), w(SpecPrim::Cons)]
+}
+
+/// The per-instruction handler `BODY_i`. Entry stack [c1,c2,U,Int(pc)] with the
+/// PC already on top; runs the counter op, installs the next PC, and re-enters
+/// the `:!` loop (except `Halt`, which drops `U` so the continuation drains).
+pub open spec fn body(prog: MProg, i: nat) -> Seq<SpecWord> {
+    match prog.code[i as int] {
+        MInstr::Halt => seq![w(SpecPrim::Drop), w(SpecPrim::Drop)],
+        MInstr::Inc(reg, j) =>
+            seq![w(SpecPrim::Drop)]
+              + (if reg { on_c2(inc_words()) } else { on_c1(inc_words()) })
+              + seq![SpecWord::PushInt(j as int), w(SpecPrim::Swap),
+                     w(SpecPrim::Dup), w(SpecPrim::Apply)],
+        MInstr::DecJz(reg, jz, nz) =>
+            if reg {
+                seq![w(SpecPrim::Drop), w(SpecPrim::Swap), w(SpecPrim::Uncons),
+                     SpecWord::PushQuote(
+                        seq![w(SpecPrim::Swap), w(SpecPrim::Drop), w(SpecPrim::Swap),
+                             SpecWord::PushInt(nz as int), w(SpecPrim::Swap),
+                             w(SpecPrim::Dup), w(SpecPrim::Apply)]),
+                     SpecWord::PushQuote(
+                        seq![empty_quote(), w(SpecPrim::Swap),
+                             SpecWord::PushInt(jz as int), w(SpecPrim::Swap),
+                             w(SpecPrim::Dup), w(SpecPrim::Apply)]),
+                     w(SpecPrim::If)]
+            } else {
+                seq![w(SpecPrim::Drop), w(SpecPrim::Rot), w(SpecPrim::Uncons),
+                     SpecWord::PushQuote(
+                        seq![w(SpecPrim::Swap), w(SpecPrim::Drop),
+                             w(SpecPrim::Rot), w(SpecPrim::Rot),
+                             SpecWord::PushInt(nz as int), w(SpecPrim::Swap),
+                             w(SpecPrim::Dup), w(SpecPrim::Apply)]),
+                     SpecWord::PushQuote(
+                        seq![empty_quote(), w(SpecPrim::Rot), w(SpecPrim::Rot),
+                             SpecWord::PushInt(jz as int), w(SpecPrim::Swap),
+                             w(SpecPrim::Dup), w(SpecPrim::Apply)]),
+                     w(SpecPrim::If)]
+            },
+    }
+}
+
+/// The dispatch cascade from index `i`: a fixed finite `If`-chain, one arm per
+/// instruction index. Out-of-range PC drops `U` and halts.
+pub open spec fn disp(prog: MProg, i: nat) -> Seq<SpecWord>
+    decreases prog.code.len() - i,
+{
+    if i >= prog.code.len() {
+        seq![w(SpecPrim::Drop), w(SpecPrim::Drop)]
+    } else {
+        seq![w(SpecPrim::Dup), SpecWord::PushInt(i as int), w(SpecPrim::Eq),
+             SpecWord::PushQuote(body(prog, i)),
+             SpecWord::PushQuote(disp(prog, (i + 1) as nat)),
+             w(SpecPrim::If)]
+    }
+}
+
+/// The loop quote `U(prog)`: bring the PC to the top, then dispatch.
+pub open spec fn compile_u(prog: MProg) -> Seq<SpecWord> {
+    seq![w(SpecPrim::Swap)] + disp(prog, 0)
+}
+
+/// The canonical running-configuration stack for `m` (brief §2).
+pub open spec fn config_stack(prog: MProg, m: MConf) -> Seq<SpecValue> {
+    seq![
+        SpecValue::Quote(unary(m.c1)),
+        SpecValue::Quote(unary(m.c2)),
+        SpecValue::Int(m.pc as int),
+        SpecValue::Quote(compile_u(prog))
+    ]
+}
+
+/// Representation invariant `R(prog, m, σ)` (brief §5.1): counters as unary
+/// quotations in the expected slots, PC as the Int slot, cont = `[Dup, Apply]`.
+pub open spec fn rep(prog: MProg, m: MConf, s: SpecState) -> bool {
+    &&& s.stack == config_stack(prog, m)
+    &&& s.cont == seq![w(SpecPrim::Dup), w(SpecPrim::Apply)]
+}
+
+// ------------------------------------------------------------
+// 6.1 Dispatch-selection lemma — the control-flow crux.
+//     Proved by induction over the cascade (brief §4.2, §5.2).
+// ------------------------------------------------------------
+
+// A `disp` arm for index i, unfolded one level (i < len).
+pub proof fn disp_unfold(prog: MProg, i: nat)
+    requires i < prog.code.len(),
+    ensures disp(prog, i) =~=
+        seq![w(SpecPrim::Dup), SpecWord::PushInt(i as int), w(SpecPrim::Eq),
+             SpecWord::PushQuote(body(prog, i)),
+             SpecWord::PushQuote(disp(prog, (i + 1) as nat)),
+             w(SpecPrim::If)],
+{
+}
+
+/// One dispatch arm, HIT (top PC == arm index i): 6 steps splice `body(prog,i)`.
+pub proof fn lemma_disp_hit(prog: MProg, base2: Seq<SpecValue>, i: nat, rest: Seq<SpecWord>)
+    requires i < prog.code.len(),
+    ensures
+        spec_stepn(
+            SpecState { stack: base2.push(SpecValue::Int(i as int)), cont: disp(prog, i) + rest },
+            6,
+        ) == SpecStep::Next(SpecState {
+            stack: base2.push(SpecValue::Int(i as int)),
+            cont: body(prog, i) + rest,
+        }),
+{
+    reveal_with_fuel(spec_stepn, 7);
+    disp_unfold(prog, i);
+    let bi = body(prog, i);
+    let di1 = disp(prog, (i + 1) as nat);
+    let s0 = SpecState {
+        stack: base2.push(SpecValue::Int(i as int)),
+        cont: disp(prog, i) + rest,
+    };
+    assert(s0.cont =~= seq![w(SpecPrim::Dup), SpecWord::PushInt(i as int), w(SpecPrim::Eq),
+        SpecWord::PushQuote(bi), SpecWord::PushQuote(di1), w(SpecPrim::If)] + rest);
+    assert(s0.cont[0] == w(SpecPrim::Dup));
+    let s1 = spec_step(s0)->Next_0;
+    // dup Int(i)
+    assert(s1.stack =~= base2.push(SpecValue::Int(i as int)).push(SpecValue::Int(i as int)));
+    let s2 = spec_step(s1)->Next_0; // PushInt(i)
+    assert(s2.stack =~= base2.push(SpecValue::Int(i as int)).push(SpecValue::Int(i as int)).push(SpecValue::Int(i as int)));
+    let s3 = spec_step(s2)->Next_0; // Eq: i==i -> 1
+    assert(s3.stack =~= base2.push(SpecValue::Int(i as int)).push(SpecValue::Int(1int)));
+    let s4 = spec_step(s3)->Next_0; // PushQuote(bi)
+    let s5 = spec_step(s4)->Next_0; // PushQuote(di1)
+    assert(s5.stack =~= base2.push(SpecValue::Int(i as int)).push(SpecValue::Int(1int))
+        .push(SpecValue::Quote(bi)).push(SpecValue::Quote(di1)));
+    assert(s5.cont[0] == w(SpecPrim::If));
+    let s6 = spec_step(s5)->Next_0; // If: c=1 -> splice bi
+    assert(s6.stack =~= base2.push(SpecValue::Int(i as int)));
+    assert(s6.cont =~= bi + rest);
+}
+
+/// One dispatch arm, MISS (top PC != arm index i): 6 steps fall through to
+/// `disp(prog, i+1)`.
+pub proof fn lemma_disp_miss(
+    prog: MProg, base2: Seq<SpecValue>, pc: nat, i: nat, rest: Seq<SpecWord>,
+)
+    requires i < prog.code.len(), i != pc,
+    ensures
+        spec_stepn(
+            SpecState { stack: base2.push(SpecValue::Int(pc as int)), cont: disp(prog, i) + rest },
+            6,
+        ) == SpecStep::Next(SpecState {
+            stack: base2.push(SpecValue::Int(pc as int)),
+            cont: disp(prog, (i + 1) as nat) + rest,
+        }),
+{
+    reveal_with_fuel(spec_stepn, 7);
+    disp_unfold(prog, i);
+    let bi = body(prog, i);
+    let di1 = disp(prog, (i + 1) as nat);
+    let s0 = SpecState {
+        stack: base2.push(SpecValue::Int(pc as int)),
+        cont: disp(prog, i) + rest,
+    };
+    assert(s0.cont =~= seq![w(SpecPrim::Dup), SpecWord::PushInt(i as int), w(SpecPrim::Eq),
+        SpecWord::PushQuote(bi), SpecWord::PushQuote(di1), w(SpecPrim::If)] + rest);
+    let s1 = spec_step(s0)->Next_0;
+    let s2 = spec_step(s1)->Next_0;
+    let s3 = spec_step(s2)->Next_0; // Eq: pc != i -> 0
+    assert(pc as int != i as int);
+    assert(s3.stack =~= base2.push(SpecValue::Int(pc as int)).push(SpecValue::Int(0int)));
+    let s4 = spec_step(s3)->Next_0;
+    let s5 = spec_step(s4)->Next_0;
+    assert(s5.stack =~= base2.push(SpecValue::Int(pc as int)).push(SpecValue::Int(0int))
+        .push(SpecValue::Quote(bi)).push(SpecValue::Quote(di1)));
+    assert(s5.cont[0] == w(SpecPrim::If));
+    let s6 = spec_step(s5)->Next_0; // If: c=0 -> splice di1
+    assert(s6.stack =~= base2.push(SpecValue::Int(pc as int)));
+    assert(s6.cont =~= di1 + rest);
+}
+
+/// Dispatch selection: from the cascade at index `i` with `i <= pc < len`, the
+/// machine reaches `body(prog, pc)` spliced onto `rest` in `6*(pc-i)+6` steps,
+/// with the stack unchanged. The control-flow crux, by induction on `pc - i`.
+pub proof fn lemma_dispatch_select(
+    prog: MProg, base2: Seq<SpecValue>, pc: nat, i: nat, rest: Seq<SpecWord>,
+)
+    requires i <= pc, pc < prog.code.len(),
+    ensures
+        spec_stepn(
+            SpecState { stack: base2.push(SpecValue::Int(pc as int)), cont: disp(prog, i) + rest },
+            (6 * (pc - i) + 6) as nat,
+        ) == SpecStep::Next(SpecState {
+            stack: base2.push(SpecValue::Int(pc as int)),
+            cont: body(prog, pc) + rest,
+        }),
+    decreases pc - i,
+{
+    let s0 = SpecState {
+        stack: base2.push(SpecValue::Int(pc as int)),
+        cont: disp(prog, i) + rest,
+    };
+    if i == pc {
+        lemma_disp_hit(prog, base2, i, rest);
+    } else {
+        lemma_disp_miss(prog, base2, pc, i, rest);
+        // spec_stepn(s0, 6) = Next(s_mid), s_mid.cont = disp(i+1)+rest
+        let s_mid = SpecState {
+            stack: base2.push(SpecValue::Int(pc as int)),
+            cont: disp(prog, (i + 1) as nat) + rest,
+        };
+        assert(spec_stepn(s0, 6) == SpecStep::Next(s_mid));
+        lemma_dispatch_select(prog, base2, pc, (i + 1) as nat, rest);
+        let b = (6 * (pc - (i + 1)) + 6) as nat;
+        lemma_stepn_compose(s0, 6, b);
+        // 6 + b == 6*(pc-i)+6
+        assert((6 + b) == (6 * (pc - i) + 6) as nat) by (nonlinear_arith)
+            requires b == (6 * (pc - (i + 1)) + 6) as nat, i < pc;
+    }
+}
+
 } // verus!
 
 fn main() {}
