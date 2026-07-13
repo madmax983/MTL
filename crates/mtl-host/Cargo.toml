@@ -1,0 +1,9 @@
+[package]
+name = "mtl-host"
+version = "0.4.0"
+edition = "2021"
+description = "MTL v0.4 host half: the unverified host runner (driver, capabilities, metering, handles) above the pure verified core."
+
+[dependencies]
+mtl-core = { path = "../mtl-core" }
+mtl-syntax = { path = "../mtl-syntax" }
