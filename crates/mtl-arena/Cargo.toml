@@ -1,0 +1,23 @@
+[package]
+name = "mtl-arena"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Production arena execution backend for MTL v0.5: an interned, persistent, O(1)-fork continuation engine that is bit-identical to the reference interpreter (mtl-core interp.rs). An OPT-IN backend, never a silent substitute for interp."
+
+# The arena engine keeps its own Word/Value/Prim mirrors INTERNAL (design §5: a
+# policed mirror, not a re-export). `mtl-core` is a real dependency only for the
+# *reference* result types (interp::Value/Word/Fault/FaultInfo/Outcome) that
+# reification produces at the generation boundary — the shape the rest of the
+# system already consumes (design §11.4).
+[dependencies]
+mtl-core = { path = "../mtl-core" }
+
+[dev-dependencies]
+# The canonical PERF-BASELINE scenario builders + corpus, used by the
+# differential oracle test. Kept a dev-dependency so the engine does not couple
+# to the benchmark harness.
+mtl-perf = { path = "../mtl-perf" }
+
+[lib]
+bench = false
