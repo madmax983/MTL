@@ -1,0 +1,15 @@
+[package]
+name = "mtl-conformance"
+version = "0.1.0"
+edition = "2021"
+description = "Cross-mirror conformance police for the MTL primitive manifest."
+license = "MIT"
+repository = "https://github.com/madmax983/MTL"
+
+[dependencies]
+
+[dev-dependencies]
+mtl-syntax = { path = "../mtl-syntax" }
+mtl-core = { path = "../mtl-core" }
+mtl-bench-validate = { path = "../../bench/validate" }
+mtl-host = { path = "../mtl-host" }

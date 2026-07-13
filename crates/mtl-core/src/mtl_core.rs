@@ -266,8 +266,10 @@ pub open spec fn spec_step_prim(
         }
         SpecPrim::Dip => {
             // ( a [q] -- ... a ) : run q with a set aside, restore a.
-            // The restore is compiled into the continuation itself, so
-            // the "scoped borrow" reading in spec §14.4 is literal.
+            // The restore is compiled into the continuation itself: Dip creates
+            // a syntactically scoped non-access interval for one stack
+            // occurrence; the stronger ownership/borrow reading (spec §14.4) is
+            // deferred to P9.
             if n < 2 { SpecStep::Fault(Error::Underflow) }
             else {
                 match stk[n - 1] {

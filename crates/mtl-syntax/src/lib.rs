@@ -29,6 +29,7 @@
 //! [`Word::PushInt(n)`]: crate::ast::Word::PushInt
 
 pub mod ast;
+pub mod manifest;
 pub mod parse;
 pub mod print;
 
