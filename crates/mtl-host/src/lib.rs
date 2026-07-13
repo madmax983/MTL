@@ -14,8 +14,10 @@
 //! * [`meter`] — per-capability call budgets + output-byte cap (design §6).
 //! * [`host`] — [`host::HostCtx`], [`host::HostResult`], [`host::HostFault`].
 //! * [`capability`] — [`capability::Capability`] / [`capability::Registry`] (the grant set, §3).
-//! * [`core_bridge`] — the ADAPTER SEAM sourcing `Invoke` events from today's core.
-//! * [`driver`] — [`driver::drive`], the impure loop with clean-cancel semantics (§7).
+//! * [`core_bridge`] — the SERVICING SEAM: a [`core_bridge::HostShim`] implementing
+//!   `mtl_core::host::Host` (grant + metering-before-effect + at-most-once).
+//! * [`driver`] — [`driver::drive`], a thin wrapper that fully delegates the loop
+//!   to `mtl_core::host::drive` (which owns the global fuel budget / clean-cancel, §7).
 //! * [`caps`] — the standard Tier-3 capability set + fixtures (design §8).
 
 pub mod capability;

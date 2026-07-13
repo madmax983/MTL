@@ -12,7 +12,8 @@ use crate::meter::Meter;
 
 /// A host-side fault. Mirrors the design's `HostCode`/`HostFault` set (§3.1,
 /// §6). These are the codes a capability may raise; grant/deny of a capability
-/// itself is handled by the driver (`Refused`), not by a `HostFault`.
+/// itself is handled by [`crate::core_bridge::HostShim`], which maps an ungranted
+/// name onto `HostCode::NotGranted` before any capability runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum HostFault {
     /// A per-capability call budget was exhausted (meter §6a).

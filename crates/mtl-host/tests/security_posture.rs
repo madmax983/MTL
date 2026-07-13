@@ -2,6 +2,7 @@
 //! name reads like a claim the crate proves about capability confinement,
 //! metering, and clean cancellation (design §3, §6, §7).
 
+use mtl_core::host::HostCode;
 use mtl_core::interp::build::{call, drop as vdrop, dup, int, linrec, sub};
 use mtl_core::interp::{Value, Word};
 use mtl_host::capability::{Capability, Registry, StackEffect};
@@ -53,11 +54,14 @@ fn echo_fixture() -> TaskFixture {
 #[test]
 fn a_capability_not_granted_is_unreachable() {
     // `emit` is NOT in the registry. The program tries `readline emit`.
+    // Post-reconciliation the core seam has no `Refused` outcome: an ungranted
+    // capability surfaces host-side as `HostFaulted(HostCode::NotGranted)`, and
+    // the guarantee is unchanged — no effect, no output.
     let mut reg = registry_readline_only();
     let mut ctx = HostCtx::new(echo_fixture());
     let prog = vec![call("readline"), call("emit")];
     let r = drive(prog, vec![], FUEL, &mut reg, &mut ctx);
-    assert_eq!(r, RunResult::Refused { capability: "emit".into() });
+    assert_eq!(r, RunResult::HostFaulted(HostCode::NotGranted));
     // The ungranted effect never happened: nothing was emitted.
     assert!(ctx.output_bytes().is_empty(), "ungranted emit produced output: {:?}", ctx.output_utf8());
 }
@@ -68,8 +72,8 @@ fn an_unknown_capability_is_refused_not_executed() {
     let (mut reg, mut ctx) = caps::standard_registry_and_ctx(echo_fixture());
     let prog = vec![call("nope")];
     let r = drive(prog, vec![], FUEL, &mut reg, &mut ctx);
-    assert_eq!(r, RunResult::Refused { capability: "nope".into() });
-    // A refusal is categorically distinct from a pure-core fault.
+    assert_eq!(r, RunResult::HostFaulted(HostCode::NotGranted));
+    // A NotGranted refusal is categorically distinct from a pure-core fault.
     assert!(!matches!(r, RunResult::Faulted(_)));
     assert!(ctx.output_bytes().is_empty());
 }
@@ -81,7 +85,7 @@ fn budget_exhaustion_cancels_with_no_partial_effect() {
     // Emit three times; the 3rd call is over budget.
     let prog = read_and_emit_n(3);
     let r = drive(prog, vec![], FUEL, &mut reg, &mut ctx);
-    assert_eq!(r, RunResult::HostFaulted(HostFault::BudgetExhausted));
+    assert_eq!(r, RunResult::HostFaulted(HostCode::BudgetExhausted));
     // Exactly two lines emitted — the 3rd, over-budget call produced NO output.
     assert_eq!(ctx.output_lines(), vec!["hello world", "hello world"]);
     assert_eq!(ctx.calls_to("emit"), 2, "over-budget emit must not be serviced");
@@ -95,7 +99,7 @@ fn output_byte_cap_is_never_exceeded() {
     // "hello world\n" is 12 bytes > 5, so the emit must be refused wholesale.
     let prog = vec![call("readline"), call("emit")];
     let r = drive(prog, vec![], FUEL, &mut reg, &mut ctx);
-    assert_eq!(r, RunResult::HostFaulted(HostFault::OutputCapExceeded));
+    assert_eq!(r, RunResult::HostFaulted(HostCode::OutputCapExceeded));
     // The failing emit wrote nothing; the cap is never exceeded.
     assert!(ctx.output_bytes().len() as u64 <= budget);
     assert!(ctx.output_bytes().is_empty());
