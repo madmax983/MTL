@@ -2463,6 +2463,232 @@ pub fn exec_parse(cs: &Vec<char>) -> (r: ExecOutcome)
     }
 }
 
+// ============================================================
+// 22. The EXEC ROUND-TRIP (PRIMARY): exec_parse(exec_print(p)) recovers p.
+//
+// This dodges overflow entirely: p : Vec<EWord> carries i64 ints, so the
+// printer's image only ever has digit runs that fit i64 — the parser never
+// overflows on it. We prove all_ints_fit(exec_print(p)@), then chain the
+// exec printer/parser refinements with the ghost p4_roundtrip.
+// ============================================================
+
+// A token has an i64-representable integer (if it is an int token at all).
+pub open spec fn int_fits(t: Token) -> bool {
+    match t {
+        Token::TInt(n) => 0 <= n <= imax(),
+        _ => true,
+    }
+}
+
+pub open spec fn toks_fit(ts: Seq<Token>) -> bool {
+    forall|i: int| 0 <= i < ts.len() ==> int_fits(#[trigger] ts[i])
+}
+
+pub proof fn lemma_toks_fit_append(a: Seq<Token>, b: Seq<Token>)
+    ensures toks_fit(a + b) == (toks_fit(a) && toks_fit(b)),
+{
+    if toks_fit(a) && toks_fit(b) {
+        assert forall|i: int| 0 <= i < (a + b).len() implies int_fits(#[trigger] (a + b)[i]) by {
+            if i < a.len() {
+                assert((a + b)[i] == a[i]);
+            } else {
+                assert((a + b)[i] == b[i - a.len()]);
+            }
+        }
+    } else if !toks_fit(a) {
+        let i = choose|i: int| 0 <= i < a.len() && !int_fits(#[trigger] a[i]);
+        assert((a + b)[i] == a[i]);
+    } else {
+        let j = choose|j: int| 0 <= j < b.len() && !int_fits(#[trigger] b[j]);
+        assert((a + b)[j + a.len()] == b[j]);
+    }
+}
+
+// The key bridge: any character sequence that lexes to a token stream whose
+// integer tokens all fit i64 is itself in-range (all_ints_fit). Mirrors `lex`'s
+// recursion, matching each digit-run value to its TInt token.
+pub proof fn lemma_lex_all_ints_fit(cs: Seq<char>, ts: Seq<Token>)
+    requires lex(cs) == Some(ts), toks_fit(ts),
+    ensures all_ints_fit(cs),
+    decreases cs.len(),
+{
+    if cs.len() == 0 {
+    } else {
+        let c = cs[0];
+        if is_ws(c) {
+            lemma_lex_all_ints_fit(cs.subrange(1, cs.len() as int), ts);
+        } else if is_digit(c) {
+            ldl_bound(cs); ldl_pos(cs);
+            let k = leading_digits_len(cs);
+            let cs2 = cs.subrange(k as int, cs.len() as int);
+            let val = nat_of_digits(cs.subrange(0, k as int)) as int;
+            let tok = Token::TInt(val);
+            match lex(cs2) {
+                Some(rest) => {
+                    assert(ts =~= seq![tok] + rest);
+                    assert(int_fits(ts[0]) && ts[0] == tok);
+                    assert(val <= imax());
+                    assert(toks_fit(rest)) by {
+                        assert forall|i: int| 0 <= i < rest.len() implies int_fits(#[trigger] rest[i]) by {
+                            assert((seq![tok] + rest)[i + 1] == rest[i]);
+                            assert(int_fits(ts[i + 1]));
+                        }
+                    }
+                    lemma_lex_all_ints_fit(cs2, rest);
+                }
+                None => { assert(false); }
+            }
+        } else if is_lower(c) {
+            lnl_bound(cs); lnl_pos(cs);
+            let k = leading_name_len(cs);
+            let cs2 = cs.subrange(k as int, cs.len() as int);
+            let tok = Token::TName(cs.subrange(0, k as int));
+            match lex(cs2) {
+                Some(rest) => {
+                    assert(ts =~= seq![tok] + rest);
+                    lemma_toks_fit_drop_head(tok, rest, ts);
+                    lemma_lex_all_ints_fit(cs2, rest);
+                }
+                None => { assert(false); }
+            }
+        } else if c == '[' {
+            let cs2 = cs.subrange(1, cs.len() as int);
+            match lex(cs2) {
+                Some(rest) => {
+                    assert(ts =~= seq![Token::TOpen] + rest);
+                    lemma_toks_fit_drop_head(Token::TOpen, rest, ts);
+                    lemma_lex_all_ints_fit(cs2, rest);
+                }
+                None => { assert(false); }
+            }
+        } else if c == ']' {
+            let cs2 = cs.subrange(1, cs.len() as int);
+            match lex(cs2) {
+                Some(rest) => {
+                    assert(ts =~= seq![Token::TClose] + rest);
+                    lemma_toks_fit_drop_head(Token::TClose, rest, ts);
+                    lemma_lex_all_ints_fit(cs2, rest);
+                }
+                None => { assert(false); }
+            }
+        } else {
+            match glyph_to_gprim(c) {
+                Some(p) => {
+                    let cs2 = cs.subrange(1, cs.len() as int);
+                    match lex(cs2) {
+                        Some(rest) => {
+                            assert(ts =~= seq![Token::TGlyph(p)] + rest);
+                            lemma_toks_fit_drop_head(Token::TGlyph(p), rest, ts);
+                            lemma_lex_all_ints_fit(cs2, rest);
+                        }
+                        None => { assert(false); }
+                    }
+                }
+                None => { assert(false); }
+            }
+        }
+    }
+}
+
+// Dropping a non-overflowing (or non-int) head token preserves toks_fit.
+pub proof fn lemma_toks_fit_drop_head(tok: Token, rest: Seq<Token>, ts: Seq<Token>)
+    requires ts == seq![tok] + rest, toks_fit(ts),
+    ensures toks_fit(rest),
+{
+    assert forall|i: int| 0 <= i < rest.len() implies int_fits(#[trigger] rest[i]) by {
+        assert((seq![tok] + rest)[i + 1] == rest[i]);
+        assert(int_fits(ts[i + 1]));
+    }
+}
+
+// The printer's token image of an exec program has only i64-fitting ints:
+// every TInt originates from an EPushInt(i64) whose value is in [0, i64::MAX]
+// on the well-formed domain.
+pub proof fn lemma_toks_fit_word(w: EWord)
+    requires wf_word(eword_view(w)),
+    ensures toks_fit(toks_word(eword_view(w))),
+    decreases w, 0nat,
+{
+    match w {
+        EWord::EPushInt(i) => {
+            assert(toks_word(eword_view(w)) =~= seq![Token::TInt(i as int)]);
+            assert(i <= 9223372036854775807);
+            assert(i as int <= imax());
+            assert(int_fits(Token::TInt(i as int)));
+        }
+        EWord::EPrim(p) => {
+            assert(toks_word(eword_view(w)) =~= seq![Token::TGlyph(p@)]);
+        }
+        EWord::ECall(v) => {
+            assert(toks_word(eword_view(w)) =~= seq![Token::TName(v@)]);
+        }
+        EWord::EPushQuote(ws) => {
+            lemma_toks_fit_words(ws@);
+            let mid = toks_words(ewords_view(ws@));
+            assert(toks_word(eword_view(w)) =~= seq![Token::TOpen] + mid + seq![Token::TClose]);
+            lemma_toks_fit_append(seq![Token::TOpen], mid + seq![Token::TClose]);
+            lemma_toks_fit_append(mid, seq![Token::TClose]);
+            assert(toks_fit(seq![Token::TOpen]));
+            assert(toks_fit(seq![Token::TClose]));
+        }
+    }
+}
+
+pub proof fn lemma_toks_fit_words(s: Seq<EWord>)
+    requires wf_words(ewords_view(s)),
+    ensures toks_fit(toks_words(ewords_view(s))),
+    decreases s, s.len(),
+{
+    if s.len() == 0 {
+        assert(toks_words(ewords_view(s)) =~= Seq::<Token>::empty());
+    } else {
+        let g = ewords_view(s);
+        let srest = s.subrange(1, s.len() as int);
+        lemma_ewords_view_len_index(s);
+        assert(g[0] == eword_view(s[0]));
+        assert(g.subrange(1, g.len() as int) =~= ewords_view(srest));
+        // wf_words(g): head wf_word and tail wf_words.
+        lemma_wf_words_index(g, 0);
+        assert(wf_word(eword_view(s[0])));
+        assert(wf_words(ewords_view(srest)));
+        lemma_toks_fit_word(s[0]);
+        lemma_toks_fit_words(srest);
+        assert(toks_words(g) =~= toks_word(eword_view(s[0])) + toks_words(ewords_view(srest)));
+        lemma_toks_fit_append(toks_word(eword_view(s[0])), toks_words(ewords_view(srest)));
+    }
+}
+
+// PRIMARY THEOREM. Parsing the printout of any well-formed exec program
+// recovers exactly that program (as a view equality to spec Ok). Expressed as
+// an exec fn (it drives the real exec printer + parser) whose postcondition is
+// the machine-checked round-trip statement.
+pub fn exec_roundtrip(p: &Vec<EWord>) -> (r: ExecOutcome)
+    requires wf_words(ewords_view(p@)),
+    ensures r@ == ParseOutcome::Ok(ewords_view(p@)),
+{
+    let printed = exec_print(p);
+    let r = exec_parse(&printed);
+    proof {
+        let g = ewords_view(p@);
+        // 1. exec_print refines spec_print.
+        assert(printed@ == spec_print(g));
+        // 2. printed string lexes back to toks_words(g), whose ints all fit i64.
+        lemma_wf_valid_words(g);
+        lemma_lex_render(None, toks_words(g));
+        assert(lex(spec_print(g)) == Some(toks_words(g)));
+        lemma_toks_fit_words(p@);
+        assert(toks_fit(toks_words(g)));
+        // 3. therefore the printed string is in-range.
+        lemma_lex_all_ints_fit(printed@, toks_words(g));
+        assert(all_ints_fit(printed@));
+        // 4. so exec_parse refines spec_parse here, which round-trips to Ok(g).
+        p4_roundtrip(g);
+        assert(spec_parse(printed@) == ParseOutcome::Ok(g));
+        assert(r@ == spec_parse(printed@));
+    }
+    r
+}
+
 fn main() {}
 
 } // verus!
