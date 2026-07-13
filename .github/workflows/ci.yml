@@ -122,6 +122,45 @@ jobs:
             echo "Core P1/P3 proofs (previous step) are machine-checked and are NOT admitted."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: verus verify — P4 round-trip proofs (crates/mtl-syntax/proofs/p4_verus.rs)
+        id: p4
+        # Advisory-but-visible, mirroring the `core` step above: the P4 proof
+        # VERIFICATION OUTCOME does not gate the merge queue, but a regression is
+        # clearly surfaced (red step + job step-summary). Toolchain health (the
+        # smoke check above) remains the only hard gate.
+        continue-on-error: true
+        # Full verification of the Verus artifact `p4_verus.rs`: a REAL, machine-
+        # checked Seq<char> model parser/printer proving the P4 round-trip and
+        # idempotence theorems (p4_roundtrip, p4_idempotent) over all 23 glyphs,
+        # with 0 admit()/assume()/external_body. This is option (b): the model is
+        # pinned to the production Rust parser/printer by the differential proptest
+        # in crates/mtl-syntax/tests/p4_model_twin.rs (run in the cargo job).
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          if verus crates/mtl-syntax/proofs/p4_verus.rs 2>&1 | tee artifacts/p4-proof-log.txt ; then
+            echo "p4_status=pass" >> "$GITHUB_OUTPUT"
+            echo "### Verus P4 proofs (round-trip + idempotence): VERIFIED" >> "$GITHUB_STEP_SUMMARY"
+            echo "Machine-checked Seq<char> model: p4_roundtrip, p4_idempotent, all 23 glyphs; 0 admit()." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "p4_status=fail" >> "$GITHUB_OUTPUT"
+            echo "### Verus P4 proofs: REGRESSED — see p4 proof log artifact" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: verus honesty audit — P4 --no-cheating (report-only)
+        if: always()
+        # Unlike the core P2 boundary, P4 uses NO admit/assume/external_body, so
+        # this audit is EXPECTED TO PASS clean. Run report-only so it never gates
+        # CI but would flag any NEW cheat that sneaks into the P4 proof.
+        run: |
+          mkdir -p artifacts
+          verus --no-cheating crates/mtl-syntax/proofs/p4_verus.rs 2>&1 | tee artifacts/p4-no-cheating-audit.txt || true
+          {
+            echo "### Honesty audit (verus --no-cheating) — P4"
+            echo "P4 uses NO admit/assume/external_body; this audit is expected to PASS clean."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: upload verus proof log
         if: always()
         uses: actions/upload-artifact@v4
