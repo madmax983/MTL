@@ -1,0 +1,58 @@
+rle (run-length encoding) — MTL Variant A (Str in the core)
+===========================================================
+DESIGN STAGE — HAND-TRACED at the VALUE level; the token count is a design
+ESTIMATE (representative real-glyph program, not guaranteed minimally golfed,
++-4 band) following the v0.3 two_sum precedent. NOT interpreter-validated.
+
+TASK  rle("aaabbc") -> "a3b2c1"   (char, then decimal run-length; multi-digit ok)
+
+VALUE MODEL ASSUMED (Variant A) — as reverse.mtl.txt, plus this task forces MORE:
+MINIMAL PRIMITIVE SET THIS TASK NEEDS
+  str-uncons '`'  ( s -- c s' 1 | "" -- 0 )   head-split, codepoint as Int
+  str-cons   '#'  ( c s -- s' )               prepend codepoint c onto s
+  num-to-str '}'  ( n -- s )                  render an Int as decimal digits
+  str-concat ','  ( s1 s2 -- s1s2 )           reuse cat when both operands Str
+  eq '='          ( a b -- 0|1 )              existing; compares codepoints
+  ""              empty-string literal
+  --> RLE needs FOUR string primitives (uncons, cons, num-to-str, concat), the
+      new Str value, AND num-to-str is a whole integer->decimal routine in the
+      core. This is the crux: RLE, unlike reverse, needs in-core string
+      SYNTHESIS (rendering a computed Int count back into characters).
+
+WHY num-to-str is the heavy part
+  The run length can be multi-digit ("aaaaaaaaaaaa" -> "a12"). Emitting it as
+  characters is an Int->decimal-string conversion: a divide/mod-by-10 digit loop,
+  or a dedicated primitive. Either way it is real in-core string SYNTHESIS that
+  reverse never needs. This is the single strongest argument that RLE's OUTPUT
+  belongs host-side (see rle.hostside.md): the run-DETECTION is cheap Int work,
+  the run-RENDERING is the expensive part and is exactly what a host formatter
+  already does.
+
+REPRESENTATIVE SOLUTION (linrec carrying  s out prev cnt ; design estimate)
+  ""0 0[`0=][@}#,@][`@^=[_1+][@}#,~1]?]|
+  intent:  carry  (remaining-string s, output-acc out, prev-codepoint, run-count).
+    predicate  [`0=]     : str-uncons peek -> empty? (loop until s exhausted)
+    terminal   [@}#,@]   : final flush — render prev+}cnt, concat into out, emit
+    R1/R2      [`@^=[_1+][@}#,~1]?]
+               : uncons head c; c==prev ? cnt+1 (bump) : flush(out,prev,}cnt)
+                 then prev<-c, cnt<-1.
+  o200k 28 / cl100k 28  (design estimate, +-4 band — exact golf not verified).
+
+VALUE-LEVEL HAND-TRACE (algorithm, on "aaabbc")
+  runs:  a x3, b x2, c x1
+  emit:  'a' + str(3) -> "a3"; 'b' + str(2) -> "b2"; 'c' + str(1) -> "c1"
+  concat -> "a3b2c1"  = rle("aaabbc")  ✓  (matches reverse.py-adjacent rle.py)
+  edge "" -> loop body never runs, out stays "" -> ""  ✓
+  The point-free routing of a 4-wide carried state (s/out/prev/cnt) through
+  linrec is exactly the "stack-juggling tax" the v0.3 doc quantified; RLE is a
+  worse offender than any tier-2 task because it also renders (}) and concats (,).
+
+PRIMITIVE-NEED VERDICT for rle:  in-core string SYNTHESIS (num-to-str) is what
+  Variant A pays for. The run-DETECTION half needs only Int compare + a sequence,
+  i.e. NO Str value at all. Splitting detection (in-core, Int/Quote) from
+  rendering (host formatter) removes num-to-str and str-concat from the core
+  entirely — see rle.hostside.md, where the in-core compute is 31/30 tokens over
+  EXISTING primitives and the render is a host capability.
+
+REPRODUCE (run from bench/)
+  printf '%s' '""0 0[`0=][@}#,@][`@^=[_1+][@}#,~1]?]|' | python3 tokcount/tokcount.py  # 28/28
