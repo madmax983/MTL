@@ -859,6 +859,198 @@ pub proof fn lemma_body_inc_c1(prog: MProg, m: MConf, j: nat)
     assert(s12.cont =~= seq![w(SpecPrim::Dup), w(SpecPrim::Apply)]);
 }
 
+/// DecJz body, register c2, NONZERO (c2 > 0), 11 steps: decrement c2, `pc:=nz`.
+#[verifier::rlimit(30)]
+pub proof fn lemma_body_decjz_c2_nz(prog: MProg, m: MConf, jz: nat, nz: nat)
+    requires
+        m.pc < prog.code.len(),
+        prog.code[m.pc as int] == MInstr::DecJz(true, jz, nz),
+        m.c2 >= 1,
+    ensures ({
+        let m2 = MConf { pc: nz, c1: m.c1, c2: (m.c2 - 1) as nat };
+        &&& spec_stepn(post_dispatch(prog, m), 11) is Next
+        &&& rep(prog, m2, spec_stepn(post_dispatch(prog, m), 11)->Next_0)
+    }),
+{
+    reveal_with_fuel(spec_stepn, 12);
+    unary_uncons(m.c2);
+    let uq = SpecValue::Quote(compile_u(prog));
+    let c1q = SpecValue::Quote(unary(m.c1));
+    let c2q = SpecValue::Quote(unary(m.c2));
+    let tl = unary((m.c2 - 1) as nat);
+    let then_q = seq![w(SpecPrim::Swap), w(SpecPrim::Drop), w(SpecPrim::Swap),
+        SpecWord::PushInt(nz as int), w(SpecPrim::Swap), w(SpecPrim::Dup), w(SpecPrim::Apply)];
+    let else_q = seq![empty_quote(), w(SpecPrim::Swap),
+        SpecWord::PushInt(jz as int), w(SpecPrim::Swap), w(SpecPrim::Dup), w(SpecPrim::Apply)];
+    assert(body(prog, m.pc) =~= seq![w(SpecPrim::Drop), w(SpecPrim::Swap), w(SpecPrim::Uncons),
+        SpecWord::PushQuote(then_q), SpecWord::PushQuote(else_q), w(SpecPrim::If)]);
+    let s0 = post_dispatch(prog, m);
+    let s1 = spec_step(s0)->Next_0;   // Drop -> [c1,c2,U]
+    assert(s1.stack =~= seq![c1q, c2q, uq]);
+    let s2 = spec_step(s1)->Next_0;   // Swap -> [c1,U,c2]
+    assert(s2.stack =~= seq![c1q, uq, c2q]);
+    let s3 = spec_step(s2)->Next_0;   // Uncons (c2>0)
+    assert(s3.stack =~= seq![c1q, uq, SpecValue::Int(0int), SpecValue::Quote(tl), SpecValue::Int(1int)]);
+    let s4 = spec_step(s3)->Next_0;
+    let s5 = spec_step(s4)->Next_0;
+    let s6 = spec_step(s5)->Next_0;   // If c=1 -> THEN
+    assert(s6.stack =~= seq![c1q, uq, SpecValue::Int(0int), SpecValue::Quote(tl)]);
+    assert(s6.cont =~= then_q);
+    let s7 = spec_step(s6)->Next_0;   // Swap
+    let s8 = spec_step(s7)->Next_0;   // Drop
+    assert(s8.stack =~= seq![c1q, uq, SpecValue::Quote(tl)]);
+    let s9 = spec_step(s8)->Next_0;   // Swap
+    assert(s9.stack =~= seq![c1q, SpecValue::Quote(tl), uq]);
+    let s10 = spec_step(s9)->Next_0;  // PushInt(nz)
+    let s11 = spec_step(s10)->Next_0; // Swap
+    assert(s11.stack =~= seq![c1q, SpecValue::Quote(tl), SpecValue::Int(nz as int), uq]);
+    assert(s11.cont =~= seq![w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+}
+
+/// DecJz body, register c2, ZERO (c2 == 0), 10 steps: `pc:=jz`, c2 stays 0.
+#[verifier::rlimit(30)]
+pub proof fn lemma_body_decjz_c2_z(prog: MProg, m: MConf, jz: nat, nz: nat)
+    requires
+        m.pc < prog.code.len(),
+        prog.code[m.pc as int] == MInstr::DecJz(true, jz, nz),
+        m.c2 == 0,
+    ensures ({
+        let m2 = MConf { pc: jz, c1: m.c1, c2: 0 };
+        &&& spec_stepn(post_dispatch(prog, m), 10) is Next
+        &&& rep(prog, m2, spec_stepn(post_dispatch(prog, m), 10)->Next_0)
+    }),
+{
+    reveal_with_fuel(spec_stepn, 11);
+    assert(unary(0) =~= Seq::<SpecWord>::empty());
+    let uq = SpecValue::Quote(compile_u(prog));
+    let c1q = SpecValue::Quote(unary(m.c1));
+    let c2q = SpecValue::Quote(unary(m.c2));
+    let then_q = seq![w(SpecPrim::Swap), w(SpecPrim::Drop), w(SpecPrim::Swap),
+        SpecWord::PushInt(nz as int), w(SpecPrim::Swap), w(SpecPrim::Dup), w(SpecPrim::Apply)];
+    let else_q = seq![empty_quote(), w(SpecPrim::Swap),
+        SpecWord::PushInt(jz as int), w(SpecPrim::Swap), w(SpecPrim::Dup), w(SpecPrim::Apply)];
+    assert(body(prog, m.pc) =~= seq![w(SpecPrim::Drop), w(SpecPrim::Swap), w(SpecPrim::Uncons),
+        SpecWord::PushQuote(then_q), SpecWord::PushQuote(else_q), w(SpecPrim::If)]);
+    let s0 = post_dispatch(prog, m);
+    let s1 = spec_step(s0)->Next_0;   // Drop
+    assert(s1.stack =~= seq![c1q, c2q, uq]);
+    let s2 = spec_step(s1)->Next_0;   // Swap -> [c1,U,c2(empty)]
+    assert(s2.stack =~= seq![c1q, uq, c2q]);
+    let s3 = spec_step(s2)->Next_0;   // Uncons empty -> Int(0)
+    assert(s3.stack =~= seq![c1q, uq, SpecValue::Int(0int)]);
+    let s4 = spec_step(s3)->Next_0;
+    let s5 = spec_step(s4)->Next_0;
+    let s6 = spec_step(s5)->Next_0;   // If c=0 -> ELSE
+    assert(s6.stack =~= seq![c1q, uq]);
+    assert(s6.cont =~= else_q);
+    let s7 = spec_step(s6)->Next_0;   // empty_quote -> Quote(empty)
+    assert(s7.stack =~= seq![c1q, uq, SpecValue::Quote(unary(0))]);
+    let s8 = spec_step(s7)->Next_0;   // Swap
+    assert(s8.stack =~= seq![c1q, SpecValue::Quote(unary(0)), uq]);
+    let s9 = spec_step(s8)->Next_0;   // PushInt(jz)
+    let s10 = spec_step(s9)->Next_0;  // Swap
+    assert(s10.stack =~= seq![c1q, SpecValue::Quote(unary(0)), SpecValue::Int(jz as int), uq]);
+    assert(s10.cont =~= seq![w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+}
+
+/// DecJz body, register c1, NONZERO (c1 > 0), 12 steps: decrement c1, `pc:=nz`.
+#[verifier::rlimit(30)]
+pub proof fn lemma_body_decjz_c1_nz(prog: MProg, m: MConf, jz: nat, nz: nat)
+    requires
+        m.pc < prog.code.len(),
+        prog.code[m.pc as int] == MInstr::DecJz(false, jz, nz),
+        m.c1 >= 1,
+    ensures ({
+        let m2 = MConf { pc: nz, c1: (m.c1 - 1) as nat, c2: m.c2 };
+        &&& spec_stepn(post_dispatch(prog, m), 12) is Next
+        &&& rep(prog, m2, spec_stepn(post_dispatch(prog, m), 12)->Next_0)
+    }),
+{
+    reveal_with_fuel(spec_stepn, 13);
+    unary_uncons(m.c1);
+    let uq = SpecValue::Quote(compile_u(prog));
+    let c1q = SpecValue::Quote(unary(m.c1));
+    let c2q = SpecValue::Quote(unary(m.c2));
+    let tl = unary((m.c1 - 1) as nat);
+    let then_q = seq![w(SpecPrim::Swap), w(SpecPrim::Drop), w(SpecPrim::Rot), w(SpecPrim::Rot),
+        SpecWord::PushInt(nz as int), w(SpecPrim::Swap), w(SpecPrim::Dup), w(SpecPrim::Apply)];
+    let else_q = seq![empty_quote(), w(SpecPrim::Rot), w(SpecPrim::Rot),
+        SpecWord::PushInt(jz as int), w(SpecPrim::Swap), w(SpecPrim::Dup), w(SpecPrim::Apply)];
+    assert(body(prog, m.pc) =~= seq![w(SpecPrim::Drop), w(SpecPrim::Rot), w(SpecPrim::Uncons),
+        SpecWord::PushQuote(then_q), SpecWord::PushQuote(else_q), w(SpecPrim::If)]);
+    let s0 = post_dispatch(prog, m);
+    let s1 = spec_step(s0)->Next_0;   // Drop -> [c1,c2,U]
+    assert(s1.stack =~= seq![c1q, c2q, uq]);
+    let s2 = spec_step(s1)->Next_0;   // Rot -> [c2,U,c1]
+    assert(s2.stack =~= seq![c2q, uq, c1q]);
+    let s3 = spec_step(s2)->Next_0;   // Uncons (c1>0)
+    assert(s3.stack =~= seq![c2q, uq, SpecValue::Int(0int), SpecValue::Quote(tl), SpecValue::Int(1int)]);
+    let s4 = spec_step(s3)->Next_0;
+    let s5 = spec_step(s4)->Next_0;
+    let s6 = spec_step(s5)->Next_0;   // If c=1 -> THEN
+    assert(s6.stack =~= seq![c2q, uq, SpecValue::Int(0int), SpecValue::Quote(tl)]);
+    assert(s6.cont =~= then_q);
+    let s7 = spec_step(s6)->Next_0;   // Swap
+    let s8 = spec_step(s7)->Next_0;   // Drop -> [c2,U,c1']
+    assert(s8.stack =~= seq![c2q, uq, SpecValue::Quote(tl)]);
+    let s9 = spec_step(s8)->Next_0;   // Rot -> [U,c1',c2]
+    assert(s9.stack =~= seq![uq, SpecValue::Quote(tl), c2q]);
+    let s10 = spec_step(s9)->Next_0;  // Rot -> [c1',c2,U]
+    assert(s10.stack =~= seq![SpecValue::Quote(tl), c2q, uq]);
+    let s11 = spec_step(s10)->Next_0; // PushInt(nz)
+    let s12 = spec_step(s11)->Next_0; // Swap
+    assert(s12.stack =~= seq![SpecValue::Quote(tl), c2q, SpecValue::Int(nz as int), uq]);
+    assert(s12.cont =~= seq![w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+}
+
+/// DecJz body, register c1, ZERO (c1 == 0), 11 steps: `pc:=jz`, c1 stays 0.
+#[verifier::rlimit(30)]
+pub proof fn lemma_body_decjz_c1_z(prog: MProg, m: MConf, jz: nat, nz: nat)
+    requires
+        m.pc < prog.code.len(),
+        prog.code[m.pc as int] == MInstr::DecJz(false, jz, nz),
+        m.c1 == 0,
+    ensures ({
+        let m2 = MConf { pc: jz, c1: 0, c2: m.c2 };
+        &&& spec_stepn(post_dispatch(prog, m), 11) is Next
+        &&& rep(prog, m2, spec_stepn(post_dispatch(prog, m), 11)->Next_0)
+    }),
+{
+    reveal_with_fuel(spec_stepn, 12);
+    assert(unary(0) =~= Seq::<SpecWord>::empty());
+    let uq = SpecValue::Quote(compile_u(prog));
+    let c1q = SpecValue::Quote(unary(m.c1));
+    let c2q = SpecValue::Quote(unary(m.c2));
+    let then_q = seq![w(SpecPrim::Swap), w(SpecPrim::Drop), w(SpecPrim::Rot), w(SpecPrim::Rot),
+        SpecWord::PushInt(nz as int), w(SpecPrim::Swap), w(SpecPrim::Dup), w(SpecPrim::Apply)];
+    let else_q = seq![empty_quote(), w(SpecPrim::Rot), w(SpecPrim::Rot),
+        SpecWord::PushInt(jz as int), w(SpecPrim::Swap), w(SpecPrim::Dup), w(SpecPrim::Apply)];
+    assert(body(prog, m.pc) =~= seq![w(SpecPrim::Drop), w(SpecPrim::Rot), w(SpecPrim::Uncons),
+        SpecWord::PushQuote(then_q), SpecWord::PushQuote(else_q), w(SpecPrim::If)]);
+    let s0 = post_dispatch(prog, m);
+    let s1 = spec_step(s0)->Next_0;   // Drop
+    assert(s1.stack =~= seq![c1q, c2q, uq]);
+    let s2 = spec_step(s1)->Next_0;   // Rot -> [c2,U,c1(empty)]
+    assert(s2.stack =~= seq![c2q, uq, c1q]);
+    let s3 = spec_step(s2)->Next_0;   // Uncons empty -> Int(0)
+    assert(s3.stack =~= seq![c2q, uq, SpecValue::Int(0int)]);
+    let s4 = spec_step(s3)->Next_0;
+    let s5 = spec_step(s4)->Next_0;
+    let s6 = spec_step(s5)->Next_0;   // If c=0 -> ELSE
+    assert(s6.stack =~= seq![c2q, uq]);
+    assert(s6.cont =~= else_q);
+    let s7 = spec_step(s6)->Next_0;   // empty_quote
+    assert(s7.stack =~= seq![c2q, uq, SpecValue::Quote(unary(0))]);
+    let s8 = spec_step(s7)->Next_0;   // Rot -> [U,empty,c2]
+    assert(s8.stack =~= seq![uq, SpecValue::Quote(unary(0)), c2q]);
+    let s9 = spec_step(s8)->Next_0;   // Rot -> [empty,c2,U]
+    assert(s9.stack =~= seq![SpecValue::Quote(unary(0)), c2q, uq]);
+    let s10 = spec_step(s9)->Next_0;  // PushInt(jz)
+    let s11 = spec_step(s10)->Next_0; // Swap
+    assert(s11.stack =~= seq![SpecValue::Quote(unary(0)), c2q, SpecValue::Int(jz as int), uq]);
+    assert(s11.cont =~= seq![w(SpecPrim::Dup), w(SpecPrim::Apply)]);
+}
+
 } // verus!
 
 fn main() {}
