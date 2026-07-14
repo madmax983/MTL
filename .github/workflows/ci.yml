@@ -126,6 +126,44 @@ jobs:
             exit 1
           fi
 
+      - name: verus verify — Layer C checker soundness M1 (crates/mtl-core/src/checker_verus.rs)
+        id: checkerc
+        # HARD GATE on VERIFICATION (like P5): `checker_verus.rs` mechanizes the v0.6
+        # static stack-effect checker's soundness (T-Static / T-Progress / T-Branch)
+        # over `spec_step` for the milestone-1 straight-line + If fragment. It does
+        # `#[path] mod mtl_core;`, so this invocation ALSO re-verifies the frozen core.
+        # MILESTONE-1 STATUS: every lemma is machine-checked EXCEPT one loudly-marked
+        # `assume` bridging the If-INLINING case of the top-level T-Static
+        # (`thm_static_with_if`) — the milestone-2 work. That single gap is surfaced by
+        # the honesty audit below; everything else (per-primitive progress+preservation,
+        # the If-free T-Static induction, T-Progress, and the T-Branch join) is admit-free.
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          if verus crates/mtl-core/src/checker_verus.rs 2>&1 | tee artifacts/checkerc-proof-log.txt ; then
+            echo "checkerc_status=pass" >> "$GITHUB_OUTPUT"
+            echo "### Verus Layer C checker soundness (M1): VERIFIED" >> "$GITHUB_STEP_SUMMARY"
+            echo "Machine-checked: lemma_prim_step_sound (per-primitive T-Progress), thm_static_straightline (If-free T-Static), thm_progress, thm_branch_progress, lemma_join_sound (T-Branch). One marked \`assume\` bridges the If-inlining case of thm_static_with_if (milestone 2)." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "checkerc_status=fail" >> "$GITHUB_OUTPUT"
+            echo "### Verus Layer C checker soundness (M1): FAILED — see checkerc proof log artifact" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: verus honesty audit — Layer C M1 --no-cheating (reports the 1 marked gap; non-fatal)
+        if: always()
+        # `--no-cheating` rejects assume/admit/external_body. EXPECTED to flag exactly
+        # (a) the two mtl_core P2 Clone external_body stubs (pulled in via `mod mtl_core`)
+        # and (b) the SINGLE milestone-1 `assume` in `thm_static_with_if` (the If-inlining
+        # bridge). Any OTHER cheat appearing here is a regression. Report-only.
+        run: |
+          mkdir -p artifacts
+          verus --no-cheating crates/mtl-core/src/checker_verus.rs 2>&1 | tee artifacts/checkerc-no-cheating-audit.txt || true
+          {
+            echo "### Honesty audit (verus --no-cheating) — Layer C M1"
+            echo "EXPECTED gaps: 2 mtl_core P2 Clone external_body stubs + 1 marked \`assume\` in \`thm_static_with_if\` (If-inlining, milestone 2). No other cheat is permitted."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: verus honesty audit — --no-cheating (reports stubbed P2; non-fatal)
         if: always()
         # `--no-cheating` rejects assume/admit/external_body. It is EXPECTED to fail
