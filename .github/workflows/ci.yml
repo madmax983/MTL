@@ -126,13 +126,13 @@ jobs:
             exit 1
           fi
 
-      - name: verus verify — Layer C checker soundness M1+M2+M3 (crates/mtl-core/src/checker_verus.rs)
+      - name: verus verify — Layer C checker soundness M1+M2+M3+M4 (crates/mtl-core/src/checker_verus.rs)
         id: checkerc
         # HARD GATE on VERIFICATION (like P5): `checker_verus.rs` mechanizes the v0.6
         # static stack-effect checker's soundness (T-Static / T-Progress / T-Branch)
         # over `spec_step`. It does `#[path] mod mtl_core;`, so this invocation ALSO
         # re-verifies the frozen core.
-        # STATUS: 113 verified, 0 errors. Every lemma is machine-checked.
+        # STATUS: 116 verified, 0 errors. Every lemma is machine-checked.
         #  * M1/M2: straight-line + If T-Static (If-inlining CLOSED, no assume),
         #    Times + PrimRec fully proven, reusable frame/compose/invariant machinery.
         #  * M3: deterministic literal-Uncons soundness (lemma_uncons_case) and the
@@ -141,6 +141,12 @@ jobs:
         #    (sound) with the desugaring + branch shape-compatibility lemmas
         #    (lemma_linrec_desugar / lemma_linrec_if_shape) machine-checked and the
         #    full-recursion fixpoint marked as a loud UNPROVEN GAP.
+        #  * M4: row-polymorphic T-Static — thm_static_rowpoly lifts the pre=[]
+        #    self-contained slice to arbitrary non-empty `pre` (input-borrowing
+        #    programs), via lemma_models_stack_append re-using the already
+        #    base-polymorphic lemma_check_invariant. Borrowed-Int inputs FULLY
+        #    COVERED across the whole M1–M3 fragment; borrowed-Quote inputs remain a
+        #    loudly marked GAP (the AInt|ALit lattice cannot name an opaque quote).
         # The only residual --no-cheating gaps are the 2 mtl_core P2 Clone external_body
         # stubs (pulled in via `mod mtl_core`, not from checker_verus itself).
         run: |
@@ -148,11 +154,11 @@ jobs:
           mkdir -p artifacts
           if verus crates/mtl-core/src/checker_verus.rs 2>&1 | tee artifacts/checkerc-proof-log.txt ; then
             echo "checkerc_status=pass" >> "$GITHUB_OUTPUT"
-            echo "### Verus Layer C checker soundness (M1+M2+M3): VERIFIED (113/0)" >> "$GITHUB_STEP_SUMMARY"
-            echo "Machine-checked: lemma_prim_step_sound (per-primitive T-Progress), thm_static_straightline (If-free T-Static), thm_progress, thm_branch_progress, lemma_join_sound (T-Branch), thm_static_with_if (full straight-line + If T-Static, no assume), and the M3 combinators — lemma_uncons_case (deterministic literal-Uncons), lemma_fold_case/lemma_fold_splice (homogeneous-Int literal-seq Fold), lemma_linrec_desugar/lemma_linrec_if_shape (LinRec desugaring + branch shape-compatibility; full recursion conservatively Rejected)." >> "$GITHUB_STEP_SUMMARY"
+            echo "### Verus Layer C checker soundness (M1+M2+M3+M4): VERIFIED (116/0)" >> "$GITHUB_STEP_SUMMARY"
+            echo "Machine-checked: lemma_prim_step_sound (per-primitive T-Progress), thm_static_straightline (If-free T-Static), thm_progress, thm_branch_progress, lemma_join_sound (T-Branch), thm_static_with_if (full straight-line + If T-Static, no assume), the M3 combinators — lemma_uncons_case (deterministic literal-Uncons), lemma_fold_case/lemma_fold_splice (homogeneous-Int literal-seq Fold), lemma_linrec_desugar/lemma_linrec_if_shape (LinRec desugaring + branch shape-compatibility; full recursion conservatively Rejected) — and the M4 row-polymorphic lift: lemma_models_stack_append, thm_static_rowpoly, thm_static_rowpoly_allint (non-empty `pre`, ∀ρ. ρ++pre -> ρ++post)." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "checkerc_status=fail" >> "$GITHUB_OUTPUT"
-            echo "### Verus Layer C checker soundness (M1+M2+M3): FAILED — see checkerc proof log artifact" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Verus Layer C checker soundness (M1+M2+M3+M4): FAILED — see checkerc proof log artifact" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
