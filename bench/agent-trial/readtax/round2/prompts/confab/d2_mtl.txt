@@ -1,7 +1,9 @@
-# MTL Quick Reference (v0.4)
+You are being tested on your ability to READ and understand programs. Answer using ONLY your own reading. Do NOT run code, do NOT use any tools, and assume no interpreter is available. Be honest: if a program's result cannot be determined or it faults, say so rather than guessing.
 
-New in v0.4: the **Host capabilities** section at the end of this document,
-covering Tier-3 capability calls, the grant model, budgets, and host faults.
+The program below is written in MTL. Here is the complete MTL quick reference you may rely on:
+
+=== BEGIN MTL QUICK REFERENCE ===
+# MTL Quick Reference (v0.3)
 
 MTL is a stack-based, point-free language. A program is a flat sequence of
 words executed left to right against an operand stack. There are no variables,
@@ -59,8 +61,6 @@ Stack effect notation: top of stack is at the **right**. `[q]` is a quote.
 | `(` | fold | `( [seq] init [C] -- r )` | native left fold; `C:( acc w -- acc' )` runs once per element left-to-right; `[]` gives `init` |
 | `$` | xor | `( a b -- a$b )` | bitwise XOR on the i64 two's-complement; total (no Overflow, no DivByZero) |
 
-**Truncation vs Python.** `/` and `%` truncate toward zero (remainder sign follows the dividend), unlike Python's *floored* `//`/`%`: MTL `-7 % 3` is `-1` (truncated) where Python gives `2` (floored) — a porting trap for twins.
-
 ## Recursion combinators (exact rewrites)
 
 Continuation splicing: `!` and the combinators splice quote bodies into the
@@ -83,9 +83,6 @@ program rather than calling a sub-interpreter.
 - **`>` uncons**: `[h t...] >` → `h [t...] 1`; `[] >` → `0`. It consumes the
   quote once (affine). A non-empty list yields head value, tail quote, and flag
   `1`; empty yields just `0`. A quote whose head is not a pushed value faults.
-- **Fuel is a depth budget.** Interpreter fuel is charged against recursion
-  DEPTH, so a deep-but-valid `&`/`|`/`.` can exhaust fuel before completing;
-  size the fuel budget to the expected recursion depth.
 
 ### List idioms
 
@@ -132,127 +129,10 @@ Overflow). E.g. `Int(1) Add` with one operand is Underflow, not TypeMismatch.
    cons prepends, walking the input front-to-back yields the reversed list. Use
    `'` (dip) to run the recursion under the growing accumulator, and `>_` to
    take a tail while discarding the uncons flag.
+=== END MTL QUICK REFERENCE ===
 
-## Host capabilities (v0.4 Tier-3)
+Here is a complete MTL program. The input is already prepended and it runs on an initially empty stack:
 
-The pure language above is total and effect-free. Tier-3 programs also reach a
-**host** through *capabilities* — named words serviced outside the verified
-core. This is the only source of I/O, tools, and resources.
+    [24 24 24 24 24 24 24 24 24 24 24 24 24 24]1[*](
 
-### Named words = capability Calls
-
-- A **named word** `[a-z][a-z0-9]*` (e.g. `readline`, `emit`) is a host
-  capability `Call`, **not** a core primitive. The core yields on every named
-  word; the host services it, popping/pushing per the capability's stack effect.
-- **Single glyphs** (`: _ ~ + ? | …`) are always pure core prims. Only
-  lowercase-alphanumeric words hit the host. The lexer reads `-` as `sub` and
-  `?` as `if`, so design names like `read-line`/`done?` are spelled
-  `readline`/`donep`.
-
-### Capability table
-
-Stack effect notation matches the core (top at right). `{output}` = writes
-output bytes (metered). "faults" lists the [`HostCode`](#fault-codes) a call may
-raise; all can also raise `NotGranted`/`BudgetExhausted`.
-
-**Input** (read host-owned fixture data):
-
-| Call | Stack effect | Faults | Note |
-|---|---|---|---|
-| `readline` | `( -- h )` | InputClosed | first input line handle |
-| `nextline` | `( -- h )` | InputClosed | next line handle; advances |
-| `readlines` | `( -- [h…] )` | — | all lines as handle list |
-| `readstate` | `( -- s )` | — | initial agent state (int) |
-| `readjson` | `( -- j )` | — | json document handle |
-| `readinput` | `( -- q )` | — | query string handle |
-| `readtext` | `( -- t )` | — | free-text handle |
-
-**Predicates** (leave input, push a `0|1` flag — the way to cope with limits):
-
-| Call | Stack effect | Note |
-|---|---|---|
-| `endp` | `( -- 0\|1 )` | 1 iff input exhausted |
-| `linehit` | `( h -- h 0\|1 )` | 1 iff line matches predicate |
-| `donep` | `( s -- s 0\|1 )` | 1 iff `s >= threshold` |
-| `okp` | `( r -- r 0\|1 )` | 1 once flaky op warmed up |
-
-**Transforms** (handle/state → new handle/int):
-
-| Call | Stack effect | Faults | Note |
-|---|---|---|---|
-| `step` | `( s -- s' )` | — | `s + 1` |
-| `getname` | `( j -- v )` | ToolError | extract json "name" field |
-| `fetch` | `( q -- doc )` | ToolError | tool: query → document |
-| `parse` | `( doc -- v )` | ToolError | tool: document → value |
-| `tokenize` | `( t -- [w…] )` | — | split text into word handles |
-| `transform` | `( h -- h' )` | — | uppercase the string |
-| `tryop` | `( -- r )` | ToolError | flaky tool; retry until `okp` |
-
-**Handles** (move/combine opaque strings without reading bytes):
-
-| Call | Stack effect | Faults | Note |
-|---|---|---|---|
-| `concat` | `( h1 h2 -- h )` | ToolError | join two string handles |
-| `select` | `( [h…] n -- h )` | ToolError | nth handle (0-indexed) |
-
-**Output** (metered against the byte cap):
-
-| Call | Stack effect | Faults | Note |
-|---|---|---|---|
-| `emit` | `( h -- )` `{output}` | OutputCapExceeded | write string + `\n` |
-| `emitint` | `( n -- )` `{output}` | OutputCapExceeded | write decimal `n` + `\n` |
-
-### Grant model
-
-The **grant set** (registry) fixes which names are callable. Calling a name that
-is **not granted** faults `NotGranted` and does nothing — no pop, no push, no
-effect. A task may grant only a restricted subset ("you may only use `readline`,
-`emit`); staying inside that set is part of the task. Assume nothing is granted
-unless the task lists it.
-
-### Budgets
-
-Two orthogonal host meters, each charged **before** the effect, atomically (a
-refused charge runs nothing, mutates nothing):
-
-- **Per-name call budget** — a capability may be capped at `N` calls. The
-  `N+1`th faults `BudgetExhausted` and does not run.
-- **Total output-byte cap** — a shared budget across all `{output}` calls. An
-  `emit`/`emitint` whose bytes would exceed it faults `OutputCapExceeded` and
-  writes nothing.
-
-Unbudgeted names/bytes are unlimited. Bound your calls to stay inside a stated
-budget — there is no refund and no retry after the fault.
-
-### Fault codes
-
-`HostCode`: `InputClosed`, `OutputCapExceeded`, `BudgetExhausted`, `ToolError`,
-`Timeout`, `NotGranted`.
-
-A **host fault is terminal**: it ends the run with no partial effect, and there
-is **no in-MTL catch** — `?`/`|` cannot recover from a fault that already fired.
-So you **cope by predicting**: call a predicate capability, read its `0|1` flag,
-and branch with `?`/`|` so you never make the call that would over-read or
-over-budget. Guard input with `endp`/`linehit`, loops with `donep`, retries with
-`okp`.
-
-### String handles
-
-The core has no string type. A string is an **opaque `i64` handle** on the
-stack. The core can only **move** a handle — `:` dup, `_` drop, `~` swap, and
-list ops — it cannot read, compare, or build the bytes behind it. All string
-work happens host-side inside capabilities (`transform`, `concat`, `getname`, …).
-`0` is never a valid handle (usable as a sentinel).
-
-### Examples
-
-1. **Echo one line** — `readline emit`: read the first line's handle, write it.
-2. **Grep by predicate** — `readlines 0[linehit[emit][_]?](_`: fold over the
-   line handles; `linehit` leaves the handle and a flag, `?` emits it or drops
-   it.
-3. **Drain input safely** — `[endp][][nextline emit][]|`: linrec whose predicate
-   `endp` terminates on exhaustion; otherwise `nextline emit` then recurse.
-   `endp` guards `nextline` so it never faults `InputClosed`.
-4. **Retry a flaky tool** — `tryop[okp][_][_ tryop][]|`: seed one `tryop`, then
-   loop while `okp`'s flag is `0`, each pass dropping the old result and calling
-   `tryop` again; on success drop the result.
+What integer does this program produce? If it does not produce an integer, say so and explain.

@@ -10,6 +10,18 @@ these files (item bank, ground truth, prompts, scoring) are consumed by an
 orchestrator Workflow that runs the model-under-test and produces
 `results/results.jsonl`, which `report.py` then scores.
 
+## Round 2 (harder items)
+
+Round 1 (this directory) saturated at the ceiling and could only conclude "no
+*measurable* read-tax at this item difficulty." **Round 2** raises difficulty
+across a four-tier A→D ladder (moderate → hard → extreme → deepest escalation)
+with genuinely hard items — dense fold-of-fold-of-fold, 12-deep `uncons`,
+simulation depth 11–13 — and still finds **no accuracy read-tax at any tier**
+(comprehension delta +0.0 through tier D). The one real, measured tax is **input
+tokens** (11–16× for the quickref-bearing MTL arm). See
+[`round2/README.md`](round2/README.md) for the full round-2 report, tables, and
+methodology.
+
 ## Model under test
 
 `claude-opus-4-8`, run cold (fresh context per prompt), **3 trials per item per

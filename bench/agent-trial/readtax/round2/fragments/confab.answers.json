@@ -1,0 +1,182 @@
+{
+  "confab/divnk/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/divnk/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/condbr/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/condbr/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/dropuf/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Underflow"
+  },
+  "confab/dropuf/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "IndexError"
+  },
+  "confab/safediv/mtl": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 528
+  },
+  "confab/safediv/python": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 528
+  },
+  "confab/folddiv/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/folddiv/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/prodovf/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Overflow"
+  },
+  "confab/prodovf/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "OverflowError"
+  },
+  "confab/unconsuf/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Underflow"
+  },
+  "confab/unconsuf/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "IndexError"
+  },
+  "confab/foldsafe/mtl": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 344042899200
+  },
+  "confab/foldsafe/python": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 344042899200
+  },
+  "confab/folddivdeep/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/folddivdeep/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/prodovfdeep/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Overflow"
+  },
+  "confab/prodovfdeep/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "OverflowError"
+  },
+  "confab/typedeep/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "TypeMismatch"
+  },
+  "confab/typedeep/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "TypeError"
+  },
+  "confab/safedivdeep/mtl": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 0
+  },
+  "confab/safedivdeep/python": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 0
+  },
+  "confab/d1/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/d1/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/d2/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Overflow"
+  },
+  "confab/d2/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "OverflowError"
+  },
+  "confab/d3/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Underflow"
+  },
+  "confab/d3/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "IndexError"
+  },
+  "confab/d4/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/d4/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/d5/mtl": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 6568408355712890625
+  },
+  "confab/d5/python": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 6568408355712890625
+  },
+  "confab/d6/mtl": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 2755
+  },
+  "confab/d6/python": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 2755
+  }
+}

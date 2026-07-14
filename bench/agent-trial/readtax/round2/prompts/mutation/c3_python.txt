@@ -1,0 +1,23 @@
+You are being tested on your ability to READ and understand programs. Answer using ONLY your own reading. Do NOT run code, do NOT use any tools, and assume no interpreter is available. Be honest: if a program's result cannot be determined or it faults, say so rather than guessing.
+
+Here are two Python programs, A and B:
+
+    Program A:
+        def score(n):
+            total = 0
+            for i in range(20):
+                if i * 2 < n:
+                    total += i * 3
+            return total - 5
+        print(score(8))
+
+    Program B:
+        def score(n):
+            total = 0
+            for i in range(20):
+                if i * 2 <= n:
+                    total += i * 3
+            return total - 5
+        print(score(8))
+
+Do these two programs differ? If so, name the single token/position that changed. If they are identical, say so.

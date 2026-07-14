@@ -1,0 +1,678 @@
+{
+  "comprehension/horner_sq/mtl": {
+    "schema": "comprehension",
+    "expected_int": 30628
+  },
+  "comprehension/horner_sq/python": {
+    "schema": "comprehension",
+    "expected_int": 30628
+  },
+  "comprehension/max_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": 81
+  },
+  "comprehension/max_fold/python": {
+    "schema": "comprehension",
+    "expected_int": 81
+  },
+  "comprehension/xor_scan/mtl": {
+    "schema": "comprehension",
+    "expected_int": 572
+  },
+  "comprehension/xor_scan/python": {
+    "schema": "comprehension",
+    "expected_int": 572
+  },
+  "comprehension/cube_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": 67860
+  },
+  "comprehension/cube_fold/python": {
+    "schema": "comprehension",
+    "expected_int": 67860
+  },
+  "comprehension/factsum_sumsq/mtl": {
+    "schema": "comprehension",
+    "expected_int": 2303415
+  },
+  "comprehension/factsum_sumsq/python": {
+    "schema": "comprehension",
+    "expected_int": 2303415
+  },
+  "comprehension/prod_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": -326
+  },
+  "comprehension/prod_fold/python": {
+    "schema": "comprehension",
+    "expected_int": -326
+  },
+  "comprehension/tri_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": 631
+  },
+  "comprehension/tri_fold/python": {
+    "schema": "comprehension",
+    "expected_int": 631
+  },
+  "comprehension/fact_linrec/mtl": {
+    "schema": "comprehension",
+    "expected_int": 101833528
+  },
+  "comprehension/fact_linrec/python": {
+    "schema": "comprehension",
+    "expected_int": 101833528
+  },
+  "comprehension/fold_of_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": 3733
+  },
+  "comprehension/fold_of_fold/python": {
+    "schema": "comprehension",
+    "expected_int": 3733
+  },
+  "comprehension/sumsq_linrec/mtl": {
+    "schema": "comprehension",
+    "expected_int": 1905
+  },
+  "comprehension/sumsq_linrec/python": {
+    "schema": "comprehension",
+    "expected_int": 1905
+  },
+  "comprehension/uncons_unpack/mtl": {
+    "schema": "comprehension",
+    "expected_int": -7
+  },
+  "comprehension/uncons_unpack/python": {
+    "schema": "comprehension",
+    "expected_int": -7
+  },
+  "comprehension/sumsq_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": 6773
+  },
+  "comprehension/sumsq_fold/python": {
+    "schema": "comprehension",
+    "expected_int": 6773
+  },
+  "comprehension/d1/mtl": {
+    "schema": "comprehension",
+    "expected_int": 10749
+  },
+  "comprehension/d1/python": {
+    "schema": "comprehension",
+    "expected_int": 10749
+  },
+  "comprehension/d2/mtl": {
+    "schema": "comprehension",
+    "expected_int": 13320
+  },
+  "comprehension/d2/python": {
+    "schema": "comprehension",
+    "expected_int": 13320
+  },
+  "comprehension/d3/mtl": {
+    "schema": "comprehension",
+    "expected_int": 314
+  },
+  "comprehension/d3/python": {
+    "schema": "comprehension",
+    "expected_int": 314
+  },
+  "comprehension/d4/mtl": {
+    "schema": "comprehension",
+    "expected_int": 478
+  },
+  "comprehension/d4/python": {
+    "schema": "comprehension",
+    "expected_int": 478
+  },
+  "comprehension/d5/mtl": {
+    "schema": "comprehension",
+    "expected_int": 6857
+  },
+  "comprehension/d5/python": {
+    "schema": "comprehension",
+    "expected_int": 6857
+  },
+  "comprehension/d6/mtl": {
+    "schema": "comprehension",
+    "expected_int": 20775
+  },
+  "comprehension/d6/python": {
+    "schema": "comprehension",
+    "expected_int": 20775
+  },
+  "comprehension/d7/mtl": {
+    "schema": "comprehension",
+    "expected_int": 498
+  },
+  "comprehension/d7/python": {
+    "schema": "comprehension",
+    "expected_int": 498
+  },
+  "comprehension/d8/mtl": {
+    "schema": "comprehension",
+    "expected_int": -28
+  },
+  "comprehension/d8/python": {
+    "schema": "comprehension",
+    "expected_int": -28
+  },
+  "recall/arith1/mtl": {
+    "schema": "recall",
+    "expected_program": "3:*2*7+5%9+:*4-2*1+3+8*2-6+5*2+"
+  },
+  "recall/arith1/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return (n*n*2+7)%5*9-4+2*1-3+8*2-6+5*2"
+  },
+  "recall/arith2/mtl": {
+    "schema": "recall",
+    "expected_program": "5:*3+2*7-:*4%9+8*2-1+6*3+7%2*5+3*"
+  },
+  "recall/arith2/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return (n*n+3)*2-7%4+9+8*2-1+6*3+7%2*5+3"
+  },
+  "recall/times1/mtl": {
+    "schema": "recall",
+    "expected_program": "2 8[3*7+2%5+].9-:*4%1+6*3+2*7-5%"
+  },
+  "recall/times1/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n):\n    x = 8\n    for _ in range(n): x = (x*3+7) % 2 + 5\n    return (x-9) % 4 + 1 + 6*3"
+  },
+  "recall/primrec1/mtl": {
+    "schema": "recall",
+    "expected_program": "4[1][*]&7+:*3%9+2*5-:2/1+6*3+2*"
+  },
+  "recall/primrec1/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n):\n    r = 1\n    for k in range(1, n+1): r *= k\n    return (r+7) % 3 + 9 + 2*5 - 1 + 6"
+  },
+  "recall/pipe1/mtl": {
+    "schema": "recall",
+    "expected_program": "7:*2%3+9*5-:*8%1+4*6-2+:*3%7+2*5+9-:*4%1+6*3-8+2*7%"
+  },
+  "recall/pipe1/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return (n*n*2)%3+9*5-8%1+4*6-2+(n*n)%3*7+2*5+9-4%1+6*3-8+2*7"
+  },
+  "recall/pipe2/mtl": {
+    "schema": "recall",
+    "expected_program": "3:*2*7+5%9+:*4-2*1+3+8*2-6+5*2+9-:*4%1+6*3-8+2*7%5+3*"
+  },
+  "recall/pipe2/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return (n*n*2+7)%5+9-4*2+1-3+8*2-6+5*2+9-4%1+6*3-8+2*7%5+3"
+  },
+  "recall/loop1/mtl": {
+    "schema": "recall",
+    "expected_program": "2 8[3*7+2%5+].9-:*4%1+6*3+2*7-5%9+:*4%1+6*3-8+2*"
+  },
+  "recall/loop1/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n):\n    x = 8\n    for _ in range(n): x = (x*3+7) % 2 + 5\n    return (x-9) % 4 + 1 + 6*3+2 - 7 % 5 + 9"
+  },
+  "recall/loop2/mtl": {
+    "schema": "recall",
+    "expected_program": "5 6[2*3+7%1+].8-:*4%9+2*5-:*3%7+1+6*3-8+2*9-:*4%1+6*"
+  },
+  "recall/loop2/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n):\n    x = 6\n    for _ in range(n): x = (x*2+3) % 7 + 1\n    return (x-8) % 4 + 9 + 2*5 - 3 % 7 + 1 + 6*3 - 8"
+  },
+  "recall/deep1/mtl": {
+    "schema": "recall",
+    "expected_program": "3:*2*7+5%9+13*4-2*1+3+8*2-6+5*2+9-:*47%1+6*3-8+2*7%5+3*2*9-11%"
+  },
+  "recall/deep1/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return (n*n*2+7)%5+13*4-2*1+3+8*2-6+5*2+9-(n*n)%47+1+6*3-8+2*7%5+3*2*9-11"
+  },
+  "recall/deep2/mtl": {
+    "schema": "recall",
+    "expected_program": "7:*2%13+9*5-:*8%1+4*6-2+:*3%17+2*5+9-:*4%1+6*3-8+2*7%5+3*2%9+11*"
+  },
+  "recall/deep2/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return (n*n)%2+13+9*5-(n*n)%8+1+4*6-2+(n*n)%3+17+2*5+9-4%1+6*3-8+2*7%5+3*2%9+11"
+  },
+  "recall/linrec1/mtl": {
+    "schema": "recall",
+    "expected_program": "[>[;0][[]1]?][_0][>_:2*3+7%5+][~;4*2-9+6%]|3+5*2-7%9+:*4%1+6*3"
+  },
+  "recall/linrec1/python": {
+    "schema": "recall",
+    "expected_program": "def solve(xs):\n    if not xs: return 0\n    h, *t = xs\n    return (h*2+3) % 7 + 5 + solve(t) * 4 - 2 + 9 % 6"
+  },
+  "recall/deep3/mtl": {
+    "schema": "recall",
+    "expected_program": "9:*2%13+7*5-:*8%1+4*6-2+:*3%17+2*5+9-:*4%1+6*3-8+2*7%5+3*2%11+"
+  },
+  "recall/deep3/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return (n*n)%2+13+7*5-(n*n)%8+1+4*6-2+(n*n)%3+17+2*5+9-4%1+6*3-8+2*7%5+3*2%11"
+  },
+  "recall/d1/mtl": {
+    "schema": "recall",
+    "expected_program": "2 9[3*7+2%5+].8-:*4%13+6*3+2*7-5%9+:*4%1+6*3-8+2*7%5+3*2%11+7*4-:*6%1+3*8-2%9+5*2-:*7%1+4*3"
+  },
+  "recall/d1/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return ((n*n)*2+7)%5+13*4-2*1+3+8*2-6+5*2+9-(n*n)%11+6*3-8+2*7%5+3*2%9+11-4*6+7"
+  },
+  "recall/d2/mtl": {
+    "schema": "recall",
+    "expected_program": "4[1][*]&7+:*3%13+2*5-:2/1+6*3+2*7%5+9-:*4%1+6*3-8+2*7%5+3*2%9+11+:*4%1+6*3-8+2*9-:*5%1+7*3+2%"
+  },
+  "recall/d2/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return ((n+3)*2-7)%4+13+2*5-9%1+6*3+2*7%5+9-4%1+6*3-8+2*7%5+3*2%9+11+4*6-2+7*3"
+  },
+  "recall/d3/mtl": {
+    "schema": "recall",
+    "expected_program": "7:*2%13+9*5-:*8%1+4*6-2+3 5[2*7+3%4+].9-:*4%17+6*3-8+2*7%5+3*2%9+11*4-:*6%1+3*8-2+5*7-:*9%1+2*3-6+4%7+:*8%1+3"
+  },
+  "recall/d3/python": {
+    "schema": "recall",
+    "expected_program": "def solve(n): return ((n*n)%2+13)+9*5-(n*n)%8+1+4*6-2+(n*n)%17+2*5+9-4%1+6*3-8+2*7%5+3*2%9+11-4*6+7"
+  },
+  "mutation/a1/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "~ (was ^)",
+    "position": "the stack-op glyph immediately after '2 4+' (between the '+' and the following '-')"
+  },
+  "mutation/a1/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "b (was a)",
+    "position": "first operand of the subtraction: '(b - a)' was '(a - b)'"
+  },
+  "mutation/a2/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "% (was /)",
+    "position": "the binary operator right after the literal '11', mid-program"
+  },
+  "mutation/a2/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "<= (was <)",
+    "position": "the loop comparison 'if i <= n' was 'if i < n'"
+  },
+  "mutation/a3/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/a3/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/a4/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/a4/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/b1/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "^ (was @)",
+    "position": "inside the inner quote: '[^*]' was '[@*]' (the stack-op just before the '*')"
+  },
+  "mutation/b1/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "d (was e)",
+    "position": "the subtrahend in the return: 'd - d' was 'd - e'"
+  },
+  "mutation/b2/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "! (was ')",
+    "position": "the combinator right after the inner quote '[5*]', inside the outer quote"
+  },
+  "mutation/b2/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "or (was and)",
+    "position": "the guard 'if x > 0 or y > 0' was 'if x > 0 and y > 0'"
+  },
+  "mutation/b3/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "; (was ,)",
+    "position": "between the two inner quotes '[3 4+]' and '[5*]', inside the outer quote"
+  },
+  "mutation/b3/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "b (was a)",
+    "position": "first factor of the product: '(b - a) * (b - c)' was '(a - b) * (b - c)'"
+  },
+  "mutation/b4/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/b4/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/c1/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "8 (was 0)",
+    "position": "the third digit of the 4-digit literal: '1080' was '1000'"
+  },
+  "mutation/c1/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "8 (was 0)",
+    "position": "the interior digit of 'base = 1080' was 'base = 1000'"
+  },
+  "mutation/c2/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "^ (was :)",
+    "position": "inside the times-loop body quote: '[^*]' was '[:*]' (the stack-op before '*')"
+  },
+  "mutation/c2/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "a (was c)",
+    "position": "the third term of the return: 'p - q + a - d' was 'p - q + c - d'"
+  },
+  "mutation/c3/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "= (was <)",
+    "position": "the comparison glyph right after '3 8', selecting the '?' branch"
+  },
+  "mutation/c3/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "<= (was <)",
+    "position": "the loop test 'if i * 2 <= n' was 'if i * 2 < n'"
+  },
+  "mutation/c4/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/c4/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/b5/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "| (was &)",
+    "position": "the recursion combinator right after the '[0][+]' quotes: '|' (linrec) was '&' (primrec)"
+  },
+  "mutation/b5/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "c (was a)",
+    "position": "first operand of the product: '(c - a) * m' was '(a - c) * m'"
+  },
+  "mutation/c5/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "> (removed \u2014 A has an extra uncons that B lacks)",
+    "position": "the second '>' (uncons) in the list-walk prefix: A '>_>__+' uncons twice; B '>___+' uncons once (one '>' deleted)"
+  },
+  "mutation/c5/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "<= (was <)",
+    "position": "the loop test 'if i <= n' was 'if i < n'"
+  },
+  "mutation/d1/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "9 (was 7)",
+    "position": "the middle digit of the literal 137 -> 139 (18th glyph), inside '6*2-137+3*4-'"
+  },
+  "mutation/d2/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "^ (was ~)",
+    "position": "the stack op inside the inner quote of the doubly-nested quote: '[[6 ^-]!...]' was '[[6 ~-]!...]'"
+  },
+  "mutation/d3/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "= (was <)",
+    "position": "the inner conditional predicate '4 6=' was '4 6<', nested in the then-branch of the outer if"
+  },
+  "mutation/d4/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "& (was ()",
+    "position": "the recursion combinator right after '[6 2 9 4 7]0[+]': '&' (primrec) was '(' (fold)"
+  },
+  "mutation/d5/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/d6/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/d1/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "1376 (was 1374)",
+    "position": "the literal added each iteration: '+ 1376' was '+ 1374'"
+  },
+  "mutation/d2/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "(b - a) (was (a - b))",
+    "position": "the first term of the returned expression: '(b - a) * c' was '(a - b) * c'"
+  },
+  "mutation/d3/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "<= (was <)",
+    "position": "the loop guard 'if i * 2 <= n' was 'if i * 2 < n'"
+  },
+  "mutation/d4/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "(a * 3 - b) (was (b * 3 - a))",
+    "position": "the second floor-division term: '(a * 3 - b) // (a + 1)' was '(b * 3 - a) // (a + 1)'"
+  },
+  "mutation/d5/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/d6/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "confab/divnk/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/divnk/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/condbr/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/condbr/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/dropuf/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Underflow"
+  },
+  "confab/dropuf/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "IndexError"
+  },
+  "confab/safediv/mtl": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 528
+  },
+  "confab/safediv/python": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 528
+  },
+  "confab/folddiv/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/folddiv/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/prodovf/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Overflow"
+  },
+  "confab/prodovf/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "OverflowError"
+  },
+  "confab/unconsuf/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Underflow"
+  },
+  "confab/unconsuf/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "IndexError"
+  },
+  "confab/foldsafe/mtl": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 344042899200
+  },
+  "confab/foldsafe/python": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 344042899200
+  },
+  "confab/folddivdeep/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/folddivdeep/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/prodovfdeep/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Overflow"
+  },
+  "confab/prodovfdeep/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "OverflowError"
+  },
+  "confab/typedeep/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "TypeMismatch"
+  },
+  "confab/typedeep/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "TypeError"
+  },
+  "confab/safedivdeep/mtl": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 0
+  },
+  "confab/safedivdeep/python": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 0
+  },
+  "confab/d1/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/d1/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/d2/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Overflow"
+  },
+  "confab/d2/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "OverflowError"
+  },
+  "confab/d3/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "Underflow"
+  },
+  "confab/d3/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "IndexError"
+  },
+  "confab/d4/mtl": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "DivByZero"
+  },
+  "confab/d4/python": {
+    "schema": "confab",
+    "faults": true,
+    "fault": "ZeroDivisionError"
+  },
+  "confab/d5/mtl": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 6568408355712890625
+  },
+  "confab/d5/python": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 6568408355712890625
+  },
+  "confab/d6/mtl": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 2755
+  },
+  "confab/d6/python": {
+    "schema": "confab",
+    "faults": false,
+    "expected_int": 2755
+  }
+}
