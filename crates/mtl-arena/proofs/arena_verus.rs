@@ -338,6 +338,535 @@ pub proof fn lemma_alpha_value_int_roundtrip(vm: ModelVm, n: int)
 {
 }
 
+// ============================================================
+// 4. M2 — view-homomorphism lemmas about α (blueprint §3).
+//
+// Grouped: (0) tape-eq frames [tape/calls unchanged], (5) tape-extension frame,
+// (1) stack push, (2) stack frame/pop, (3) cont next_word head-peel + segment-pop,
+// (5) cont frame, (4) ★ splice-as-segment-push (`prepend`).
+//
+// STATUS: M2. All statements below close under Verus with NO
+// admit/assume/external cheats. wf preconditions are carried per the M1 note
+// ("guarded-body unfold tax"): every α unfold asserts its wf guard to reach the
+// real branch.
+// ============================================================
+
+// ------------------------------------------------------------
+// §3.0  Tape-equality frames — when tape and calls are UNCHANGED (only the
+// snodes/cnodes Vecs grow), α of every tape word/range/value is invariant.
+// No wf and no in-range bound needed: Seq equality is pointwise, so the match
+// arms coincide and only the PushQuote recursion threads through. These are the
+// helpers the stack- and cont-frame lemmas (whose ops never touch the tape) call.
+// ------------------------------------------------------------
+
+pub proof fn lemma_alpha_word_tape_eq(vm: ModelVm, vm2: ModelVm, i: nat)
+    requires
+        vm2.tape == vm.tape,
+        vm2.calls == vm.calls,
+    ensures
+        alpha_word(vm2, i) == alpha_word(vm, i),
+    decreases i, 1nat, 0nat,
+{
+    match vm.tape[i as int] {
+        ModelWord::PushQuote(id) => {
+            if id.start + id.len <= i {
+                lemma_alpha_words_tape_eq(vm, vm2, id.start, id.start + id.len);
+            }
+        },
+        _ => {},
+    }
+}
+
+pub proof fn lemma_alpha_words_tape_eq(vm: ModelVm, vm2: ModelVm, lo: nat, hi: nat)
+    requires
+        vm2.tape == vm.tape,
+        vm2.calls == vm.calls,
+    ensures
+        alpha_words(vm2, lo, hi) == alpha_words(vm, lo, hi),
+    decreases hi, 0nat, (hi - lo) as nat,
+{
+    if lo >= hi {
+    } else {
+        lemma_alpha_word_tape_eq(vm, vm2, lo);
+        lemma_alpha_words_tape_eq(vm, vm2, lo + 1, hi);
+    }
+}
+
+pub proof fn lemma_alpha_value_tape_eq(vm: ModelVm, vm2: ModelVm, v: ModelValue)
+    requires
+        vm2.tape == vm.tape,
+        vm2.calls == vm.calls,
+    ensures
+        alpha_value(vm2, v) == alpha_value(vm, v),
+{
+    match v {
+        ModelValue::Quote(id) => {
+            lemma_alpha_words_tape_eq(vm, vm2, id.start, id.start + id.len);
+        },
+        _ => {},
+    }
+}
+
+// ------------------------------------------------------------
+// §3.1  Tape head-peel and split (twins of lemma_view_words_append).
+// ------------------------------------------------------------
+
+/// Head-peel: one word off the front of a non-empty range. Definitional unfold.
+pub proof fn lemma_alpha_words_head(vm: ModelVm, lo: nat, hi: nat)
+    requires
+        lo < hi,
+    ensures
+        alpha_words(vm, lo, hi) == seq![alpha_word(vm, lo)] + alpha_words(vm, lo + 1, hi),
+{
+}
+
+/// α distributes over a contiguous range split. Twin of lemma_view_words_append.
+pub proof fn lemma_alpha_words_split(vm: ModelVm, lo: nat, mid: nat, hi: nat)
+    requires
+        lo <= mid <= hi,
+    ensures
+        alpha_words(vm, lo, hi) == alpha_words(vm, lo, mid) + alpha_words(vm, mid, hi),
+    decreases (mid - lo) as nat,
+{
+    if lo >= mid {
+        assert(alpha_words(vm, lo, mid) =~= Seq::<SpecWord>::empty());
+        assert(lo == mid);
+    } else {
+        lemma_alpha_words_head(vm, lo, hi);
+        lemma_alpha_words_head(vm, lo, mid);
+        lemma_alpha_words_split(vm, lo + 1, mid, hi);
+        assert(alpha_words(vm, lo, hi)
+            =~= alpha_words(vm, lo, mid) + alpha_words(vm, mid, hi));
+    }
+}
+
+// ------------------------------------------------------------
+// §3.5  Tape-extension frame — interning new words PAST an existing quote's span
+// leaves α of that span unchanged (needed by the splice/intern prims, M3/M4).
+// Requires wf_tape(vm): the invariant `PushQuote(id) at i ==> id.end() <= i`
+// is exactly what makes an old word's α independent of the appended suffix.
+// ------------------------------------------------------------
+
+pub proof fn lemma_alpha_word_frame(vm: ModelVm, vm2: ModelVm, i: nat)
+    requires
+        wf_tape(vm),
+        i < vm.tape.len(),
+        vm.tape.len() <= vm2.tape.len(),
+        forall|j: int| 0 <= j < vm.tape.len() ==> vm2.tape[j] == vm.tape[j],
+        forall|k: int| 0 <= k < vm.calls.len() ==> vm2.calls[k] == vm.calls[k],
+    ensures
+        alpha_word(vm2, i) == alpha_word(vm, i),
+    decreases i, 1nat, 0nat,
+{
+    assert(wf_tape_word(vm, i as int));
+    assert(vm2.tape[i as int] == vm.tape[i as int]);
+    match vm.tape[i as int] {
+        ModelWord::PushQuote(id) => {
+            assert(id.start + id.len <= i);
+            lemma_alpha_words_frame(vm, vm2, id.start, id.start + id.len);
+        },
+        ModelWord::Call(k) => {
+            assert(k < vm.calls.len());
+            assert(vm2.calls[k as int] == vm.calls[k as int]);
+        },
+        _ => {},
+    }
+}
+
+pub proof fn lemma_alpha_words_frame(vm: ModelVm, vm2: ModelVm, lo: nat, hi: nat)
+    requires
+        wf_tape(vm),
+        hi <= vm.tape.len(),
+        vm.tape.len() <= vm2.tape.len(),
+        forall|j: int| 0 <= j < vm.tape.len() ==> vm2.tape[j] == vm.tape[j],
+        forall|k: int| 0 <= k < vm.calls.len() ==> vm2.calls[k] == vm.calls[k],
+    ensures
+        alpha_words(vm2, lo, hi) == alpha_words(vm, lo, hi),
+    decreases hi, 0nat, (hi - lo) as nat,
+{
+    if lo >= hi {
+    } else {
+        lemma_alpha_word_frame(vm, vm2, lo);
+        lemma_alpha_words_frame(vm, vm2, lo + 1, hi);
+    }
+}
+
+// ------------------------------------------------------------
+// §3.2  Stack frame + push + pop (twins of lemma_view_stack_push / prefix).
+// ------------------------------------------------------------
+
+/// Appending stack nodes leaves α of any pre-existing stack ptr unchanged.
+pub proof fn lemma_alpha_stack_frame(vm: ModelVm, vm2: ModelVm, ptr: nat)
+    requires
+        wf_stack(vm),
+        ptr < vm.snodes.len(),
+        vm.snodes.len() <= vm2.snodes.len(),
+        forall|j: int| 0 <= j < vm.snodes.len() ==> vm2.snodes[j] == vm.snodes[j],
+        vm2.tape == vm.tape,
+        vm2.calls == vm.calls,
+    ensures
+        alpha_stack(vm2, ptr) == alpha_stack(vm, ptr),
+    decreases ptr,
+{
+    if ptr == 0 {
+    } else {
+        assert(vm2.snodes[ptr as int] == vm.snodes[ptr as int]);
+        assert(vm.snodes[ptr as int].parent < ptr);
+        let nd = vm.snodes[ptr as int];
+        lemma_alpha_stack_frame(vm, vm2, nd.parent);
+        lemma_alpha_value_tape_eq(vm, vm2, nd.value);
+    }
+}
+
+/// Pushing `{value, parent=ptr}` maps to a ghost push at the BACK (= top), and
+/// frames every pre-existing ptr. Twin of lemma_view_stack_push.
+pub proof fn lemma_alpha_stack_push(vm: ModelVm, ptr: nat, v: ModelValue)
+    requires
+        wf_stack(vm),
+        ptr < vm.snodes.len(),
+    ensures
+        ({
+            let vm2 = ModelVm {
+                snodes: vm.snodes.push(ModelStackNode { value: v, parent: ptr }),
+                ..vm
+            };
+            &&& wf_stack(vm2)
+            &&& alpha_stack(vm2, vm.snodes.len())
+                == alpha_stack(vm, ptr).push(alpha_value(vm, v))
+            &&& forall|q: nat| q < vm.snodes.len() ==> alpha_stack(vm2, q) == alpha_stack(vm, q)
+        }),
+{
+    let node = ModelStackNode { value: v, parent: ptr };
+    let vm2 = ModelVm { snodes: vm.snodes.push(node), ..vm };
+    let l = vm.snodes.len();
+    assert(vm2.snodes.len() == l + 1);
+    assert(vm2.snodes[l as int] == node);
+    // wf_stack(vm2): sentinel + each parent strictly below (new node's parent==ptr<l).
+    assert(wf_stack(vm2)) by {
+        assert forall|i: int| 1 <= i < vm2.snodes.len() implies
+            #[trigger] vm2.snodes[i].parent < i by {
+            if i < l {
+                assert(vm2.snodes[i] == vm.snodes[i]);
+                assert(vm.snodes[i].parent < i);
+            } else {
+                assert(i == l);
+                assert(vm2.snodes[i] == node);
+                assert(node.parent == ptr);
+            }
+        }
+    }
+    // frame every pre-existing ptr.
+    assert forall|q: nat| q < vm.snodes.len() implies
+        alpha_stack(vm2, q) == alpha_stack(vm, q) by {
+        lemma_alpha_stack_frame(vm, vm2, q);
+    }
+    // the new-top unfold.
+    lemma_alpha_stack_frame(vm, vm2, ptr);
+    lemma_alpha_value_tape_eq(vm, vm2, v);
+    assert(alpha_stack(vm2, l)
+        == alpha_stack(vm2, ptr).push(alpha_value(vm2, v)));
+}
+
+/// Following `parent` once (one pop) drops the top ghost element and exposes it.
+/// Twin of lemma_view_stack_prefix at k = len-1, plus the popped-value fact.
+pub proof fn lemma_alpha_stack_pop1(vm: ModelVm, ptr: nat)
+    requires
+        wf_stack(vm),
+        ptr < vm.snodes.len(),
+        ptr != 0,
+    ensures
+        alpha_stack(vm, ptr).len() == alpha_stack(vm, vm.snodes[ptr as int].parent).len() + 1,
+        alpha_stack(vm, vm.snodes[ptr as int].parent)
+            == alpha_stack(vm, ptr).subrange(0, alpha_stack(vm, ptr).len() - 1),
+        alpha_stack(vm, ptr).last() == alpha_value(vm, vm.snodes[ptr as int].value),
+{
+    assert(vm.snodes[ptr as int].parent < ptr);
+    let nd = vm.snodes[ptr as int];
+    let base = alpha_stack(vm, nd.parent);
+    // alpha_stack(vm, ptr) == base.push(alpha_value(vm, nd.value)) by the guarded unfold.
+    assert(alpha_stack(vm, ptr) == base.push(alpha_value(vm, nd.value)));
+    assert(base.push(alpha_value(vm, nd.value)).subrange(0, base.len() as int) =~= base);
+}
+
+// ------------------------------------------------------------
+// §3.5  Cont frame — appending cont nodes leaves α of a pre-existing cont ptr
+// unchanged (the tape is untouched, so segment α is stable via tape-eq).
+// ------------------------------------------------------------
+
+pub proof fn lemma_alpha_cont_frame(vm: ModelVm, vm2: ModelVm, ptr: nat, off: nat)
+    requires
+        wf_cont(vm),
+        ptr < vm.cnodes.len(),
+        vm.cnodes.len() <= vm2.cnodes.len(),
+        forall|j: int| 0 <= j < vm.cnodes.len() ==> vm2.cnodes[j] == vm.cnodes[j],
+        vm2.tape == vm.tape,
+        vm2.calls == vm.calls,
+    ensures
+        alpha_cont(vm2, ptr, off) == alpha_cont(vm, ptr, off),
+    decreases ptr,
+{
+    if ptr == 0 {
+    } else {
+        assert(wf_cont_node(vm, ptr as int));
+        assert(vm2.cnodes[ptr as int] == vm.cnodes[ptr as int]);
+        let nd = vm.cnodes[ptr as int];
+        assert(nd.parent < ptr);
+        // parent index is below ptr < len, so it agrees across the frame.
+        assert(vm2.cnodes[nd.parent as int] == vm.cnodes[nd.parent as int]);
+        let parent_off = vm.cnodes[nd.parent as int].off;
+        lemma_alpha_cont_frame(vm, vm2, nd.parent, parent_off);
+        // segment α is tape-stable.
+        let seg_len = nd.qend - nd.qstart;
+        if (off as int) < seg_len {
+            lemma_alpha_words_tape_eq(vm, vm2, nd.qstart + off, nd.qend);
+        }
+    }
+}
+
+// ------------------------------------------------------------
+// §3.4  Cont head-peel (next_word): consuming one in-segment word peels α's head.
+// ------------------------------------------------------------
+
+pub proof fn lemma_alpha_cont_next_word(vm: ModelVm, pos: ModelVmState)
+    requires
+        wf(vm),
+        wf_pos(vm, pos),
+        pos.cont != 0,
+        (pos.cursor as int)
+            < vm.cnodes[pos.cont as int].qend - vm.cnodes[pos.cont as int].qstart,
+    ensures
+        alpha_cont(vm, pos.cont, pos.cursor)
+            == seq![alpha_word(vm, vm.cnodes[pos.cont as int].qstart + pos.cursor)]
+               + alpha_cont(vm, pos.cont, pos.cursor + 1),
+{
+    let c = pos.cont;
+    assert(wf_cont_node(vm, c as int));
+    let h = vm.cnodes[c as int];
+    let seg_len = h.qend - h.qstart;
+    let head_idx = h.qstart + pos.cursor;
+    let poff = vm.cnodes[h.parent as int].off;
+    let tail_seg = alpha_words(vm, head_idx + 1, h.qend);
+    let rest_cont = alpha_cont(vm, h.parent, poff);
+
+    // Unfold the pre-state head at the live cursor.
+    assert(head_idx < h.qend);
+    lemma_alpha_words_head(vm, head_idx, h.qend);
+    assert(alpha_cont(vm, c, pos.cursor)
+        == (seq![alpha_word(vm, head_idx)] + tail_seg) + rest_cont);
+
+    // Unfold the post-consume head at cursor + 1: its segment equals `tail_seg`.
+    if ((pos.cursor + 1) as int) < seg_len {
+        assert(alpha_cont(vm, c, pos.cursor + 1) == tail_seg + rest_cont);
+    } else {
+        assert((pos.cursor + 1) as int == seg_len);
+        assert(head_idx + 1 == h.qend);
+        assert(tail_seg =~= Seq::<SpecWord>::empty());
+        assert(alpha_cont(vm, c, pos.cursor + 1) == rest_cont);
+    }
+    assert(alpha_cont(vm, c, pos.cursor)
+        =~= seq![alpha_word(vm, head_idx)] + alpha_cont(vm, c, pos.cursor + 1));
+}
+
+/// Segment-pop: an exhausted head (cursor at segment end) contributes nothing, so
+/// α equals that of the parent resumed at its frozen offset (models `next_word`'s
+/// pop-to-parent).
+pub proof fn lemma_alpha_cont_segpop(vm: ModelVm, pos: ModelVmState)
+    requires
+        wf(vm),
+        wf_pos(vm, pos),
+        pos.cont != 0,
+        (pos.cursor as int)
+            >= vm.cnodes[pos.cont as int].qend - vm.cnodes[pos.cont as int].qstart,
+    ensures
+        alpha_cont(vm, pos.cont, pos.cursor)
+            == alpha_cont(vm, vm.cnodes[pos.cont as int].parent,
+                          vm.cnodes[vm.cnodes[pos.cont as int].parent as int].off),
+{
+    let c = pos.cont;
+    assert(wf_cont_node(vm, c as int));
+    let h = vm.cnodes[c as int];
+    assert(h.parent < c);
+    // cursor >= seg_len => the head segment is empty; α falls through to the parent.
+    assert(alpha_cont(vm, c, pos.cursor)
+        =~= alpha_cont(vm, h.parent, vm.cnodes[h.parent as int].off));
+}
+
+// ------------------------------------------------------------
+// §3.3  ★ Splice-as-segment-push: `prepend` a quote onto the continuation.
+// The crux lemma for every splice primitive (Apply/Dip/If/PrimRec/Times/LinRec/
+// Fold). Mirrors Vm::prepend (vm.rs 190-211): freeze the old head (off := cursor),
+// push a child segment for the quote, retarget cont/cursor.
+// ------------------------------------------------------------
+
+/// The spec twin of `Vm::prepend` (vm.rs 190-211).
+pub open spec fn model_prepend(vm: ModelVm, pos: ModelVmState, id: ModelQuoteId)
+    -> (ModelVm, ModelVmState) {
+    if id.len == 0 {
+        (vm, pos)
+    } else if pos.cont == 0 {
+        let child = ModelContNode { qstart: id.start, qend: id.start + id.len, off: 0, parent: 0 };
+        let vm2 = ModelVm { cnodes: vm.cnodes.push(child), ..vm };
+        let pos2 = ModelVmState { cont: vm.cnodes.len(), cursor: 0, ..pos };
+        (vm2, pos2)
+    } else {
+        let h = vm.cnodes[pos.cont as int];
+        let frozen = ModelContNode { qstart: h.qstart, qend: h.qend, off: pos.cursor, parent: h.parent };
+        let child = ModelContNode { qstart: id.start, qend: id.start + id.len, off: 0, parent: vm.cnodes.len() };
+        let vm2 = ModelVm { cnodes: vm.cnodes.push(frozen).push(child), ..vm };
+        let pos2 = ModelVmState { cont: vm.cnodes.len() + 1, cursor: 0, ..pos };
+        (vm2, pos2)
+    }
+}
+
+pub proof fn lemma_alpha_cont_prepend(vm: ModelVm, pos: ModelVmState, id: ModelQuoteId)
+    requires
+        wf(vm),
+        wf_pos(vm, pos),
+        id.start + id.len <= vm.tape.len(),
+    ensures
+        ({
+            let (vm2, pos2) = model_prepend(vm, pos, id);
+            &&& wf(vm2)
+            &&& wf_pos(vm2, pos2)
+            &&& alpha_cont(vm2, pos2.cont, pos2.cursor)
+                == alpha_quote(vm, id) + alpha_cont(vm, pos.cont, pos.cursor)
+            &&& alpha_stack(vm2, pos2.stack) == alpha_stack(vm, pos.stack)
+        }),
+{
+    let (vm2, pos2) = model_prepend(vm, pos, id);
+
+    if id.len == 0 {
+        // No-op. alpha_quote(vm, id) is empty (span [start, start)).
+        assert(alpha_quote(vm, id) =~= Seq::<SpecWord>::empty());
+        assert(alpha_cont(vm2, pos2.cont, pos2.cursor)
+            =~= alpha_quote(vm, id) + alpha_cont(vm, pos.cont, pos.cursor));
+        return;
+    }
+
+    // Non-empty quote: the tape/calls/snodes are untouched (only cnodes grows),
+    // so wf_stack, wf_tape, and the stack-side goal are stable.
+    let cn = vm.cnodes;
+    let l = cn.len();
+    assert(vm2.tape == vm.tape);
+    assert(vm2.calls == vm.calls);
+    assert(vm2.snodes == vm.snodes);
+    assert(wf_stack(vm2));
+    assert(wf_tape(vm2)) by {
+        assert forall|i: int| 0 <= i < vm2.tape.len() implies
+            #[trigger] wf_tape_word(vm2, i) by {
+            assert(wf_tape_word(vm, i));
+        }
+    }
+    lemma_alpha_stack_frame(vm, vm2, pos.stack);
+
+    // alpha_quote(vm, id) via tape-eq (used for the child's live segment).
+    if pos.cont == 0 {
+        let child = ModelContNode { qstart: id.start, qend: id.start + id.len, off: 0, parent: 0 };
+        assert(vm2.cnodes == cn.push(child));
+        assert(vm2.cnodes.len() == l + 1);
+        assert(vm2.cnodes[l as int] == child);
+        assert(pos2.cont == l);
+        assert(l >= 1);
+        // wf_cont(vm2).
+        assert(wf_cont(vm2)) by {
+            assert forall|i: int| 1 <= i < vm2.cnodes.len() implies
+                #[trigger] wf_cont_node(vm2, i) by {
+                if i < l {
+                    assert(vm2.cnodes[i] == cn[i]);
+                    assert(wf_cont_node(vm, i));
+                } else {
+                    assert(i == l);
+                    assert(vm2.cnodes[i] == child);
+                }
+            }
+        }
+        // alpha_cont(vm2, l, 0): child segment then NIL parent.
+        assert(alpha_quote(vm, id) == alpha_words(vm, id.start, id.start + id.len));
+        lemma_alpha_words_tape_eq(vm, vm2, id.start, id.start + id.len);
+        assert(alpha_cont(vm2, 0, vm2.cnodes[0].off) =~= Seq::<SpecWord>::empty());
+        assert(alpha_cont(vm2, l, 0)
+            =~= alpha_words(vm2, id.start, id.start + id.len));
+        assert(alpha_cont(vm, pos.cont, pos.cursor) =~= Seq::<SpecWord>::empty());
+        assert(alpha_cont(vm2, pos2.cont, pos2.cursor)
+            =~= alpha_quote(vm, id) + alpha_cont(vm, pos.cont, pos.cursor));
+        // wf_pos(vm2, pos2).
+        assert(wf_pos(vm2, pos2));
+        return;
+    }
+
+    // ---- The crux: non-NIL head. ----
+    assert(wf_cont_node(vm, pos.cont as int));
+    let c = pos.cont;
+    let h = cn[c as int];
+    let frozen = ModelContNode { qstart: h.qstart, qend: h.qend, off: pos.cursor, parent: h.parent };
+    let child = ModelContNode { qstart: id.start, qend: id.start + id.len, off: 0, parent: l };
+    let cn1 = cn.push(frozen);
+    assert(vm2.cnodes == cn1.push(child));
+    assert(vm2.cnodes.len() == l + 2);
+    assert(cn1.len() == l + 1);
+    assert(cn1[l as int] == frozen);
+    assert(vm2.cnodes[l as int] == frozen);
+    assert(vm2.cnodes[(l + 1) as int] == child);
+    assert(forall|j: int| 0 <= j < l ==> vm2.cnodes[j] == cn[j]);
+    assert(pos2.cont == l + 1);
+
+    // h.parent < c < l  (wf_cont on c ; wf_pos gives c < len == l).
+    assert(h.parent < c);
+    assert(c < l);
+    assert(h.parent < l);
+    let poff = cn[h.parent as int].off;
+    assert(vm2.cnodes[h.parent as int] == cn[h.parent as int]);
+
+    // wf_cont(vm2): old nodes (< l) unchanged; frozen (l); child (l+1).
+    assert(wf_cont(vm2)) by {
+        assert forall|i: int| 1 <= i < vm2.cnodes.len() implies
+            #[trigger] wf_cont_node(vm2, i) by {
+            if i < l {
+                assert(vm2.cnodes[i] == cn[i]);
+                assert(wf_cont_node(vm, i));
+            } else if i == l {
+                assert(vm2.cnodes[i] == frozen);
+                assert(h.parent < c);   // frozen.parent == h.parent < c < l == i
+                assert(c < l);
+                // frozen segment/off bounds inherited from h (wf_cont_node(vm, c)) + wf_pos.
+                assert(h.qstart <= h.qend);
+                assert(h.qend <= vm.tape.len());
+                assert((pos.cursor as int) <= h.qend - h.qstart);
+            } else {
+                assert(i == l + 1);
+                assert(vm2.cnodes[i] == child);   // parent == l < l+1 == i
+            }
+        }
+    }
+
+    // wf_pos(vm2, pos2): pos2.cont == l+1 < l+2; cursor 0 <= child seg length.
+    assert(wf_pos(vm2, pos2));
+
+    // ---- α equalities. ----
+    // (i) frame the untouched sub-chain below the old head.
+    lemma_alpha_cont_frame(vm, vm2, h.parent, poff);
+
+    // (ii) the frozen node at the live cursor reproduces the old head's α.
+    //      Both unfold to  seg(cursor) + alpha_cont(_, h.parent, poff), with equal
+    //      segment (tape-eq) and equal tail (frame above).
+    let seg_len = h.qend - h.qstart;
+    if (pos.cursor as int) < seg_len {
+        lemma_alpha_words_tape_eq(vm, vm2, h.qstart + pos.cursor, h.qend);
+    }
+    assert(alpha_cont(vm2, l, pos.cursor) =~= alpha_cont(vm, c, pos.cursor));
+
+    // (iii) the child node at offset 0 emits the whole quote, then the frozen node.
+    assert(alpha_quote(vm, id) == alpha_words(vm, id.start, id.start + id.len));
+    lemma_alpha_words_tape_eq(vm, vm2, id.start, id.start + id.len);
+    assert(vm2.cnodes[l as int].off == pos.cursor);
+    assert(alpha_cont(vm2, l + 1, 0)
+        =~= alpha_words(vm2, id.start, id.start + id.len) + alpha_cont(vm2, l, pos.cursor));
+
+    // Assemble.
+    assert(alpha_cont(vm2, pos2.cont, pos2.cursor)
+        =~= alpha_quote(vm, id) + alpha_cont(vm, pos.cont, pos.cursor));
+}
+
 } // verus!
 
 fn main() {}
