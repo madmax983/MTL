@@ -352,6 +352,10 @@ def run_sweep(tasks, Q, cfg, ledger_fp=None, cfg_name="default"):
             "frac_B_beats_A": b_beats_a / K_REPLICATES,
             "mtl_success_mean": statistics.fmean(mtl_succ_rate),
             "py_success_mean": statistics.fmean(py_succ_rate),
+            # AC4: flag any N where MTL success is strictly below Python.
+            "mtl_success_deficit_flag": (
+                statistics.fmean(mtl_succ_rate) < statistics.fmean(py_succ_rate)
+            ),
         }
     return summary
 
@@ -362,6 +366,65 @@ def crossover_N(summary, arm):
         if summary[N][arm][0] < summary[N]["python"][0]:
             return N
     return None
+
+
+# ---------------------------------------------------------------------------
+# Break-even task-size analysis (issue #45 -- makes the negative result
+# ACTIONABLE). Deterministic; derived from the SAME cost formulas as the sweep
+# (§3), not a new model.
+#
+# Asymptotically (N large, the one-time cache-write amortized to zero) the
+# MTL-cached arm beats Python at the per-task margin iff:
+#
+#     Q*cr_mult*p_in + P_mtl*p_in + O_mtl*p_out  <  P_py*p_in + O_py*p_out
+#
+# Solving for the per-task output-token savings dO = O_py - O_mtl required to
+# clear the cached quickref, at a fixed price ratio:
+#
+#   * to cover the cache-read tax alone (ignoring the input penalty):
+#         dO_breakeven_tax  = cr_mult * Q * (p_in / p_out)
+#   * to cover tax AND MTL's extra input tokens (the honest full threshold):
+#         dO_breakeven_full = (cr_mult*Q + (P_mtl - P_py)) * (p_in / p_out)
+#
+# A crossover exists iff the MEASURED mean savings dO_measured exceeds the
+# threshold. Here dO_measured ~= 7 vs a threshold ~= 81, so none does.
+# ---------------------------------------------------------------------------
+def break_even_analysis(tasks, Q, pricing):
+    P_py = statistics.fmean(t["P_py"] for t in tasks)
+    P_mtl = statistics.fmean(t["P_mtl"] for t in tasks)
+    O_py = statistics.fmean(t["O_py"] for t in tasks)
+    O_mtl = statistics.fmean(t["O_mtl"] for t in tasks)
+    dO_measured = O_py - O_mtl
+    input_penalty = P_mtl - P_py  # extra input tokens MTL pays per task
+    out = {
+        "mean_P_py": round(P_py, 4),
+        "mean_P_mtl": round(P_mtl, 4),
+        "mean_O_py": round(O_py, 4),
+        "mean_O_mtl": round(O_mtl, 4),
+        "measured_output_savings_per_task": round(dO_measured, 4),
+        "measured_input_penalty_per_task": round(input_penalty, 4),
+        "quickref_tokens": Q,
+        "per_config": {},
+    }
+    for name, cfg in pricing.items():
+        ratio = cfg["p_in"] / cfg["p_out"]          # p_in/p_out (default 1/5)
+        cr = cfg["cache_read_mult"]
+        be_tax = cr * Q * ratio
+        be_full = (cr * Q + input_penalty) * ratio
+        out["per_config"][name] = {
+            "label": cfg["label"],
+            "p_out_over_p_in": round(cfg["p_out"] / cfg["p_in"], 4),
+            "cache_read_mult": cr,
+            # output-token savings/task needed to break even
+            "dO_breakeven_tax_only": round(be_tax, 4),
+            "dO_breakeven_incl_input_penalty": round(be_full, 4),
+            # how far short the measured battery falls (multiplicative)
+            "shortfall_factor_vs_measured": (
+                round(be_full / dO_measured, 2) if dO_measured > 0 else None
+            ),
+            "crossover_reachable_at_measured_savings": dO_measured >= be_full,
+        }
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -376,7 +439,7 @@ def write_curve_csv(summary, path):
             "mtl_cold_cpc_mean", "mtl_cold_cpc_p10", "mtl_cold_cpc_p90",
             "mtl_cached_cpc_mean", "mtl_cached_cpc_p10", "mtl_cached_cpc_p90",
             "frac_C_beats_A", "frac_B_beats_A",
-            "mtl_success_mean", "py_success_mean",
+            "mtl_success_mean", "py_success_mean", "mtl_success_deficit_flag",
         ])
         for N in SESSION_SIZES:
             s = summary[N]
@@ -387,6 +450,7 @@ def write_curve_csv(summary, path):
                 s["mtl_cached"][0], s["mtl_cached"][1], s["mtl_cached"][2],
                 s["frac_C_beats_A"], s["frac_B_beats_A"],
                 s["mtl_success_mean"], s["py_success_mean"],
+                s["mtl_success_deficit_flag"],
             ])
 
 
@@ -495,11 +559,28 @@ def main():
         print(f"  {name:22s} cached N*={d['nstar_cached']}  "
               f"cold N*={d['nstar_cold']}  ({d['label']})")
 
+    # Break-even task-size analysis: how much per-task output compression WOULD
+    # a crossover require? Converts "no N*" into a concrete adoption condition.
+    be = break_even_analysis(tasks, Q, pricing)
+    print("\nBreak-even task-size analysis (output-token savings/task needed):")
+    print(f"  measured mean output savings dO = O_py - O_mtl = "
+          f"{be['measured_output_savings_per_task']} tokens/task")
+    print(f"  measured mean input penalty  = P_mtl - P_py     = "
+          f"{be['measured_input_penalty_per_task']} tokens/task")
+    print(f"  {'config':22s} {'dO_be(tax)':>11s} {'dO_be(full)':>12s} "
+          f"{'shortfall':>10s} {'reachable?':>10s}")
+    for name, d in be["per_config"].items():
+        print(f"  {name:22s} {d['dO_breakeven_tax_only']:>11.2f} "
+              f"{d['dO_breakeven_incl_input_penalty']:>12.2f} "
+              f"{str(d['shortfall_factor_vs_measured'])+'x':>10s} "
+              f"{str(d['crossover_reachable_at_measured_savings']):>10s}")
+
     # Persist the sensitivity + headline into a small json for the report.
     json.dump({
         "quickref_tokens_o200k": Q,
         "default_nstar_cached": nstar,
         "default_nstar_cold": crossover_N(default_summary, "mtl_cold"),
+        "break_even": be,
         "sensitivity": sensitivity,
         "per_N_default": {
             str(N): {
@@ -510,6 +591,7 @@ def main():
                 "frac_B_beats_A": default_summary[N]["frac_B_beats_A"],
                 "mtl_success_mean": default_summary[N]["mtl_success_mean"],
                 "py_success_mean": default_summary[N]["py_success_mean"],
+                "mtl_success_deficit_flag": default_summary[N]["mtl_success_deficit_flag"],
             } for N in SESSION_SIZES
         },
     }, open(os.path.join(RESULTS_DIR, "summary.json"), "w"), indent=2)

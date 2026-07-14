@@ -94,6 +94,29 @@ cached quickref — and it simultaneously pays ~8 *extra* input tokens/task on i
 arm-specific prompt. The gap is more than 10×, so no N in range (or beyond) closes
 it. This is why every replicate has `frac C<A = 0.000`.
 
+### Break-even task size — the concrete adoption condition (per config)
+
+`break_even_analysis()` (emitted deterministically to `summary.json` → `break_even`)
+solves the asymptotic margin inequality for the per-task **output-token savings ΔO**
+that *would* produce a crossover, at each price config. `ΔO(tax)` covers only the
+cache-read tax (`cr_mult·Q·p_in/p_out`); `ΔO(full)` additionally covers MTL's ~8.4-token
+input penalty. `shortfall` is `ΔO(full)` ÷ the **measured** 6.96 tokens/task.
+
+| Config | ΔO needed (tax only) | ΔO needed (full) | shortfall vs measured 6.96 |
+|---|---:|---:|---:|
+| `default` / `opus48_published` / `alt1_1h_cache` (5:1 out:in, 0.10× read) | 81.0 | 82.7 | **11.9×** |
+| `alt2_lower_out_ratio` (4:1 out:in) | 101.3 | 103.4 | 14.9× |
+| `alt3_dearer_cache_read` (0.25× read) | 202.6 | 204.2 | 29.3× |
+
+**Stated plainly:** a crossover requires a workload whose MTL solutions compress the
+*output* by **≈81 tokens/task** (≈12× the ~7 tokens this battery delivers) — i.e. tasks
+whose Python solutions run many tens-to-hundreds of tokens longer than their MTL
+equivalents. This 18-task battery of single-digit-to-tens-of-token programs (mean
+`O_py` ≈ 20 tokens/task) is *far* below that threshold: to break even the Python
+solution would have to be roughly **4–5× larger** in emitted output than it is here,
+holding the MTL side fixed. Under every priced config the measured savings fall short
+by 12×–29×, so the negative result is not a knife-edge — it is a wide, structural gap.
+
 ## Sensitivity (N\* under alternate price configs)
 
 `pricing.json` carries the default plus four alternate configs; the harness sweeps
@@ -137,7 +160,9 @@ Every task in the 18-task battery was solved within the 5-attempt repair budget 
 for both arms; tier-3: 2 trials/arm, all cells `solved = true`). Consequently the
 mean per-task success rate is **1.000 for MTL and 1.000 for Python at every N** —
 MTL success is equal-or-better at every N, and **no N is flagged** for an MTL success
-deficit. Cost-per-correct therefore equals cost-per-task here; the `/num_correct`
+deficit. This is recorded machine-checkably as the `mtl_success_deficit_flag` column
+in `curve.csv` and `summary.json` (`= mtl_success_mean < py_success_mean`), which is
+`False` at every N. Cost-per-correct therefore equals cost-per-task here; the `/num_correct`
 normalization is a no-op on this battery but is implemented generally (it divides by
 the summed per-task solved-fractions, so it would down-weight any arm that failed).
 
