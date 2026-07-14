@@ -1505,6 +1505,201 @@ pub proof fn lemma_pop2(vm: ModelVm, s: nat)
     assert(astk.subrange(0, n - 1)[n - 2] == astk[n - 2]);
 }
 
+// ------------------------------------------------------------
+// M4 fault-parity infrastructure.
+//
+// Arity faults (Underflow) require relating the stack pointer-chain depth to
+// `alpha_stack(..).len()`; type faults (TypeMismatch) require the operand
+// constructor bridge (a model value is `Int`/`Quote` iff its α is). These are
+// the "reverse" of the happy-path operand lemmas: instead of assuming the
+// operands exist, they characterize WHEN they don't (short stack) or WHEN the
+// wrong constructor is present.
+// ------------------------------------------------------------
+
+/// `alpha_stack(vm, ptr).len() == 0` exactly at the sentinel; otherwise the parent
+/// chain has one fewer element. The engine for the arity-fault (Underflow) arms:
+/// `n < k` forces some k-th ancestor ptr to be the `0` sentinel.
+pub proof fn lemma_alpha_stack_len(vm: ModelVm, ptr: nat)
+    requires
+        wf_stack(vm),
+        ptr < vm.snodes.len(),
+    ensures
+        (ptr == 0) <==> (alpha_stack(vm, ptr).len() == 0),
+        ptr != 0 ==> {
+            let par = vm.snodes[ptr as int].parent;
+            &&& par < ptr
+            &&& par < vm.snodes.len()
+            &&& alpha_stack(vm, ptr).len() == alpha_stack(vm, par).len() + 1
+        },
+{
+    if ptr == 0 {
+        assert(alpha_stack(vm, ptr) =~= Seq::<SpecValue>::empty());
+    } else {
+        assert(vm.snodes[ptr as int].parent < ptr);
+        lemma_alpha_stack_pop1(vm, ptr);
+    }
+}
+
+/// The operand constructor bridge: a model value is an `Int` (resp. `Quote`) iff
+/// its α is `SpecValue::Int` (resp. `SpecValue::Quote`). Used by the type-fault
+/// (TypeMismatch) arms to transport the spec's failed constructor-match to the
+/// model's `_` arm.
+pub proof fn lemma_alpha_value_ctor(vm: ModelVm, v: ModelValue)
+    ensures
+        (v is Int) == (alpha_value(vm, v) is Int),
+        (v is Quote) == (alpha_value(vm, v) is Quote),
+{
+    match v {
+        ModelValue::Int(x) => {},
+        ModelValue::Quote(id) => {},
+    }
+}
+
+/// The tape-word constructor bridge: a model word is `PushInt`/`PushQuote` iff its
+/// value-form α is. Used by the Uncons/Fold non-value-head fault arms to transport
+/// the spec's "head not a value" TypeMismatch to the model's `_` tape-head arm.
+pub proof fn lemma_alpha_word_val_ctor(vm: ModelVm, w: ModelWord)
+    ensures
+        (w is PushInt) == (alpha_word_val(vm, w) is PushInt),
+        (w is PushQuote) == (alpha_word_val(vm, w) is PushQuote),
+{
+    match w {
+        ModelWord::PushInt(x) => {},
+        ModelWord::PushQuote(id) => {},
+        ModelWord::Prim(pp) => {},
+        ModelWord::Call(k) => {},
+    }
+}
+
+/// pop-3 operand extraction (twin of `lemma_pop2`, one level deeper). Exposes the
+/// three top model values as the top-three α elements and the depth-3 base ptr.
+pub proof fn lemma_pop3(vm: ModelVm, s: nat)
+    requires
+        wf_stack(vm),
+        s < vm.snodes.len(),
+        alpha_stack(vm, s).len() >= 3,
+    ensures
+        s != 0,
+        vm.snodes[s as int].parent != 0,
+        vm.snodes[vm.snodes[s as int].parent as int].parent != 0,
+        vm.snodes[s as int].parent < vm.snodes.len(),
+        vm.snodes[vm.snodes[s as int].parent as int].parent < vm.snodes.len(),
+        vm.snodes[vm.snodes[vm.snodes[s as int].parent as int].parent as int].parent < vm.snodes.len(),
+        ({
+            let n = alpha_stack(vm, s).len() as int;
+            let p1 = vm.snodes[s as int].parent;
+            let p2 = vm.snodes[p1 as int].parent;
+            let rp = vm.snodes[p2 as int].parent;
+            &&& alpha_stack(vm, rp) == alpha_stack(vm, s).subrange(0, n - 3)
+            &&& alpha_value(vm, vm.snodes[s as int].value) == alpha_stack(vm, s)[n - 1]
+            &&& alpha_value(vm, vm.snodes[p1 as int].value) == alpha_stack(vm, s)[n - 2]
+            &&& alpha_value(vm, vm.snodes[p2 as int].value) == alpha_stack(vm, s)[n - 3]
+        }),
+{
+    let astk = alpha_stack(vm, s);
+    let n = astk.len() as int;
+    lemma_pop2(vm, s);
+    let p1 = vm.snodes[s as int].parent;
+    // lemma_pop2 gives alpha_stack(vm,p1)==astk.subrange(0,n-1) via its rp facts,
+    // but we re-derive p1's facts directly.
+    assert(vm.snodes[s as int].parent < s);
+    lemma_alpha_stack_pop1(vm, s);
+    assert(alpha_stack(vm, p1) == astk.subrange(0, n - 1));
+    assert(alpha_stack(vm, p1).len() == n - 1);
+    assert(p1 != 0) by {
+        if p1 == 0 { assert(alpha_stack(vm, p1) =~= Seq::<SpecValue>::empty()); }
+    }
+    assert(vm.snodes[p1 as int].parent < p1);
+    lemma_alpha_stack_pop1(vm, p1);
+    let p2 = vm.snodes[p1 as int].parent;
+    assert(alpha_stack(vm, p2) == alpha_stack(vm, p1).subrange(0, (n - 1) - 1));
+    assert(alpha_stack(vm, p1).subrange(0, n - 2) =~= astk.subrange(0, n - 2));
+    assert(alpha_stack(vm, p2) == astk.subrange(0, n - 2));
+    assert(alpha_stack(vm, p2).len() == n - 2);
+    assert(p2 != 0) by {
+        if p2 == 0 { assert(alpha_stack(vm, p2) =~= Seq::<SpecValue>::empty()); }
+    }
+    assert(vm.snodes[p2 as int].parent < p2);
+    lemma_alpha_stack_pop1(vm, p2);
+    let rp = vm.snodes[p2 as int].parent;
+    assert(alpha_stack(vm, rp) == alpha_stack(vm, p2).subrange(0, (n - 2) - 1));
+    assert(alpha_stack(vm, p2).subrange(0, n - 3) =~= astk.subrange(0, n - 3));
+    assert(alpha_stack(vm, rp) == astk.subrange(0, n - 3));
+    // values
+    assert(astk.last() == astk[n - 1]);
+    assert(alpha_stack(vm, p1).last() == alpha_value(vm, vm.snodes[p1 as int].value));
+    assert(alpha_stack(vm, p1).last() == alpha_stack(vm, p1)[n - 2]);
+    assert(alpha_stack(vm, p1)[n - 2] == astk.subrange(0, n - 1)[n - 2]);
+    assert(astk.subrange(0, n - 1)[n - 2] == astk[n - 2]);
+    assert(alpha_stack(vm, p2).last() == alpha_value(vm, vm.snodes[p2 as int].value));
+    assert(alpha_stack(vm, p2).last() == alpha_stack(vm, p2)[n - 3]);
+    assert(alpha_stack(vm, p2)[n - 3] == astk.subrange(0, n - 2)[n - 3]);
+    assert(astk.subrange(0, n - 2)[n - 3] == astk[n - 3]);
+}
+
+/// pop-4 operand extraction (LinRec). Exposes the four top model values and the
+/// depth-4 base ptr.
+pub proof fn lemma_pop4(vm: ModelVm, s: nat)
+    requires
+        wf_stack(vm),
+        s < vm.snodes.len(),
+        alpha_stack(vm, s).len() >= 4,
+    ensures
+        s != 0,
+        vm.snodes[s as int].parent != 0,
+        vm.snodes[vm.snodes[s as int].parent as int].parent != 0,
+        vm.snodes[vm.snodes[vm.snodes[s as int].parent as int].parent as int].parent != 0,
+        vm.snodes[s as int].parent < vm.snodes.len(),
+        vm.snodes[vm.snodes[s as int].parent as int].parent < vm.snodes.len(),
+        vm.snodes[vm.snodes[vm.snodes[s as int].parent as int].parent as int].parent < vm.snodes.len(),
+        vm.snodes[vm.snodes[vm.snodes[vm.snodes[s as int].parent as int].parent as int].parent as int].parent < vm.snodes.len(),
+        ({
+            let n = alpha_stack(vm, s).len() as int;
+            let p1 = vm.snodes[s as int].parent;
+            let p2 = vm.snodes[p1 as int].parent;
+            let p3 = vm.snodes[p2 as int].parent;
+            let rp = vm.snodes[p3 as int].parent;
+            &&& alpha_stack(vm, rp) == alpha_stack(vm, s).subrange(0, n - 4)
+            &&& alpha_value(vm, vm.snodes[s as int].value) == alpha_stack(vm, s)[n - 1]
+            &&& alpha_value(vm, vm.snodes[p1 as int].value) == alpha_stack(vm, s)[n - 2]
+            &&& alpha_value(vm, vm.snodes[p2 as int].value) == alpha_stack(vm, s)[n - 3]
+            &&& alpha_value(vm, vm.snodes[p3 as int].value) == alpha_stack(vm, s)[n - 4]
+        }),
+{
+    let astk = alpha_stack(vm, s);
+    let n = astk.len() as int;
+    lemma_pop3(vm, s);
+    let p1 = vm.snodes[s as int].parent;
+    let p2 = vm.snodes[p1 as int].parent;
+    assert(alpha_stack(vm, p2) == astk.subrange(0, n - 2));
+    assert(alpha_stack(vm, p2).len() == n - 2);
+    // one more pop from p2.
+    assert(vm.snodes[p2 as int].parent < p2);
+    lemma_alpha_stack_pop1(vm, p2);
+    let p3 = vm.snodes[p2 as int].parent;
+    assert(alpha_stack(vm, p3) == alpha_stack(vm, p2).subrange(0, (n - 2) - 1));
+    assert(alpha_stack(vm, p2).subrange(0, n - 3) =~= astk.subrange(0, n - 3));
+    assert(alpha_stack(vm, p3) == astk.subrange(0, n - 3));
+    assert(alpha_stack(vm, p3).len() == n - 3);
+    assert(p3 != 0) by {
+        if p3 == 0 { assert(alpha_stack(vm, p3) =~= Seq::<SpecValue>::empty()); }
+    }
+    assert(vm.snodes[p3 as int].parent < p3);
+    lemma_alpha_stack_pop1(vm, p3);
+    let rp = vm.snodes[p3 as int].parent;
+    assert(alpha_stack(vm, rp) == alpha_stack(vm, p3).subrange(0, (n - 3) - 1));
+    assert(alpha_stack(vm, p3).subrange(0, n - 4) =~= astk.subrange(0, n - 4));
+    assert(alpha_stack(vm, rp) == astk.subrange(0, n - 4));
+    // the fourth value.
+    assert(alpha_stack(vm, p3).last() == alpha_value(vm, vm.snodes[p3 as int].value));
+    assert(alpha_stack(vm, p3).last() == alpha_stack(vm, p3)[n - 4]);
+    assert(alpha_stack(vm, p3)[n - 4] == astk.subrange(0, n - 3)[n - 4]);
+    assert(astk.subrange(0, n - 3)[n - 4] == astk[n - 4]);
+    // p3's three shallower values are the same as pop3's, but re-expose via subrange.
+    assert(alpha_stack(vm, p2)[n - 3] == astk.subrange(0, n - 2)[n - 3]);
+    assert(astk.subrange(0, n - 2)[n - 3] == astk[n - 3]);
+}
+
 // ============================================================
 // 5. M3a — the MODEL arena step + refinement theorem SCAFFOLD.
 //    (blueprint §4.0/§4.a; production sources: run.rs::arena_step,
@@ -2364,13 +2559,720 @@ pub open spec fn is_scaffold_step(vm: ModelVm, pos: ModelVmState) -> bool {
 // group at a time; M4 drops the `!Fault` precondition (fault parity).
 // ------------------------------------------------------------
 
+// ------------------------------------------------------------
+// M4  Fault parity (the `!Fault` precondition dropped).
+//
+// When `spec_step_prim(astk, p, rest)` is a Fault, `model_arena_step(vm, pos)`
+// faults with the SAME `Error` and leaves the machine literally untouched
+// (`vm2 == vm && pos2 == pos`), honoring the normative precedence
+// (arity→Underflow before type→TypeMismatch; DivByZero before Overflow). This is
+// the arena analogue of P2's "final(vm) == old(vm) on fault".
+//
+// Both faults are proven side by side: the arity fault is derived from
+// `lemma_alpha_stack_len` (a short α-stack forces some k-th ancestor ptr to be the
+// `0` sentinel, so the model's pop-chain returns Underflow); the type fault from
+// the constructor bridges (`lemma_alpha_value_ctor` / `lemma_alpha_word_val_ctor`)
+// carrying the spec's failed constructor-match to the model's `_` arm; the
+// semantic faults (arith Overflow, div/mod DivByZero/Overflow) share the SAME
+// `in_i64`/`b==0`/`trunc_div` checks as the spec (they are shared fault parity,
+// not arena-only). NO divergence was found: every arm faults exactly where the
+// spec does, same kind, same precedence.
+//
+// Split into two proof fns (control prims in `thm_prim_fault_ctrl`) so no single
+// function blows the per-function Z3 rlimit.
+// ------------------------------------------------------------
+
+pub open spec fn is_ctrl_fault_prim(p: SpecPrim) -> bool {
+    p is Dip || p is If || p is Times || p is PrimRec || p is LinRec || p is Fold
+}
+
+/// Fault parity for the continuation-splice/control prims Dip/If/Times/PrimRec/
+/// LinRec/Fold. Their fault arms are arity + type only (the splice/intern happens
+/// on the SUCCESS path, so on fault the model returns immediately with the
+/// untouched vm/pos).
+pub proof fn thm_prim_fault_ctrl(
+    vm: ModelVm,
+    pos: ModelVmState,
+    pos1: ModelVmState,
+    p: SpecPrim,
+    astk: Seq<SpecValue>,
+    rest: Seq<SpecWord>,
+    n: int,
+)
+    requires
+        wf(vm),
+        wf_svals(vm),
+        wf_pos(vm, pos),
+        wf_pos(vm, pos1),
+        is_ctrl_fault_prim(p),
+        astk == alpha_stack(vm, pos.stack),
+        pos1.stack == pos.stack,
+        pos1.stack < vm.snodes.len(),
+        n == astk.len(),
+        model_next_word(vm, pos) == Some::<(ModelWord, ModelVmState)>((ModelWord::Prim(p), pos1)),
+        spec_step_prim(astk, p, rest) is Fault,
+    ensures
+        ({
+            let sf = spec_step_prim(astk, p, rest);
+            let (r, vm2, pos2) = model_arena_step(vm, pos);
+            &&& r == ModelStep::Fault(sf->Fault_0)
+            &&& vm2 == vm
+            &&& pos2 == pos
+        }),
+{
+    let sf = spec_step_prim(astk, p, rest);
+    let e = sf->Fault_0;
+    let s = pos1.stack;
+    assert(alpha_stack(vm, s) == astk);
+    match p {
+        SpecPrim::Dip => {
+            // ( a [q] -- ) : arity 2, TOP must be a Quote.
+            lemma_alpha_stack_len(vm, s);
+            if n < 2 {
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                if s == 0 {
+                } else {
+                    let p1 = vm.snodes[s as int].parent;
+                    assert(alpha_stack(vm, p1).len() == n - 1);
+                    assert(n == 1);
+                    lemma_alpha_stack_len(vm, p1);
+                    assert(p1 == 0);
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else {
+                lemma_pop2(vm, s);
+                let b = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, b);
+                assert(!(astk[n - 1] is Quote)) by {
+                    if astk[n - 1] is Quote { assert(spec_step_prim(astk, p, rest) is Next); }
+                };
+                assert(!(b is Quote));
+                assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        SpecPrim::Times => {
+            // ( n [Q] -- ) : arity 2, (Int, Quote).
+            lemma_alpha_stack_len(vm, s);
+            if n < 2 {
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                if s == 0 {
+                } else {
+                    let p1 = vm.snodes[s as int].parent;
+                    assert(alpha_stack(vm, p1).len() == n - 1);
+                    assert(n == 1);
+                    lemma_alpha_stack_len(vm, p1);
+                    assert(p1 == 0);
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else {
+                lemma_pop2(vm, s);
+                let p1 = vm.snodes[s as int].parent;
+                let nn = vm.snodes[p1 as int].value;
+                let q = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, nn);
+                lemma_alpha_value_ctor(vm, q);
+                assert(!(astk[n - 2] is Int && astk[n - 1] is Quote)) by {
+                    if astk[n - 2] is Int && astk[n - 1] is Quote {
+                        assert(spec_step_prim(astk, p, rest) is Next);
+                    }
+                };
+                assert(!(nn is Int && q is Quote));
+                assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        SpecPrim::If => {
+            // ( c [t] [f] -- ) : arity 3, (Int, Quote, Quote).
+            lemma_alpha_stack_len(vm, s);
+            if n < 3 {
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                if s == 0 {
+                } else {
+                    let p1 = vm.snodes[s as int].parent;
+                    assert(alpha_stack(vm, p1).len() == n - 1);
+                    lemma_alpha_stack_len(vm, p1);
+                    if p1 == 0 {
+                    } else {
+                        let p2 = vm.snodes[p1 as int].parent;
+                        assert(alpha_stack(vm, p2).len() == n - 2);
+                        assert(n == 2);
+                        lemma_alpha_stack_len(vm, p2);
+                        assert(p2 == 0);
+                    }
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else {
+                lemma_pop3(vm, s);
+                let p1 = vm.snodes[s as int].parent;
+                let p2 = vm.snodes[p1 as int].parent;
+                let cond = vm.snodes[p2 as int].value;
+                let t = vm.snodes[p1 as int].value;
+                let f = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, cond);
+                lemma_alpha_value_ctor(vm, t);
+                lemma_alpha_value_ctor(vm, f);
+                assert(!(astk[n - 3] is Int && astk[n - 2] is Quote && astk[n - 1] is Quote)) by {
+                    if astk[n - 3] is Int && astk[n - 2] is Quote && astk[n - 1] is Quote {
+                        assert(spec_step_prim(astk, p, rest) is Next);
+                    }
+                };
+                assert(!(cond is Int && t is Quote && f is Quote));
+                assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        SpecPrim::PrimRec => {
+            // ( n [I] [C] -- r ) : arity 3, (Int, Quote, Quote).
+            lemma_alpha_stack_len(vm, s);
+            if n < 3 {
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                if s == 0 {
+                } else {
+                    let p1 = vm.snodes[s as int].parent;
+                    assert(alpha_stack(vm, p1).len() == n - 1);
+                    lemma_alpha_stack_len(vm, p1);
+                    if p1 == 0 {
+                    } else {
+                        let p2 = vm.snodes[p1 as int].parent;
+                        assert(alpha_stack(vm, p2).len() == n - 2);
+                        assert(n == 2);
+                        lemma_alpha_stack_len(vm, p2);
+                        assert(p2 == 0);
+                    }
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else {
+                lemma_pop3(vm, s);
+                let p1 = vm.snodes[s as int].parent;
+                let p2 = vm.snodes[p1 as int].parent;
+                let k = vm.snodes[p2 as int].value;
+                let qi = vm.snodes[p1 as int].value;
+                let qc = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, k);
+                lemma_alpha_value_ctor(vm, qi);
+                lemma_alpha_value_ctor(vm, qc);
+                assert(!(astk[n - 3] is Int && astk[n - 2] is Quote && astk[n - 1] is Quote)) by {
+                    if astk[n - 3] is Int && astk[n - 2] is Quote && astk[n - 1] is Quote {
+                        assert(spec_step_prim(astk, p, rest) is Next);
+                    }
+                };
+                assert(!(k is Int && qi is Quote && qc is Quote));
+                assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        SpecPrim::LinRec => {
+            // ( [P] [T] [R1] [R2] -- ) : arity 4, all Quotes.
+            lemma_alpha_stack_len(vm, s);
+            if n < 4 {
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                if s == 0 {
+                } else {
+                    let p1 = vm.snodes[s as int].parent;
+                    assert(alpha_stack(vm, p1).len() == n - 1);
+                    lemma_alpha_stack_len(vm, p1);
+                    if p1 == 0 {
+                    } else {
+                        let p2 = vm.snodes[p1 as int].parent;
+                        assert(alpha_stack(vm, p2).len() == n - 2);
+                        lemma_alpha_stack_len(vm, p2);
+                        if p2 == 0 {
+                        } else {
+                            let p3 = vm.snodes[p2 as int].parent;
+                            assert(alpha_stack(vm, p3).len() == n - 3);
+                            assert(n == 3);
+                            lemma_alpha_stack_len(vm, p3);
+                            assert(p3 == 0);
+                        }
+                    }
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else {
+                lemma_pop4(vm, s);
+                let p1 = vm.snodes[s as int].parent;
+                let p2 = vm.snodes[p1 as int].parent;
+                let p3 = vm.snodes[p2 as int].parent;
+                let qp = vm.snodes[p3 as int].value;
+                let qt = vm.snodes[p2 as int].value;
+                let qr1 = vm.snodes[p1 as int].value;
+                let qr2 = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, qp);
+                lemma_alpha_value_ctor(vm, qt);
+                lemma_alpha_value_ctor(vm, qr1);
+                lemma_alpha_value_ctor(vm, qr2);
+                assert(!(astk[n - 4] is Quote && astk[n - 3] is Quote && astk[n - 2] is Quote
+                        && astk[n - 1] is Quote)) by {
+                    if astk[n - 4] is Quote && astk[n - 3] is Quote && astk[n - 2] is Quote
+                        && astk[n - 1] is Quote {
+                        assert(spec_step_prim(astk, p, rest) is Next);
+                    }
+                };
+                assert(!(qp is Quote && qt is Quote && qr1 is Quote && qr2 is Quote));
+                assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        SpecPrim::Fold => {
+            // ( [seq] init [C] -- r ) : arity 3, seq/combine Quotes, then non-value head.
+            lemma_alpha_stack_len(vm, s);
+            if n < 3 {
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                if s == 0 {
+                } else {
+                    let p1 = vm.snodes[s as int].parent;
+                    assert(alpha_stack(vm, p1).len() == n - 1);
+                    lemma_alpha_stack_len(vm, p1);
+                    if p1 == 0 {
+                    } else {
+                        let p2 = vm.snodes[p1 as int].parent;
+                        assert(alpha_stack(vm, p2).len() == n - 2);
+                        assert(n == 2);
+                        lemma_alpha_stack_len(vm, p2);
+                        assert(p2 == 0);
+                    }
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else {
+                lemma_pop3(vm, s);
+                let p1 = vm.snodes[s as int].parent;
+                let p2 = vm.snodes[p1 as int].parent;
+                let seqv = vm.snodes[p2 as int].value;   // stk[n-3]
+                let combv = vm.snodes[s as int].value;    // stk[n-1]
+                lemma_alpha_value_ctor(vm, seqv);
+                lemma_alpha_value_ctor(vm, combv);
+                if !(astk[n - 3] is Quote) || !(astk[n - 1] is Quote) {
+                    assert(!(seqv is Quote) || !(combv is Quote));
+                    assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                    assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+                } else {
+                    // both seq and combine are Quotes; the fault is a non-value seq head.
+                    let qsw = astk[n - 3]->Quote_0;
+                    assert(astk[n - 3] == SpecValue::Quote(qsw));
+                    assert(seqv is Quote);
+                    let qs = seqv->Quote_0;
+                    assert(seqv == ModelValue::Quote(qs));
+                    assert(alpha_quote(vm, qs) == qsw);
+                    assert(snode_val_wf(vm, p2 as int));
+                    assert(qs.start + qs.len <= vm.tape.len());
+                    let he = (qs.start + qs.len) as nat;
+                    lemma_alpha_words_len(vm, qs.start, he);
+                    assert(qsw.len() == qs.len);
+                    assert(qsw.len() > 0) by {
+                        if qsw.len() == 0 { assert(spec_step_prim(astk, p, rest) is Next); }
+                    };
+                    assert(qs.len > 0);
+                    assert(qs.start < vm.tape.len());
+                    lemma_alpha_words_head(vm, qs.start, he);
+                    assert(qsw == seq![alpha_word(vm, qs.start)] + alpha_words(vm, (qs.start + 1) as nat, he));
+                    assert(qsw[0] == alpha_word(vm, qs.start));
+                    lemma_alpha_word_val(vm, qs.start);
+                    assert(qsw[0] == alpha_word_val(vm, vm.tape[qs.start as int]));
+                    assert(!(qsw[0] is PushInt) && !(qsw[0] is PushQuote)) by {
+                        if qsw[0] is PushInt || qsw[0] is PushQuote {
+                            assert(spec_step_prim(astk, p, rest) is Next);
+                        }
+                    };
+                    lemma_alpha_word_val_ctor(vm, vm.tape[qs.start as int]);
+                    assert(!(vm.tape[qs.start as int] is PushInt) && !(vm.tape[qs.start as int] is PushQuote));
+                    assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                    assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        _ => {
+            assert(false);
+        },
+    }
+    assert(model_exec_word(vm, pos1, ModelWord::Prim(p)) == (ModelStep::Fault(e), vm, pos1));
+    assert(model_arena_step(vm, pos) == (ModelStep::Fault(e), vm, pos));
+}
+
+/// Fault parity for the non-control prims (stack shuffles, arithmetic/comparison,
+/// Cat/Cons/Uncons, Apply). Dispatches the 6 control prims to
+/// `thm_prim_fault_ctrl`.
+pub proof fn thm_prim_fault(
+    vm: ModelVm,
+    pos: ModelVmState,
+    pos1: ModelVmState,
+    p: SpecPrim,
+    astk: Seq<SpecValue>,
+    rest: Seq<SpecWord>,
+    n: int,
+)
+    requires
+        wf(vm),
+        wf_svals(vm),
+        wf_pos(vm, pos),
+        wf_pos(vm, pos1),
+        astk == alpha_stack(vm, pos.stack),
+        pos1.stack == pos.stack,
+        pos1.stack < vm.snodes.len(),
+        n == astk.len(),
+        model_next_word(vm, pos) == Some::<(ModelWord, ModelVmState)>((ModelWord::Prim(p), pos1)),
+        spec_step_prim(astk, p, rest) is Fault,
+    ensures
+        ({
+            let sf = spec_step_prim(astk, p, rest);
+            let (r, vm2, pos2) = model_arena_step(vm, pos);
+            &&& r == ModelStep::Fault(sf->Fault_0)
+            &&& vm2 == vm
+            &&& pos2 == pos
+        }),
+{
+    let sf = spec_step_prim(astk, p, rest);
+    let e = sf->Fault_0;
+    let s = pos1.stack;
+    assert(alpha_stack(vm, s) == astk);
+    match p {
+        // ------- control prims: delegate -------
+        SpecPrim::Dip | SpecPrim::If | SpecPrim::Times | SpecPrim::PrimRec
+        | SpecPrim::LinRec | SpecPrim::Fold => {
+            thm_prim_fault_ctrl(vm, pos, pos1, p, astk, rest, n);
+        },
+        // ------- arity-only prims (only Underflow) -------
+        SpecPrim::Dup => {
+            lemma_alpha_stack_len(vm, s);
+            assert(n < 1) by {
+                if n >= 1 { assert(spec_step_prim(astk, p, rest) is Next); }
+            };
+            assert(s == 0);
+            assert(sf == SpecStep::Fault(Error::Underflow));
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        SpecPrim::Drop => {
+            lemma_alpha_stack_len(vm, s);
+            assert(n < 1) by {
+                if n >= 1 { assert(spec_step_prim(astk, p, rest) is Next); }
+            };
+            assert(s == 0);
+            assert(sf == SpecStep::Fault(Error::Underflow));
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        SpecPrim::Swap => {
+            lemma_alpha_stack_len(vm, s);
+            assert(n < 2) by {
+                if n >= 2 { assert(spec_step_prim(astk, p, rest) is Next); }
+            };
+            if s == 0 {
+            } else {
+                let p1 = vm.snodes[s as int].parent;
+                assert(alpha_stack(vm, p1).len() == n - 1);
+                assert(n == 1);
+                lemma_alpha_stack_len(vm, p1);
+                assert(p1 == 0);
+            }
+            assert(sf == SpecStep::Fault(Error::Underflow));
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        SpecPrim::Over => {
+            lemma_alpha_stack_len(vm, s);
+            assert(n < 2) by {
+                if n >= 2 { assert(spec_step_prim(astk, p, rest) is Next); }
+            };
+            if s == 0 {
+            } else {
+                let p1 = vm.snodes[s as int].parent;
+                assert(alpha_stack(vm, p1).len() == n - 1);
+                assert(n == 1);
+                lemma_alpha_stack_len(vm, p1);
+                assert(p1 == 0);
+            }
+            assert(sf == SpecStep::Fault(Error::Underflow));
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        SpecPrim::Rot => {
+            lemma_alpha_stack_len(vm, s);
+            assert(n < 3) by {
+                if n >= 3 { assert(spec_step_prim(astk, p, rest) is Next); }
+            };
+            if s == 0 {
+            } else {
+                let p1 = vm.snodes[s as int].parent;
+                assert(alpha_stack(vm, p1).len() == n - 1);
+                lemma_alpha_stack_len(vm, p1);
+                if p1 == 0 {
+                } else {
+                    let p2 = vm.snodes[p1 as int].parent;
+                    assert(alpha_stack(vm, p2).len() == n - 2);
+                    assert(n == 2);
+                    lemma_alpha_stack_len(vm, p2);
+                    assert(p2 == 0);
+                }
+            }
+            assert(sf == SpecStep::Fault(Error::Underflow));
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        // ------- Apply: arity 1, TOP Quote -------
+        SpecPrim::Apply => {
+            lemma_alpha_stack_len(vm, s);
+            if n < 1 {
+                assert(s == 0);
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else {
+                lemma_pop1(vm, s);
+                let b = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, b);
+                assert(!(astk[n - 1] is Quote)) by {
+                    if astk[n - 1] is Quote { assert(spec_step_prim(astk, p, rest) is Next); }
+                };
+                assert(!(b is Quote));
+                assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        // ------- Cat: arity 2, both Quote -------
+        SpecPrim::Cat => {
+            lemma_alpha_stack_len(vm, s);
+            if n < 2 {
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                if s == 0 {
+                } else {
+                    let p1 = vm.snodes[s as int].parent;
+                    assert(alpha_stack(vm, p1).len() == n - 1);
+                    assert(n == 1);
+                    lemma_alpha_stack_len(vm, p1);
+                    assert(p1 == 0);
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else {
+                lemma_pop2(vm, s);
+                let p1 = vm.snodes[s as int].parent;
+                let a = vm.snodes[p1 as int].value;
+                let b = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, a);
+                lemma_alpha_value_ctor(vm, b);
+                assert(!(astk[n - 2] is Quote && astk[n - 1] is Quote)) by {
+                    if astk[n - 2] is Quote && astk[n - 1] is Quote {
+                        assert(spec_step_prim(astk, p, rest) is Next);
+                    }
+                };
+                assert(!(a is Quote && b is Quote));
+                assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        // ------- Cons: arity 2, TOP Quote -------
+        SpecPrim::Cons => {
+            lemma_alpha_stack_len(vm, s);
+            if n < 2 {
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                if s == 0 {
+                } else {
+                    let p1 = vm.snodes[s as int].parent;
+                    assert(alpha_stack(vm, p1).len() == n - 1);
+                    assert(n == 1);
+                    lemma_alpha_stack_len(vm, p1);
+                    assert(p1 == 0);
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else {
+                lemma_pop2(vm, s);
+                let b = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, b);
+                assert(!(astk[n - 1] is Quote)) by {
+                    if astk[n - 1] is Quote { assert(spec_step_prim(astk, p, rest) is Next); }
+                };
+                assert(!(b is Quote));
+                assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        // ------- Eq / Lt / Xor: arity 2, both Int, NO semantic fault -------
+        SpecPrim::Eq | SpecPrim::Lt | SpecPrim::Xor => {
+            lemma_alpha_stack_len(vm, s);
+            if n < 2 {
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                if s == 0 {
+                } else {
+                    let p1 = vm.snodes[s as int].parent;
+                    assert(alpha_stack(vm, p1).len() == n - 1);
+                    assert(n == 1);
+                    lemma_alpha_stack_len(vm, p1);
+                    assert(p1 == 0);
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else {
+                lemma_pop2(vm, s);
+                let p1 = vm.snodes[s as int].parent;
+                let a = vm.snodes[p1 as int].value;
+                let b = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, a);
+                lemma_alpha_value_ctor(vm, b);
+                assert(!(astk[n - 2] is Int && astk[n - 1] is Int)) by {
+                    if astk[n - 2] is Int && astk[n - 1] is Int {
+                        assert(spec_step_prim(astk, p, rest) is Next);
+                    }
+                };
+                assert(!(a is Int && b is Int));
+                assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        // ------- Add / Sub / Mul: arity 2, both Int, Overflow -------
+        SpecPrim::Add | SpecPrim::Sub | SpecPrim::Mul => {
+            lemma_alpha_stack_len(vm, s);
+            if n < 2 {
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                if s == 0 {
+                } else {
+                    let p1 = vm.snodes[s as int].parent;
+                    assert(alpha_stack(vm, p1).len() == n - 1);
+                    assert(n == 1);
+                    lemma_alpha_stack_len(vm, p1);
+                    assert(p1 == 0);
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else if astk[n - 2] is Int && astk[n - 1] is Int {
+                let a = astk[n - 2]->Int_0;
+                let b = astk[n - 1]->Int_0;
+                lemma_binop_int(vm, s, astk, n, a, b);
+                // spec faults with both Int => Overflow (the op result leaves i64).
+                let r = match p {
+                    SpecPrim::Add => a + b,
+                    SpecPrim::Sub => a - b,
+                    _ => a * b,
+                };
+                assert(!in_i64(r)) by {
+                    if in_i64(r) { assert(spec_step_prim(astk, p, rest) is Next); }
+                };
+                assert(sf == SpecStep::Fault(Error::Overflow));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Overflow), vm, pos1));
+            } else {
+                lemma_pop2(vm, s);
+                let p1 = vm.snodes[s as int].parent;
+                let a = vm.snodes[p1 as int].value;
+                let b = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, a);
+                lemma_alpha_value_ctor(vm, b);
+                assert(!(a is Int && b is Int));
+                assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        // ------- Div / Mod: arity 2, both Int, DivByZero BEFORE Overflow -------
+        SpecPrim::Div | SpecPrim::Mod => {
+            lemma_alpha_stack_len(vm, s);
+            if n < 2 {
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                if s == 0 {
+                } else {
+                    let p1 = vm.snodes[s as int].parent;
+                    assert(alpha_stack(vm, p1).len() == n - 1);
+                    assert(n == 1);
+                    lemma_alpha_stack_len(vm, p1);
+                    assert(p1 == 0);
+                }
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else if astk[n - 2] is Int && astk[n - 1] is Int {
+                let a = astk[n - 2]->Int_0;
+                let b = astk[n - 1]->Int_0;
+                lemma_binop_int(vm, s, astk, n, a, b);
+                if b == 0 {
+                    assert(sf == SpecStep::Fault(Error::DivByZero));
+                    assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::DivByZero), vm, pos1));
+                } else {
+                    assert(!in_i64(trunc_div(a, b))) by {
+                        if in_i64(trunc_div(a, b)) { assert(spec_step_prim(astk, p, rest) is Next); }
+                    };
+                    assert(sf == SpecStep::Fault(Error::Overflow));
+                    assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Overflow), vm, pos1));
+                }
+            } else {
+                lemma_pop2(vm, s);
+                let p1 = vm.snodes[s as int].parent;
+                let a = vm.snodes[p1 as int].value;
+                let b = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, a);
+                lemma_alpha_value_ctor(vm, b);
+                assert(!(a is Int && b is Int));
+                assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+        // ------- Uncons: arity 1, TOP Quote, non-value head -------
+        SpecPrim::Uncons => {
+            lemma_alpha_stack_len(vm, s);
+            if n < 1 {
+                assert(s == 0);
+                assert(sf == SpecStep::Fault(Error::Underflow));
+                assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::Underflow), vm, pos1));
+            } else {
+                lemma_pop1(vm, s);
+                let bv = vm.snodes[s as int].value;
+                lemma_alpha_value_ctor(vm, bv);
+                if !(astk[n - 1] is Quote) {
+                    assert(!(bv is Quote));
+                    assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                    assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+                } else {
+                    let qw = astk[n - 1]->Quote_0;
+                    assert(astk[n - 1] == SpecValue::Quote(qw));
+                    assert(bv is Quote);
+                    let qid = bv->Quote_0;
+                    assert(bv == ModelValue::Quote(qid));
+                    assert(alpha_quote(vm, qid) == qw);
+                    assert(snode_val_wf(vm, s as int));
+                    assert(qid.start + qid.len <= vm.tape.len());
+                    let he = (qid.start + qid.len) as nat;
+                    lemma_alpha_words_len(vm, qid.start, he);
+                    assert(qw.len() == qid.len);
+                    assert(qw.len() > 0) by {
+                        if qw.len() == 0 { assert(spec_step_prim(astk, p, rest) is Next); }
+                    };
+                    assert(qid.len > 0);
+                    assert(qid.start < vm.tape.len());
+                    lemma_alpha_words_head(vm, qid.start, he);
+                    assert(qw == seq![alpha_word(vm, qid.start)] + alpha_words(vm, (qid.start + 1) as nat, he));
+                    assert(qw[0] == alpha_word(vm, qid.start));
+                    lemma_alpha_word_val(vm, qid.start);
+                    assert(qw[0] == alpha_word_val(vm, vm.tape[qid.start as int]));
+                    assert(!(qw[0] is PushInt) && !(qw[0] is PushQuote)) by {
+                        if qw[0] is PushInt || qw[0] is PushQuote {
+                            assert(spec_step_prim(astk, p, rest) is Next);
+                        }
+                    };
+                    lemma_alpha_word_val_ctor(vm, vm.tape[qid.start as int]);
+                    assert(!(vm.tape[qid.start as int] is PushInt)
+                        && !(vm.tape[qid.start as int] is PushQuote));
+                    assert(sf == SpecStep::Fault(Error::TypeMismatch));
+                    assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(Error::TypeMismatch), vm, pos1));
+                }
+            }
+            assert(model_exec_prim(vm, pos1, p) == (ModelStep::Fault(e), vm, pos1));
+        },
+    }
+    assert(model_exec_word(vm, pos1, ModelWord::Prim(p)) == model_exec_prim(vm, pos1, p));
+    assert(model_arena_step(vm, pos) == (ModelStep::Fault(e), vm, pos));
+}
+
 pub proof fn thm_arena_refines_spec_scaffold(vm: ModelVm, pos: ModelVmState)
     requires
         wf(vm),
         wf_svals(vm),
         wf_pos(vm, pos),
-        is_scaffold_step(vm, pos),
-        !(spec_step(alpha_state(vm, pos)) is Fault),
+        // NOTE: the `is_scaffold_step` gate is GONE. All 23 prims are modeled and
+        // both refined (happy path) and fault-matched (M4), so the theorem is now
+        // UNCONDITIONAL over all inputs (fault + non-fault) for any wf state.
     ensures
         ({
             let (r, vm2, pos2) = model_arena_step(vm, pos);
@@ -2378,7 +3280,10 @@ pub proof fn thm_arena_refines_spec_scaffold(vm: ModelVm, pos: ModelVmState)
                 SpecStep::Next(s2) => r is Next && wf(vm2) && wf_pos(vm2, pos2)
                     && alpha_state(vm2, pos2) == s2,
                 SpecStep::Halt(_) => r is Halt,
-                SpecStep::Fault(_) => true, // excluded by the requires (M4 fault parity)
+                // M4 fault parity: same Error kind, and the machine is left
+                // literally untouched (α unchanged) — run.rs's `*st = saved` and
+                // prim.rs's stack-unchanged-on-fault contract.
+                SpecStep::Fault(e) => r == ModelStep::Fault(e) && vm2 == vm && pos2 == pos,
                 SpecStep::Invoke(nm, stk, ct) => r is Invoke && r->Invoke_0 == nm
                     && alpha_state(vm2, pos2) == (SpecState { stack: stk, cont: ct }),
             }
@@ -2459,7 +3364,12 @@ pub proof fn thm_arena_refines_spec_scaffold(vm: ModelVm, pos: ModelVmState)
                     assert(model_next_word(vm, pos)
                         == Some::<(ModelWord, ModelVmState)>((ModelWord::Prim(p), pos1)));
                     assert(spec_step(sstate) == spec_step_prim(astk, p, rest));
-                    thm_prim_scaffold(vm, pos, pos1, p, astk, ac, rest, n);
+                    if spec_step_prim(astk, p, rest) is Fault {
+                        // M4 fault parity: same kind, machine untouched.
+                        thm_prim_fault(vm, pos, pos1, p, astk, rest, n);
+                    } else {
+                        thm_prim_scaffold(vm, pos, pos1, p, astk, ac, rest, n);
+                    }
                 },
             }
         },
@@ -2512,6 +3422,11 @@ pub proof fn lemma_binop_int(
 /// theorem readable. Proves Dup/Drop/Swap/Rot/Over (M3a) and
 /// Add/Sub/Mul/Div/Mod/Eq/Lt/Xor/Cons/Cat/Uncons (M3b); the non-scaffold `_` arm
 /// is unreachable (`is_scaffold_prim(p)`).
+// rlimit headroom: this dispatcher is large (11 inlined prim arms); the M4
+// fault-parity lemmas now in scope perturb Z3's search enough to nudge it past
+// the default budget. Bumping the per-function rlimit (NOT a soundness cheat —
+// no admit/assume) keeps it green.
+#[verifier::rlimit(100)]
 pub proof fn thm_prim_scaffold(
     vm: ModelVm,
     pos: ModelVmState,
