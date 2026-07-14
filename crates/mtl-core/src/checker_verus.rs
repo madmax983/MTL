@@ -51,14 +51,12 @@
 //!     * `lemma_sl_invariant` / `thm_static_straightline` — T-Static for the If-FREE fragment
 //!     * `thm_branch_progress`    — the `If` step never faults Underflow/TypeMismatch
 //!     * `lemma_join_sound`       — T-Branch: post-If shape well-defined independent of flag
-//!
-//!   BRIDGED with a loudly-marked gap (`// UNPROVEN GAP (milestone 1)`):
-//!     * `thm_static_with_if` — T-Static extended across `If`-INLINING (the branch-splice
-//!       correspondence). The abstract checker summarizes a branch with an effect and
-//!       continues; `spec_step` inlines the branch body into the continuation. Tying those
-//!       two together is a non-lockstep induction (a branch of arbitrary length maps to a
-//!       stutter of concrete steps) and is the milestone-2 work. The gap is a single
-//!       `assume` at the inlining step, marked below.
+//!     * `lemma_check_invariant` / `thm_static_with_if` — T-Static for the full straight-line
+//!       + `If` fragment (milestone-2 Part A). The If-INLINING correspondence is now
+//!       machine-checked: `lemma_check_compose` (checker splice, à la p5's
+//!       `lemma_stepn_compose`) + `lemma_check_depth_mono` + `lemma_joinable_eq` collapse
+//!       the branch/join mismatch, so the induction on the concrete step count closes with
+//!       NO `assume`. The milestone-1 gap is GONE.
 
 use vstd::prelude::*;
 
@@ -817,7 +815,7 @@ pub proof fn thm_branch_progress(cs: Seq<SpecValue>, rest: Seq<SpecWord>)
 }
 
 // ============================================================
-// 6. T-Static WITH If — BRIDGED (milestone-2 work)
+// 6. T-Static WITH If — FULLY PROVEN (milestone-2 Part A)
 // ============================================================
 //
 // The full T-Static over programs CONTAINING `If`. The abstract checker
@@ -825,11 +823,13 @@ pub proof fn thm_branch_progress(cs: Seq<SpecValue>, rest: Seq<SpecWord>)
 // continues; `spec_step` INLINES the selected branch body into the continuation
 // and executes it step-by-step. Tying those together is a non-lockstep induction:
 // one abstract `If` step corresponds to a *stutter* of concrete steps (the whole
-// branch body, of arbitrary length). Closing it needs a splice/composition lemma
-// (`spec_stepn` over `t + rest` = branch run then rest — cf. p5's
-// `lemma_stepn_compose`) plus the branch-join argument above. That is the
-// milestone-2 deliverable. Here the top-level statement is recorded and the single
-// inlining step is bridged with an `assume`, loudly marked.
+// branch body, of arbitrary length). This is now CLOSED (no `assume`): the key
+// realization is that in the milestone-1 lattice `joinable(pt, pf) ==> pt == pf`
+// (`lemma_joinable_eq`), so the concrete run through ONE branch already lands in the
+// join's shape — no monotonicity argument needed. The splice is handled at the
+// checker level by `lemma_check_compose` (the analogue of p5's `lemma_stepn_compose`),
+// which lets the `If` case treat the inlined `branch + rest` as a single program and
+// re-enter the same-`depth` invariant at `k - 1`. See `lemma_check_invariant`.
 
 /// Depth-fuelled If-aware checker (design: "bounds inline depth"). `depth` bounds
 /// nested-If recursion so the spec fn is well-founded; real programs nest finitely.
@@ -867,6 +867,65 @@ pub open spec fn check_m1(astk: Seq<AbsVal>, p: Seq<SpecWord>, depth: nat) -> Op
                     }
                 }
             }
+            // ---- Times `.` : n [Q] . — the body Q must be an abstract fixpoint
+            // (net-zero height + per-cell type-stable, design §2), i.e. it maps the
+            // base abstract stack back to itself. Then `n [Q] .` pops both and leaves
+            // the base untouched. `depth` bounds the checker's fixpoint re-check of Q.
+            SpecWord::Prim(SpecPrim::Times) => {
+                let m = astk.len() as int;
+                if m < 2 {
+                    None
+                } else if depth == 0 {
+                    None
+                } else {
+                    match (astk[m - 2], astk[m - 1]) {
+                        (AbsVal::AInt, AbsVal::ALit(q)) => {
+                            let base = astk.subrange(0, m - 2);
+                            if check_m1(base, q, (depth - 1) as nat) == Some(base) {
+                                check_m1(base, rest, depth)
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    }
+                }
+            }
+            // ---- PrimRec `&` : n [I] [C] & — design §2. `I` produces the accumulator
+            // region; `C : (counter:Int, acc) -> acc` is height/type-stable. Matching
+            // mtl_core's semantics EXACTLY: the runtime counters pile up BELOW the
+            // accumulator, so the stability conditions are frame-polymorphic —
+            //   * `I` analyzed on the EMPTY abstract stack yields `acc` (purely
+            //     productive: appends `acc` to any stack, by the frame lemma), and
+            //   * `C` on `[counter:AInt] ++ acc` yields `acc` (consumes one counter
+            //     sitting below the accumulator and restores the acc shape).
+            // Then `n [I] [C] &` leaves `base ++ acc`.
+            SpecWord::Prim(SpecPrim::PrimRec) => {
+                let m = astk.len() as int;
+                if m < 3 {
+                    None
+                } else if depth == 0 {
+                    None
+                } else {
+                    match (astk[m - 3], astk[m - 2], astk[m - 1]) {
+                        (AbsVal::AInt, AbsVal::ALit(qi), AbsVal::ALit(qc)) => {
+                            let base = astk.subrange(0, m - 3);
+                            match check_m1(Seq::<AbsVal>::empty(), qi, (depth - 1) as nat) {
+                                Some(acc) => {
+                                    let cin = seq![AbsVal::AInt] + acc;
+                                    if check_m1(cin, qc, (depth - 1) as nat) == Some(acc) {
+                                        check_m1(base + acc, rest, depth)
+                                    } else {
+                                        None
+                                    }
+                                }
+                                None => None,
+                            }
+                        }
+                        _ => None,
+                    }
+                }
+            }
             SpecWord::Prim(p2) =>
                 match abs_step_prim(astk, p2) {
                     Some(astk2) => check_m1(astk2, rest, depth),
@@ -877,10 +936,869 @@ pub open spec fn check_m1(astk: Seq<AbsVal>, p: Seq<SpecWord>, depth: nat) -> Op
     }
 }
 
-/// **T-Static (full fragment, WITH If) — BRIDGED.** Same statement as
-/// `thm_static_straightline` but for programs that may contain `If`, using the
-/// If-aware `check_m1`. The proof is milestone-2 work; the inlining-correspondence
-/// step is bridged below.
+// ------------------------------------------------------------
+// Part-A machinery: the three reusable lemmas that DISCHARGE the If-inlining
+// bridge (milestone-2, Part A). See `lemma_check_invariant` for the assembly.
+// ------------------------------------------------------------
+
+/// `abs_step_prim` only ever ACCEPTS a straight-line primitive: its `Some` arms are
+/// exactly the shuffles + arith/cmp, i.e. `is_sl_prim`. (`If` and all excluded prims
+/// route to `None`.) Lets the `Prim` arm of `check_m1` reuse `lemma_prim_step_sound`.
+proof fn lemma_abs_step_prim_sl(astk: Seq<AbsVal>, p: SpecPrim)
+    requires
+        abs_step_prim(astk, p) is Some,
+    ensures
+        is_sl_prim(p),
+{
+    match p {
+        SpecPrim::Dup | SpecPrim::Drop | SpecPrim::Swap | SpecPrim::Rot | SpecPrim::Over
+        | SpecPrim::Add | SpecPrim::Sub | SpecPrim::Mul | SpecPrim::Div | SpecPrim::Mod
+        | SpecPrim::Xor | SpecPrim::Eq | SpecPrim::Lt => {}
+        _ => { assert(abs_step_prim(astk, p) is None); }
+    }
+}
+
+/// **Bottom-frame invariance of `abs_step_prim`.** Every straight-line primitive acts
+/// only on the TOP of the stack (`astk[n-1]`, `subrange(0, n-k)`, `push`), so
+/// prepending a frame `fr` at the BOTTOM shifts all indices uniformly and commutes:
+/// `abs_step_prim(fr + astk, p) == fr + abs_step_prim(astk, p)`. The workhorse for the
+/// recursion combinators, whose runtime counters/tail pile up below the accumulator.
+proof fn lemma_abs_step_prim_frame(fr: Seq<AbsVal>, astk: Seq<AbsVal>, p: SpecPrim)
+    requires
+        abs_step_prim(astk, p) is Some,
+    ensures
+        abs_step_prim(fr + astk, p)
+            == Some(fr + abs_step_prim(astk, p)->Some_0),
+{
+    let m = astk.len() as int;
+    let a2 = astk.len() as int + fr.len() as int;
+    let big = fr + astk;
+    assert(big.len() == fr.len() + astk.len());
+    // Top-relative index correspondence: big[fr.len() + j] == astk[j].
+    assert forall|j: int| 0 <= j < m implies big[fr.len() + j] == astk[j] by {}
+    lemma_abs_step_prim_sl(astk, p);
+    match p {
+        SpecPrim::Dup => {
+            assert(m >= 1);
+            assert(big[a2 - 1] == astk[m - 1]);
+            assert(big.push(big[a2 - 1]) =~= fr + astk.push(astk[m - 1]));
+        }
+        SpecPrim::Drop => {
+            assert(m >= 1);
+            assert(big.subrange(0, a2 - 1) =~= fr + astk.subrange(0, m - 1));
+        }
+        SpecPrim::Swap => {
+            assert(m >= 2);
+            assert(big[a2 - 1] == astk[m - 1]);
+            assert(big[a2 - 2] == astk[m - 2]);
+            assert(big.subrange(0, a2 - 2).push(big[a2 - 1]).push(big[a2 - 2])
+                =~= fr + astk.subrange(0, m - 2).push(astk[m - 1]).push(astk[m - 2]));
+        }
+        SpecPrim::Rot => {
+            assert(m >= 3);
+            assert(big[a2 - 1] == astk[m - 1]);
+            assert(big[a2 - 2] == astk[m - 2]);
+            assert(big[a2 - 3] == astk[m - 3]);
+            assert(big.subrange(0, a2 - 3).push(big[a2 - 2]).push(big[a2 - 1]).push(big[a2 - 3])
+                =~= fr + astk.subrange(0, m - 3).push(astk[m - 2]).push(astk[m - 1]).push(astk[m - 3]));
+        }
+        SpecPrim::Over => {
+            assert(m >= 2);
+            assert(big[a2 - 2] == astk[m - 2]);
+            assert(big.push(big[a2 - 2]) =~= fr + astk.push(astk[m - 2]));
+        }
+        SpecPrim::Add | SpecPrim::Sub | SpecPrim::Mul | SpecPrim::Div | SpecPrim::Mod
+        | SpecPrim::Xor | SpecPrim::Eq | SpecPrim::Lt => {
+            assert(m >= 2);
+            assert(absv_is_int(astk[m - 1]) && absv_is_int(astk[m - 2]));
+            assert(big[a2 - 1] == astk[m - 1]);
+            assert(big[a2 - 2] == astk[m - 2]);
+            assert(absv_is_int(big[a2 - 1]) && absv_is_int(big[a2 - 2]));
+            assert(big.subrange(0, a2 - 2).push(AbsVal::AInt)
+                =~= fr + astk.subrange(0, m - 2).push(AbsVal::AInt));
+        }
+        _ => { assert(false); }
+    }
+}
+
+/// `join_cell(x, x)` is always `Some` (reflexivity): equal cells join to themselves.
+proof fn lemma_join_cell_refl(x: AbsVal)
+    ensures
+        join_cell(x, x) is Some,
+        join_cell(x, x)->Some_0 == x,
+{
+    match x {
+        AbsVal::AInt => {}
+        AbsVal::ALit(_) => {}
+    }
+}
+
+/// **Bottom-frame invariance of `check_m1`.** Lifts `lemma_abs_step_prim_frame` (and
+/// the analogous top-relative reasoning for `If`/`Times`) through the whole checker:
+/// running the checker under an extra bottom frame `fr` appends `fr` to the post.
+/// This is what makes the recursion-combinator bodies analyzable on a MINIMAL stack
+/// (empty for the primrec initializer, `[counter]++acc` for the combine) and then
+/// re-instated on the real running stack.
+pub proof fn lemma_check_frame(fr: Seq<AbsVal>, astk: Seq<AbsVal>, p: Seq<SpecWord>, depth: nat)
+    requires
+        check_m1(astk, p, depth) is Some,
+    ensures
+        check_m1(fr + astk, p, depth)
+            == Some(fr + check_m1(astk, p, depth)->Some_0),
+    decreases depth, p.len(),
+{
+    let big = fr + astk;
+    if p.len() == 0 {
+        assert(check_m1(astk, p, depth) == Some(astk));
+        assert(check_m1(big, p, depth) == Some(big));
+    } else {
+        let w = p[0];
+        let rest = p.subrange(1, p.len() as int);
+        match w {
+            SpecWord::PushInt(_) => {
+                assert(big.push(AbsVal::AInt) =~= fr + astk.push(AbsVal::AInt));
+                lemma_check_frame(fr, astk.push(AbsVal::AInt), rest, depth);
+            }
+            SpecWord::PushQuote(q) => {
+                assert(big.push(AbsVal::ALit(q)) =~= fr + astk.push(AbsVal::ALit(q)));
+                lemma_check_frame(fr, astk.push(AbsVal::ALit(q)), rest, depth);
+            }
+            SpecWord::Prim(SpecPrim::If) => {
+                let m = astk.len() as int;
+                let mb = big.len() as int;
+                assert(m >= 3);
+                assert(depth >= 1);
+                assert(big[mb - 3] == astk[m - 3]);
+                assert(big[mb - 2] == astk[m - 2]);
+                assert(big[mb - 1] == astk[m - 1]);
+                match (astk[m - 3], astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(t), AbsVal::ALit(f)) => {
+                        let base = astk.subrange(0, m - 3);
+                        assert(big.subrange(0, mb - 3) =~= fr + base);
+                        let pt = check_m1(base, t, (depth - 1) as nat)->Some_0;
+                        let pf = check_m1(base, f, (depth - 1) as nat)->Some_0;
+                        assert(joinable(pt, pf));
+                        lemma_joinable_eq(pt, pf);
+                        lemma_check_frame(fr, base, t, (depth - 1) as nat);
+                        lemma_check_frame(fr, base, f, (depth - 1) as nat);
+                        // framed branch posts are fr+pt and fr+pf, and pt == pf.
+                        assert(check_m1(fr + base, t, (depth - 1) as nat) == Some(fr + pt));
+                        assert(check_m1(fr + base, f, (depth - 1) as nat) == Some(fr + pf));
+                        assert(fr + pt =~= fr + pf);
+                        assert(joinable(fr + pt, fr + pf)) by {
+                            assert forall|j: int| 0 <= j < (fr + pt).len() implies
+                                (#[trigger] join_cell((fr + pt)[j], (fr + pf)[j])) is Some by {
+                                assert((fr + pt)[j] == (fr + pf)[j]);
+                                lemma_join_cell_refl((fr + pt)[j]);
+                            }
+                        }
+                        assert(join_stacks(fr + pt, fr + pf) =~= fr + join_stacks(pt, pf)) by {
+                            assert forall|i: int| 0 <= i < (fr + pt).len() implies
+                                join_stacks(fr + pt, fr + pf)[i] == (fr + join_stacks(pt, pf))[i] by {
+                                lemma_join_cell_refl((fr + pt)[i]);
+                                lemma_joinable_eq(pt, pf);
+                            }
+                        }
+                        lemma_check_frame(fr, join_stacks(pt, pf), rest, depth);
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(SpecPrim::Times) => {
+                let m = astk.len() as int;
+                let mb = big.len() as int;
+                assert(m >= 2);
+                assert(depth >= 1);
+                assert(big[mb - 2] == astk[m - 2]);
+                assert(big[mb - 1] == astk[m - 1]);
+                match (astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(q)) => {
+                        let base = astk.subrange(0, m - 2);
+                        assert(big.subrange(0, mb - 2) =~= fr + base);
+                        assert(check_m1(base, q, (depth - 1) as nat) == Some(base));
+                        lemma_check_frame(fr, base, q, (depth - 1) as nat);
+                        assert(check_m1(fr + base, q, (depth - 1) as nat) == Some(fr + base));
+                        lemma_check_frame(fr, base, rest, depth);
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(SpecPrim::PrimRec) => {
+                let m = astk.len() as int;
+                let mb = big.len() as int;
+                assert(m >= 3);
+                assert(depth >= 1);
+                assert(big[mb - 3] == astk[m - 3]);
+                assert(big[mb - 2] == astk[m - 2]);
+                assert(big[mb - 1] == astk[m - 1]);
+                match (astk[m - 3], astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(qi), AbsVal::ALit(qc)) => {
+                        let base = astk.subrange(0, m - 3);
+                        assert(big.subrange(0, mb - 3) =~= fr + base);
+                        // `I` is analyzed on the empty stack, so `acc` and the C-condition
+                        // are frame-independent: the framed PrimRec has the SAME acc.
+                        let acc = check_m1(Seq::<AbsVal>::empty(), qi, (depth - 1) as nat)->Some_0;
+                        assert((fr + base) + acc =~= fr + (base + acc));
+                        lemma_check_frame(fr, base + acc, rest, depth);
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(p2) => {
+                match abs_step_prim(astk, p2) {
+                    Some(astk2) => {
+                        lemma_abs_step_prim_frame(fr, astk, p2);
+                        assert(abs_step_prim(big, p2) == Some(fr + astk2));
+                        lemma_check_frame(fr, astk2, rest, depth);
+                    }
+                    None => { assert(false); }
+                }
+            }
+            SpecWord::Call(_) => { assert(false); }
+        }
+    }
+}
+
+/// In the milestone-1 lattice, `join_cell` is `Some` ONLY on equal cells
+/// (`AInt/AInt` or `ALit(x)/ALit(x)`), so `joinable(pt, pf)` forces `pt == pf`, and
+/// the join is that common stack. This is what collapses the two-branch/one-join
+/// mismatch in the `If` case (the concrete run goes through ONE branch's post, which
+/// is already equal to the join — no monotonicity argument needed).
+proof fn lemma_joinable_eq(pt: Seq<AbsVal>, pf: Seq<AbsVal>)
+    requires
+        joinable(pt, pf),
+    ensures
+        pt == pf,
+        join_stacks(pt, pf) == pt,
+{
+    assert(pt.len() == pf.len());
+    assert forall|j: int| 0 <= j < pt.len() implies pt[j] == pf[j] by {
+        assert(join_cell(pt[j], pf[j]) is Some);
+        match (pt[j], pf[j]) {
+            (AbsVal::AInt, AbsVal::AInt) => {}
+            (AbsVal::ALit(x), AbsVal::ALit(y)) => { assert(x == y); }
+            _ => { assert(false); }
+        }
+    }
+    assert(pt =~= pf);
+    let j = join_stacks(pt, pf);
+    assert(j.len() == pt.len());
+    assert forall|i: int| 0 <= i < j.len() implies j[i] == pt[i] by {
+        assert(j[i] == join_cell(pt[i], pf[i]).unwrap());
+        assert(join_cell(pt[i], pf[i]) is Some);
+        match (pt[i], pf[i]) {
+            (AbsVal::AInt, AbsVal::AInt) => {}
+            (AbsVal::ALit(x), AbsVal::ALit(y)) => { assert(x == y); }
+            _ => { assert(false); }
+        }
+    }
+    assert(j =~= pt);
+}
+
+/// Head-first split of a concatenation: for a nonempty `p1`, `(p1 + p2)[0] == p1[0]`
+/// and `(p1 + p2).subrange(1, ..) == p1.subrange(1, ..) + p2`.
+proof fn lemma_concat_head(p1: Seq<SpecWord>, p2: Seq<SpecWord>)
+    requires
+        p1.len() > 0,
+    ensures
+        (p1 + p2)[0] == p1[0],
+        (p1 + p2).subrange(1, (p1 + p2).len() as int)
+            =~= p1.subrange(1, p1.len() as int) + p2,
+{
+}
+
+/// **check_m1 depth-monotonicity.** `depth` is a fuel bound on nested-If inlining;
+/// raising it never changes an already-accepted verdict. Needed to lift a branch
+/// checked at `depth - 1` up to `depth` before splicing it before `rest`.
+proof fn lemma_check_depth_mono(astk: Seq<AbsVal>, p: Seq<SpecWord>, d: nat, d2: nat)
+    requires
+        d <= d2,
+        check_m1(astk, p, d) is Some,
+    ensures
+        check_m1(astk, p, d2) == check_m1(astk, p, d),
+    decreases d, p.len(),
+{
+    if p.len() == 0 {
+    } else {
+        let w = p[0];
+        let rest = p.subrange(1, p.len() as int);
+        match w {
+            SpecWord::PushInt(_) => {
+                lemma_check_depth_mono(astk.push(AbsVal::AInt), rest, d, d2);
+            }
+            SpecWord::PushQuote(q) => {
+                lemma_check_depth_mono(astk.push(AbsVal::ALit(q)), rest, d, d2);
+            }
+            SpecWord::Prim(SpecPrim::If) => {
+                let m = astk.len() as int;
+                assert(m >= 3);
+                assert(d >= 1);
+                assert(d2 >= 1);
+                match (astk[m - 3], astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(t), AbsVal::ALit(f)) => {
+                        let base = astk.subrange(0, m - 3);
+                        lemma_check_depth_mono(base, t, (d - 1) as nat, (d2 - 1) as nat);
+                        lemma_check_depth_mono(base, f, (d - 1) as nat, (d2 - 1) as nat);
+                        let pt = check_m1(base, t, (d - 1) as nat)->Some_0;
+                        let pf = check_m1(base, f, (d - 1) as nat)->Some_0;
+                        assert(joinable(pt, pf));
+                        lemma_check_depth_mono(join_stacks(pt, pf), rest, d, d2);
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(SpecPrim::Times) => {
+                let m = astk.len() as int;
+                assert(m >= 2);
+                assert(d >= 1);
+                assert(d2 >= 1);
+                match (astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(q)) => {
+                        let base = astk.subrange(0, m - 2);
+                        assert(check_m1(base, q, (d - 1) as nat) == Some(base));
+                        lemma_check_depth_mono(base, q, (d - 1) as nat, (d2 - 1) as nat);
+                        lemma_check_depth_mono(base, rest, d, d2);
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(SpecPrim::PrimRec) => {
+                let m = astk.len() as int;
+                assert(m >= 3);
+                assert(d >= 1);
+                assert(d2 >= 1);
+                match (astk[m - 3], astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(qi), AbsVal::ALit(qc)) => {
+                        let base = astk.subrange(0, m - 3);
+                        let acc = check_m1(Seq::<AbsVal>::empty(), qi, (d - 1) as nat)->Some_0;
+                        assert(check_m1(Seq::<AbsVal>::empty(), qi, (d - 1) as nat) == Some(acc));
+                        lemma_check_depth_mono(Seq::<AbsVal>::empty(), qi, (d - 1) as nat, (d2 - 1) as nat);
+                        let cin = seq![AbsVal::AInt] + acc;
+                        assert(check_m1(cin, qc, (d - 1) as nat) == Some(acc));
+                        lemma_check_depth_mono(cin, qc, (d - 1) as nat, (d2 - 1) as nat);
+                        lemma_check_depth_mono(base + acc, rest, d, d2);
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(p2) => {
+                match abs_step_prim(astk, p2) {
+                    Some(astk2) => {
+                        lemma_check_depth_mono(astk2, rest, d, d2);
+                    }
+                    None => { assert(false); }
+                }
+            }
+            SpecWord::Call(_) => { assert(false); }
+        }
+    }
+}
+
+/// **check_m1 sequential composition.** Running the checker over `p1 + p2` at a fixed
+/// depth equals running `p1`, then running `p2` from the resulting abstract stack —
+/// the checker analogue of p5's `lemma_stepn_compose`. This is the splice lemma that
+/// lets the `If` case treat the inlined `branch + rest` as one program.
+proof fn lemma_check_compose(astk: Seq<AbsVal>, p1: Seq<SpecWord>, p2: Seq<SpecWord>, depth: nat)
+    requires
+        check_m1(astk, p1, depth) is Some,
+    ensures
+        check_m1(astk, p1 + p2, depth)
+            == check_m1(check_m1(astk, p1, depth)->Some_0, p2, depth),
+    decreases p1.len(),
+{
+    if p1.len() == 0 {
+        assert(p1 + p2 =~= p2);
+        assert(check_m1(astk, p1, depth) == Some(astk));
+    } else {
+        lemma_concat_head(p1, p2);
+        let w = p1[0];
+        let rest1 = p1.subrange(1, p1.len() as int);
+        assert((p1 + p2)[0] == w);
+        assert((p1 + p2).subrange(1, (p1 + p2).len() as int) =~= rest1 + p2);
+        match w {
+            SpecWord::PushInt(_) => {
+                lemma_check_compose(astk.push(AbsVal::AInt), rest1, p2, depth);
+            }
+            SpecWord::PushQuote(q) => {
+                lemma_check_compose(astk.push(AbsVal::ALit(q)), rest1, p2, depth);
+            }
+            SpecWord::Prim(SpecPrim::If) => {
+                let m = astk.len() as int;
+                assert(m >= 3);
+                assert(depth >= 1);
+                match (astk[m - 3], astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(t), AbsVal::ALit(f)) => {
+                        let base = astk.subrange(0, m - 3);
+                        let pt = check_m1(base, t, (depth - 1) as nat)->Some_0;
+                        let pf = check_m1(base, f, (depth - 1) as nat)->Some_0;
+                        assert(joinable(pt, pf));
+                        lemma_check_compose(join_stacks(pt, pf), rest1, p2, depth);
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(SpecPrim::Times) => {
+                let m = astk.len() as int;
+                assert(m >= 2);
+                assert(depth >= 1);
+                match (astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(q)) => {
+                        let base = astk.subrange(0, m - 2);
+                        assert(check_m1(base, q, (depth - 1) as nat) == Some(base));
+                        lemma_check_compose(base, rest1, p2, depth);
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(SpecPrim::PrimRec) => {
+                let m = astk.len() as int;
+                assert(m >= 3);
+                assert(depth >= 1);
+                match (astk[m - 3], astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(qi), AbsVal::ALit(qc)) => {
+                        let base = astk.subrange(0, m - 3);
+                        let acc = check_m1(Seq::<AbsVal>::empty(), qi, (depth - 1) as nat)->Some_0;
+                        lemma_check_compose(base + acc, rest1, p2, depth);
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(p2p) => {
+                match abs_step_prim(astk, p2p) {
+                    Some(astk2) => {
+                        lemma_check_compose(astk2, rest1, p2, depth);
+                    }
+                    None => { assert(false); }
+                }
+            }
+            SpecWord::Call(_) => { assert(false); }
+        }
+    }
+}
+
+/// **Times splice re-check.** In the `k > 0` unfolding of `times`, `spec_step`
+/// splices `q + [PushInt(k-1), PushQuote(q), Times] + rest` into the continuation.
+/// Given the fixpoint condition `check_m1(base, q, depth-1) == Some(base)`, this
+/// spliced program re-checks to the SAME post as `rest` alone — so the concrete-step
+/// induction (`lemma_check_invariant`) absorbs each `times` unfolding for free.
+proof fn lemma_times_splice(
+    base: Seq<AbsVal>, q: Seq<SpecWord>, kcount: int, mid: Seq<SpecWord>,
+    rest: Seq<SpecWord>, depth: nat,
+)
+    requires
+        depth >= 1,
+        check_m1(base, q, (depth - 1) as nat) == Some(base),
+        mid == seq![
+            SpecWord::PushInt(kcount - 1),
+            SpecWord::PushQuote(q),
+            SpecWord::Prim(SpecPrim::Times)
+        ],
+    ensures
+        check_m1(base, (q + mid) + rest, depth) == check_m1(base, rest, depth),
+{
+    // Lift the fixpoint check from depth-1 to depth so `q` composes at `depth`.
+    lemma_check_depth_mono(base, q, (depth - 1) as nat, depth);
+    assert(check_m1(base, q, depth) == Some(base));
+    // Re-associate and split off `q` via the composition lemma.
+    assert((q + mid) + rest =~= q + (mid + rest));
+    lemma_check_compose(base, q, mid + rest, depth);
+    assert(check_m1(base, q + (mid + rest), depth) == check_m1(base, mid + rest, depth));
+    // Evaluate the 3-word `mid` prefix: PushInt; PushQuote(q); Times(fixpoint) -> rest.
+    let astk1 = base.push(AbsVal::AInt);
+    let astk2 = astk1.push(AbsVal::ALit(q));
+    lemma_concat_head(mid, rest);
+    assert((mid + rest)[0] == SpecWord::PushInt(kcount - 1));
+    let tail1 = (mid + rest).subrange(1, (mid + rest).len() as int);
+    assert(tail1 =~= seq![SpecWord::PushQuote(q), SpecWord::Prim(SpecPrim::Times)] + rest);
+    assert(check_m1(base, mid + rest, depth) == check_m1(astk1, tail1, depth));
+    assert(tail1[0] == SpecWord::PushQuote(q));
+    let tail2 = tail1.subrange(1, tail1.len() as int);
+    assert(tail2 =~= seq![SpecWord::Prim(SpecPrim::Times)] + rest);
+    assert(check_m1(astk1, tail1, depth) == check_m1(astk2, tail2, depth));
+    // Times arm on astk2 = base ++ [AInt, ALit(q)].
+    let m2 = astk2.len() as int;
+    assert(m2 >= 2);
+    assert(astk2[m2 - 2] == AbsVal::AInt);
+    assert(astk2[m2 - 1] == AbsVal::ALit(q));
+    assert(astk2.subrange(0, m2 - 2) =~= base);
+    assert(tail2[0] == SpecWord::Prim(SpecPrim::Times));
+    assert(tail2.subrange(1, tail2.len() as int) =~= rest);
+    assert(check_m1(astk2, tail2, depth) == check_m1(base, rest, depth));
+}
+
+/// Evaluates the fixed 5-word `primrec` prologue `[k, k-1, [I], [C], PrimRec]` on any
+/// `base`: it pushes the two counters + the two quotes, then the `PrimRec` arm fires
+/// (I on empty = acc; C stable), producing `base ++ [AInt] ++ acc` (the outer counter
+/// `k` stays, the accumulator on top). A helper for `lemma_primrec_splice`.
+proof fn lemma_primrec_pre(
+    base: Seq<AbsVal>, qi: Seq<SpecWord>, qc: Seq<SpecWord>, kcount: int,
+    acc: Seq<AbsVal>, depth: nat,
+)
+    requires
+        depth >= 1,
+        check_m1(Seq::<AbsVal>::empty(), qi, (depth - 1) as nat) == Some(acc),
+        check_m1(seq![AbsVal::AInt] + acc, qc, (depth - 1) as nat) == Some(acc),
+    ensures
+        check_m1(base, seq![
+            SpecWord::PushInt(kcount),
+            SpecWord::PushInt(kcount - 1),
+            SpecWord::PushQuote(qi),
+            SpecWord::PushQuote(qc),
+            SpecWord::Prim(SpecPrim::PrimRec)
+        ], depth) == Some(base.push(AbsVal::AInt) + acc),
+{
+    let pre = seq![
+        SpecWord::PushInt(kcount),
+        SpecWord::PushInt(kcount - 1),
+        SpecWord::PushQuote(qi),
+        SpecWord::PushQuote(qc),
+        SpecWord::Prim(SpecPrim::PrimRec)
+    ];
+    let a1 = base.push(AbsVal::AInt);
+    let a2 = a1.push(AbsVal::AInt);
+    let a3 = a2.push(AbsVal::ALit(qi));
+    let a0 = a3.push(AbsVal::ALit(qc));
+    let p1 = seq![
+        SpecWord::PushInt(kcount - 1),
+        SpecWord::PushQuote(qi),
+        SpecWord::PushQuote(qc),
+        SpecWord::Prim(SpecPrim::PrimRec)
+    ];
+    let p2 = seq![
+        SpecWord::PushQuote(qi),
+        SpecWord::PushQuote(qc),
+        SpecWord::Prim(SpecPrim::PrimRec)
+    ];
+    let p3 = seq![SpecWord::PushQuote(qc), SpecWord::Prim(SpecPrim::PrimRec)];
+    let p4 = seq![SpecWord::Prim(SpecPrim::PrimRec)];
+    // Walk the four pushes, chaining check_m1 one word at a time.
+    assert(pre[0] == SpecWord::PushInt(kcount));
+    assert(pre.subrange(1, pre.len() as int) =~= p1);
+    assert(check_m1(base, pre, depth) == check_m1(a1, p1, depth));
+    assert(p1[0] == SpecWord::PushInt(kcount - 1));
+    assert(p1.subrange(1, p1.len() as int) =~= p2);
+    assert(check_m1(a1, p1, depth) == check_m1(a2, p2, depth));
+    assert(p2[0] == SpecWord::PushQuote(qi));
+    assert(p2.subrange(1, p2.len() as int) =~= p3);
+    assert(check_m1(a2, p2, depth) == check_m1(a3, p3, depth));
+    assert(p3[0] == SpecWord::PushQuote(qc));
+    assert(p3.subrange(1, p3.len() as int) =~= p4);
+    assert(check_m1(a3, p3, depth) == check_m1(a0, p4, depth));
+    // PrimRec arm on a0 = base ++ [AInt, AInt, ALit(qi), ALit(qc)] with rest = [].
+    let m0 = a0.len() as int;
+    assert(m0 == base.len() + 4);
+    assert(a0[m0 - 3] == AbsVal::AInt);
+    assert(a0[m0 - 2] == AbsVal::ALit(qi));
+    assert(a0[m0 - 1] == AbsVal::ALit(qc));
+    assert(a0.subrange(0, m0 - 3) =~= base.push(AbsVal::AInt));
+    assert(p4[0] == SpecWord::Prim(SpecPrim::PrimRec));
+    assert(p4.subrange(1, p4.len() as int) =~= Seq::<SpecWord>::empty());
+    assert(check_m1(base.push(AbsVal::AInt) + acc, Seq::<SpecWord>::empty(), depth)
+        == Some(base.push(AbsVal::AInt) + acc));
+    assert(check_m1(a0, p4, depth) == Some(base.push(AbsVal::AInt) + acc));
+}
+
+/// **PrimRec splice re-check.** In the `k > 0` unfolding, `spec_step` splices
+/// `[k, k-1, [I], [C], PrimRec] + C + rest`. With `I`/`C` frame-stable (as encoded in
+/// `check_m1`'s PrimRec arm), this re-checks to the SAME post `check_m1(base + acc, rest)`
+/// — so the concrete-step induction absorbs each `primrec` unfolding. Uses
+/// `lemma_primrec_pre` + `lemma_check_frame` + `lemma_check_compose` + depth-mono.
+proof fn lemma_primrec_splice(
+    base: Seq<AbsVal>, qi: Seq<SpecWord>, qc: Seq<SpecWord>, kcount: int,
+    acc: Seq<AbsVal>, rest: Seq<SpecWord>, depth: nat,
+)
+    requires
+        depth >= 1,
+        check_m1(Seq::<AbsVal>::empty(), qi, (depth - 1) as nat) == Some(acc),
+        check_m1(seq![AbsVal::AInt] + acc, qc, (depth - 1) as nat) == Some(acc),
+    ensures
+        check_m1(base,
+            (seq![
+                SpecWord::PushInt(kcount),
+                SpecWord::PushInt(kcount - 1),
+                SpecWord::PushQuote(qi),
+                SpecWord::PushQuote(qc),
+                SpecWord::Prim(SpecPrim::PrimRec)
+            ] + qc) + rest, depth)
+        == check_m1(base + acc, rest, depth),
+{
+    let pre = seq![
+        SpecWord::PushInt(kcount),
+        SpecWord::PushInt(kcount - 1),
+        SpecWord::PushQuote(qi),
+        SpecWord::PushQuote(qc),
+        SpecWord::Prim(SpecPrim::PrimRec)
+    ];
+    // Phase 1: evaluate `pre` (rest = qc + rest) via lemma_primrec_pre + compose.
+    lemma_primrec_pre(base, qi, qc, kcount, acc, depth);
+    assert(check_m1(base, pre, depth) == Some(base.push(AbsVal::AInt) + acc));
+    assert((pre + qc) + rest =~= pre + (qc + rest));
+    lemma_check_compose(base, pre, qc + rest, depth);
+    assert(check_m1(base, pre + (qc + rest), depth)
+        == check_m1(base.push(AbsVal::AInt) + acc, qc + rest, depth));
+    // Phase 2: C runs on (base ++ [AInt]) ++ acc, restoring the acc shape.
+    // From the frame-stable C condition, lift to the running stack.
+    lemma_check_frame(base, seq![AbsVal::AInt] + acc, qc, (depth - 1) as nat);
+    assert(base + (seq![AbsVal::AInt] + acc) =~= base.push(AbsVal::AInt) + acc);
+    assert(base + acc =~= base + acc);
+    assert(check_m1(base.push(AbsVal::AInt) + acc, qc, (depth - 1) as nat)
+        == Some(base + acc));
+    lemma_check_depth_mono(base.push(AbsVal::AInt) + acc, qc, (depth - 1) as nat, depth);
+    assert(check_m1(base.push(AbsVal::AInt) + acc, qc, depth) == Some(base + acc));
+    lemma_check_compose(base.push(AbsVal::AInt) + acc, qc, rest, depth);
+    assert(check_m1(base.push(AbsVal::AInt) + acc, qc + rest, depth)
+        == check_m1(base + acc, rest, depth));
+}
+
+/// **The If-aware preservation invariant (Part A core).** Same shape as
+/// `lemma_sl_invariant`, but over `check_m1` (which summarizes each `If` with the
+/// joined branch effect). Induction is on the concrete step count `k` ALONE: the
+/// `If` case does NOT recurse on branch structure — it splices the selected branch
+/// into the continuation and re-enters the invariant on the spliced program at the
+/// same `depth`, using `lemma_check_depth_mono` + `lemma_check_compose` to show the
+/// spliced `branch + rest` still checks to the SAME post, and `lemma_joinable_eq`
+/// to identify the branch's post with the join.
+pub proof fn lemma_check_invariant(s: SpecState, astk: Seq<AbsVal>, depth: nat, k: nat)
+    requires
+        models_stack(s.stack, astk),
+        check_m1(astk, s.cont, depth) is Some,
+    ensures
+        match spec_stepn(s, k) {
+            SpecStep::Fault(e) => e == Error::Overflow || e == Error::DivByZero,
+            SpecStep::Halt(fin) => models_stack(fin, check_m1(astk, s.cont, depth)->Some_0),
+            SpecStep::Next(_) => true,
+            SpecStep::Invoke(..) => false,
+        },
+    decreases k,
+{
+    if k == 0 {
+    } else if s.cont.len() == 0 {
+        assert(spec_step(s) == SpecStep::Halt(s.stack));
+        assert(check_m1(astk, s.cont, depth) == Some(astk));
+        assert(spec_stepn(s, k) == SpecStep::Halt(s.stack));
+    } else {
+        let w = s.cont[0];
+        let rest = s.cont.subrange(1, s.cont.len() as int);
+        match w {
+            SpecWord::PushInt(x) => {
+                let s2 = SpecState { stack: s.stack.push(SpecValue::Int(x)), cont: rest };
+                assert(spec_step(s) == SpecStep::Next(s2));
+                let astk2 = astk.push(AbsVal::AInt);
+                assert(check_m1(astk, s.cont, depth) == check_m1(astk2, rest, depth));
+                lemma_models_push(s.stack, astk, SpecValue::Int(x), AbsVal::AInt);
+                lemma_check_invariant(s2, astk2, depth, (k - 1) as nat);
+                assert(spec_stepn(s, k) == spec_stepn(s2, (k - 1) as nat));
+            }
+            SpecWord::PushQuote(q) => {
+                let s2 = SpecState { stack: s.stack.push(SpecValue::Quote(q)), cont: rest };
+                assert(spec_step(s) == SpecStep::Next(s2));
+                let astk2 = astk.push(AbsVal::ALit(q));
+                assert(check_m1(astk, s.cont, depth) == check_m1(astk2, rest, depth));
+                assert(models_val(SpecValue::Quote(q), AbsVal::ALit(q)));
+                lemma_models_push(s.stack, astk, SpecValue::Quote(q), AbsVal::ALit(q));
+                lemma_check_invariant(s2, astk2, depth, (k - 1) as nat);
+                assert(spec_stepn(s, k) == spec_stepn(s2, (k - 1) as nat));
+            }
+            SpecWord::Prim(SpecPrim::If) => {
+                let cs = s.stack;
+                let m = astk.len() as int;
+                let big_n = cs.len() as int;
+                // check_m1 accepted the If: extract the abstract branch shape.
+                assert(m >= 3);
+                assert(depth >= 1);
+                match (astk[m - 3], astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(t), AbsVal::ALit(f)) => {
+                        let base = astk.subrange(0, m - 3);
+                        let pt = check_m1(base, t, (depth - 1) as nat)->Some_0;
+                        let pf = check_m1(base, f, (depth - 1) as nat)->Some_0;
+                        assert(check_m1(base, t, (depth - 1) as nat) is Some);
+                        assert(check_m1(base, f, (depth - 1) as nat) is Some);
+                        assert(joinable(pt, pf));
+                        assert(check_m1(astk, s.cont, depth)
+                            == check_m1(join_stacks(pt, pf), rest, depth));
+                        // Concrete top three refine (AInt, ALit(t), ALit(f)).
+                        assert(cs[cs.len() - astk.len() + (m - 3)] == cs[big_n - 3]);
+                        assert(cs[cs.len() - astk.len() + (m - 2)] == cs[big_n - 2]);
+                        assert(cs[cs.len() - astk.len() + (m - 1)] == cs[big_n - 1]);
+                        assert(models_val(cs[big_n - 3], AbsVal::AInt));
+                        assert(models_val(cs[big_n - 2], AbsVal::ALit(t)));
+                        assert(models_val(cs[big_n - 1], AbsVal::ALit(f)));
+                        assert(cs[big_n - 3] is Int);
+                        assert(cs[big_n - 2] == SpecValue::Quote(t));
+                        assert(cs[big_n - 1] == SpecValue::Quote(f));
+                        let c = cs[big_n - 3]->Int_0;
+                        let branch = if c != 0 { t } else { f };
+                        let pbr = if c != 0 { pt } else { pf };
+                        // spec_step splices the selected branch before `rest`.
+                        let s2 = SpecState {
+                            stack: cs.subrange(0, big_n - 3),
+                            cont: branch + rest,
+                        };
+                        assert(spec_step(s) == SpecStep::Next(s2));
+                        // s2.stack refines base.
+                        lemma_models_subrange(cs, astk, 3);
+                        assert(models_stack(s2.stack, base));
+                        // branch checks (at depth-1, hence at depth) to pbr.
+                        assert(check_m1(base, branch, (depth - 1) as nat) == Some(pbr));
+                        lemma_check_depth_mono(base, branch, (depth - 1) as nat, depth);
+                        assert(check_m1(base, branch, depth) == Some(pbr));
+                        // splice: branch + rest checks to check_m1(pbr, rest, depth).
+                        lemma_check_compose(base, branch, rest, depth);
+                        assert(check_m1(base, branch + rest, depth)
+                            == check_m1(pbr, rest, depth));
+                        // joinable => pt == pf == join, so pbr == join.
+                        lemma_joinable_eq(pt, pf);
+                        assert(pbr == join_stacks(pt, pf));
+                        assert(check_m1(base, s2.cont, depth) == check_m1(astk, s.cont, depth));
+                        // re-enter the invariant on the spliced program at the same depth.
+                        lemma_check_invariant(s2, base, depth, (k - 1) as nat);
+                        assert(spec_stepn(s, k) == spec_stepn(s2, (k - 1) as nat));
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(SpecPrim::Times) => {
+                let cs = s.stack;
+                let m = astk.len() as int;
+                let big_n = cs.len() as int;
+                assert(m >= 2);
+                assert(depth >= 1);
+                match (astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(q)) => {
+                        let base = astk.subrange(0, m - 2);
+                        // acceptance gives the fixpoint condition + the post.
+                        assert(check_m1(base, q, (depth - 1) as nat) == Some(base));
+                        assert(check_m1(astk, s.cont, depth) == check_m1(base, rest, depth));
+                        // concrete top two refine (AInt, ALit(q)).
+                        assert(cs[cs.len() - astk.len() + (m - 2)] == cs[big_n - 2]);
+                        assert(cs[cs.len() - astk.len() + (m - 1)] == cs[big_n - 1]);
+                        assert(models_val(cs[big_n - 2], AbsVal::AInt));
+                        assert(models_val(cs[big_n - 1], AbsVal::ALit(q)));
+                        assert(cs[big_n - 2] is Int);
+                        assert(cs[big_n - 1] == SpecValue::Quote(q));
+                        let kcount = cs[big_n - 2]->Int_0;
+                        let base_cs = cs.subrange(0, big_n - 2);
+                        lemma_models_subrange(cs, astk, 2);
+                        assert(models_stack(base_cs, base));
+                        if kcount <= 0 {
+                            let s2 = SpecState { stack: base_cs, cont: rest };
+                            assert(spec_step(s) == SpecStep::Next(s2));
+                            lemma_check_invariant(s2, base, depth, (k - 1) as nat);
+                            assert(spec_stepn(s, k) == spec_stepn(s2, (k - 1) as nat));
+                        } else {
+                            let mid = seq![
+                                SpecWord::PushInt(kcount - 1),
+                                SpecWord::PushQuote(q),
+                                SpecWord::Prim(SpecPrim::Times)
+                            ];
+                            let recur = q + mid;
+                            let s2 = SpecState { stack: base_cs, cont: recur + rest };
+                            assert(spec_step(s) == SpecStep::Next(s2));
+                            // check_m1(base, recur + rest, depth) == post.
+                            lemma_times_splice(base, q, kcount, mid, rest, depth);
+                            assert(check_m1(base, s2.cont, depth) == check_m1(base, rest, depth));
+                            lemma_check_invariant(s2, base, depth, (k - 1) as nat);
+                            assert(spec_stepn(s, k) == spec_stepn(s2, (k - 1) as nat));
+                        }
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(SpecPrim::PrimRec) => {
+                let cs = s.stack;
+                let m = astk.len() as int;
+                let big_n = cs.len() as int;
+                assert(m >= 3);
+                assert(depth >= 1);
+                match (astk[m - 3], astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(qi), AbsVal::ALit(qc)) => {
+                        let base = astk.subrange(0, m - 3);
+                        let acc = check_m1(Seq::<AbsVal>::empty(), qi, (depth - 1) as nat)->Some_0;
+                        assert(check_m1(Seq::<AbsVal>::empty(), qi, (depth - 1) as nat) == Some(acc));
+                        assert(check_m1(seq![AbsVal::AInt] + acc, qc, (depth - 1) as nat) == Some(acc));
+                        assert(check_m1(astk, s.cont, depth) == check_m1(base + acc, rest, depth));
+                        // concrete top three refine (AInt, ALit(qi), ALit(qc)).
+                        assert(cs[cs.len() - astk.len() + (m - 3)] == cs[big_n - 3]);
+                        assert(cs[cs.len() - astk.len() + (m - 2)] == cs[big_n - 2]);
+                        assert(cs[cs.len() - astk.len() + (m - 1)] == cs[big_n - 1]);
+                        assert(models_val(cs[big_n - 3], AbsVal::AInt));
+                        assert(models_val(cs[big_n - 2], AbsVal::ALit(qi)));
+                        assert(models_val(cs[big_n - 1], AbsVal::ALit(qc)));
+                        assert(cs[big_n - 3] is Int);
+                        assert(cs[big_n - 2] == SpecValue::Quote(qi));
+                        assert(cs[big_n - 1] == SpecValue::Quote(qc));
+                        let kcount = cs[big_n - 3]->Int_0;
+                        let base_cs = cs.subrange(0, big_n - 3);
+                        lemma_models_subrange(cs, astk, 3);
+                        assert(models_stack(base_cs, base));
+                        if kcount <= 0 {
+                            // base case: cont = qi + rest, stack = base_cs.
+                            let s2 = SpecState { stack: base_cs, cont: qi + rest };
+                            assert(spec_step(s) == SpecStep::Next(s2));
+                            // check_m1(base, qi + rest, depth) == check_m1(base + acc, rest, depth).
+                            lemma_check_depth_mono(Seq::<AbsVal>::empty(), qi, (depth - 1) as nat, depth);
+                            lemma_check_frame(base, Seq::<AbsVal>::empty(), qi, depth);
+                            assert(base + Seq::<AbsVal>::empty() =~= base);
+                            assert(check_m1(base, qi, depth) == Some(base + acc));
+                            lemma_check_compose(base, qi, rest, depth);
+                            assert(check_m1(base, s2.cont, depth) == check_m1(base + acc, rest, depth));
+                            lemma_check_invariant(s2, base, depth, (k - 1) as nat);
+                            assert(spec_stepn(s, k) == spec_stepn(s2, (k - 1) as nat));
+                        } else {
+                            let pre = seq![
+                                SpecWord::PushInt(kcount),
+                                SpecWord::PushInt(kcount - 1),
+                                SpecWord::PushQuote(qi),
+                                SpecWord::PushQuote(qc),
+                                SpecWord::Prim(SpecPrim::PrimRec)
+                            ];
+                            let recur = pre + qc;
+                            let s2 = SpecState { stack: base_cs, cont: recur + rest };
+                            assert(spec_step(s) == SpecStep::Next(s2));
+                            lemma_primrec_splice(base, qi, qc, kcount, acc, rest, depth);
+                            assert(check_m1(base, s2.cont, depth) == check_m1(base + acc, rest, depth));
+                            lemma_check_invariant(s2, base, depth, (k - 1) as nat);
+                            assert(spec_stepn(s, k) == spec_stepn(s2, (k - 1) as nat));
+                        }
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(p2) => {
+                let cs = s.stack;
+                assert(abs_step_prim(astk, p2) is Some);
+                let astk2 = abs_step_prim(astk, p2)->Some_0;
+                assert(check_m1(astk, s.cont, depth) == check_m1(astk2, rest, depth));
+                lemma_abs_step_prim_sl(astk, p2);
+                lemma_prim_step_sound(cs, astk, p2, rest, astk2);
+                assert(spec_step(s) == spec_step_prim(cs, p2, rest));
+                match spec_step_prim(cs, p2, rest) {
+                    SpecStep::Next(s2) => {
+                        assert(s2.cont == rest);
+                        assert(models_stack(s2.stack, astk2));
+                        lemma_check_invariant(s2, astk2, depth, (k - 1) as nat);
+                        assert(spec_stepn(s, k) == spec_stepn(s2, (k - 1) as nat));
+                    }
+                    SpecStep::Fault(e) => {
+                        assert(e == Error::Overflow || e == Error::DivByZero);
+                        assert(spec_stepn(s, k) == SpecStep::Fault(e));
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Call(_) => {
+                assert(check_m1(astk, s.cont, depth) is None);
+                assert(false);
+            }
+        }
+    }
+}
+
+/// **T-Static (full fragment, WITH If) — FULLY PROVEN (milestone-2 Part A).** Same
+/// statement as `thm_static_straightline` but for programs that may contain `If`,
+/// using the If-aware `check_m1`. Discharged by `lemma_check_invariant` — the
+/// If-inlining correspondence is now machine-checked; the milestone-1 `assume` is
+/// gone.
 pub proof fn thm_static_with_if(p: Seq<SpecWord>, rho: Seq<SpecValue>, k: nat, depth: nat)
     requires
         check_m1(Seq::<AbsVal>::empty(), p, depth) is Some,
@@ -893,25 +1811,10 @@ pub proof fn thm_static_with_if(p: Seq<SpecWord>, rho: Seq<SpecValue>, k: nat, d
                     ==> models_stack(fin, check_m1(Seq::<AbsVal>::empty(), p, depth)->Some_0))
         }),
 {
-    // UNPROVEN GAP (milestone 1): the `If`-inlining correspondence.
-    //
-    // What remains: an induction like `lemma_sl_invariant` but whose `If` case must
-    // show that running the SELECTED, spliced branch body `(c!=0?t:f) + rest` under
-    // `spec_stepn` (a) stays fault-free through the branch, and (b) lands in a state
-    // that refines `join_stacks(pt, pf) ++ (shape after rest)` — using
-    // `lemma_join_sound` (proven above) to collapse the two branches to one shape,
-    // and a `spec_stepn` splice/composition lemma (à la p5's `lemma_stepn_compose`)
-    // to decompose the run over `t + rest` into "run t" then "run rest". Neither
-    // sub-lemma is hard in isolation; assembling them is the milestone-2 task.
-    //
-    // The gap is bridged with a single `assume(false)`-free `assume` of the goal.
-    assume(({
-        let s0 = SpecState { stack: rho, cont: p };
-        &&& !(spec_stepn(s0, k) matches SpecStep::Fault(e)
-                && (e == Error::Underflow || e == Error::TypeMismatch))
-        &&& (spec_stepn(s0, k) matches SpecStep::Halt(fin)
-                ==> models_stack(fin, check_m1(Seq::<AbsVal>::empty(), p, depth)->Some_0))
-    }));
+    let s0 = SpecState { stack: rho, cont: p };
+    assert(models_stack(rho, Seq::<AbsVal>::empty()));
+    assert(check_m1(Seq::<AbsVal>::empty(), s0.cont, depth) is Some);
+    lemma_check_invariant(s0, Seq::<AbsVal>::empty(), depth, k);
 }
 
 } // verus!
