@@ -60,7 +60,8 @@ identical so both arms see the same fixture.
   `next_line`, `end_p`, `concat`, `select`) — but **no language reference**,
   because Python is a warm language for the model and charging it a
   language-acquisition cost would be unfair.
-- **Trials.** Each (task, arm) is run for `N = 3` independent trials.
+- **Trials.** Each (task, arm) is run for `N = 2` independent trials. (Cost-scoped:
+  2 trials/cell were actually run, down from the tier-2 trial's 3, to bound spend.)
 - **Repair loop.** Each attempt is validated deterministically; on failure the
   solver is handed the **verbatim** oracle diagnostic and asked to continue, up
   to **5** attempts per trial. Nothing about the diagnostic is summarized or
@@ -159,7 +160,7 @@ are never shown to the cold agents.
 
 ## Scope
 
-Cold-only (no warm or fine-tuned MTL arm), **8 tasks**, 3 trials per arm, a
+Cold-only (no warm or fine-tuned MTL arm), **8 tasks**, 2 trials per arm (cost-scoped), a
 single model under test, up to 5 repair attempts per cell. The output-token
 metric is a visible-program proxy and excludes hidden reasoning. These bounds are
 intentional: the trial answers the narrow question "can a cold LLM write correct

@@ -1,0 +1,318 @@
+{
+  "arms": {
+    "mtl": {
+      "attempts_to_first_correct": {
+        "distribution": {
+          "1": 12,
+          "2": 4,
+          "3": 0,
+          "4": 0,
+          "5": 0
+        },
+        "mean": 1.25,
+        "median": 1
+      },
+      "confinement": {
+        "by_task": {},
+        "ungranted_cells": 0
+      },
+      "cspm_o200k": 90395.48,
+      "error_taxonomy": {
+        "budget_exhausted": 0,
+        "core_fault": 0,
+        "input_closed": 0,
+        "not_granted": 0,
+        "parse_error": 0,
+        "python_exception": 0,
+        "tool_error": 0,
+        "wrong_output": 4
+      },
+      "gen_repair_median_o200k": 12,
+      "output_tokens_to_first_correct": {
+        "cl100k": {
+          "mean": 11.06,
+          "median": 12
+        },
+        "o200k": {
+          "mean": 11.06,
+          "median": 12
+        }
+      },
+      "p_correct_le5": 1.0,
+      "per_task": {
+        "budget_grep": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        },
+        "concat_lines": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            2
+          ]
+        },
+        "confined_echo": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        },
+        "confined_grep": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        },
+        "emit_budget": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            2
+          ]
+        },
+        "guarded_read": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        },
+        "select_line": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        },
+        "transform_hits": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        }
+      },
+      "program_only_median_o200k": 10.5,
+      "repair": {
+        "eventually_solved": 4,
+        "failed_attempt1": 4
+      },
+      "solved_cells": 16,
+      "total_cells": 16,
+      "total_output_tokens_o200k_all_attempts": 177
+    },
+    "python": {
+      "attempts_to_first_correct": {
+        "distribution": {
+          "1": 14,
+          "2": 2,
+          "3": 0,
+          "4": 0,
+          "5": 0
+        },
+        "mean": 1.12,
+        "median": 1
+      },
+      "confinement": {
+        "by_task": {},
+        "ungranted_cells": 0
+      },
+      "cspm_o200k": 46109.51,
+      "error_taxonomy": {
+        "budget_exhausted": 1,
+        "core_fault": 0,
+        "input_closed": 0,
+        "not_granted": 0,
+        "parse_error": 0,
+        "python_exception": 0,
+        "tool_error": 0,
+        "wrong_output": 1
+      },
+      "gen_repair_median_o200k": 20,
+      "output_tokens_to_first_correct": {
+        "cl100k": {
+          "mean": 21.56,
+          "median": 20
+        },
+        "o200k": {
+          "mean": 21.69,
+          "median": 20
+        }
+      },
+      "p_correct_le5": 1.0,
+      "per_task": {
+        "budget_grep": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        },
+        "concat_lines": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        },
+        "confined_echo": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        },
+        "confined_grep": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        },
+        "emit_budget": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1,
+            2
+          ]
+        },
+        "guarded_read": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        },
+        "select_line": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1
+          ]
+        },
+        "transform_hits": {
+          "cells": 2,
+          "solved": 2,
+          "trials": [
+            1,
+            2
+          ],
+          "winning_attempts": [
+            1,
+            2
+          ]
+        }
+      },
+      "program_only_median_o200k": 20,
+      "repair": {
+        "eventually_solved": 2,
+        "failed_attempt1": 2
+      },
+      "solved_cells": 16,
+      "total_cells": 16,
+      "total_output_tokens_o200k_all_attempts": 347
+    }
+  },
+  "cold_accounting_o200k": {
+    "amortized_over_8_tasks_v0.3": 291.0,
+    "amortized_over_8_tasks_v0.4": 501.25,
+    "cold_total_per_solve_v0.3": 2254.5,
+    "cold_total_per_solve_v0.4": 3936.5,
+    "mtl_program_only_median": 10.5,
+    "python_cold_instruction": 0
+  },
+  "cspm_ratio_mtl_over_python": 1.96,
+  "expected_trials_per_cell": 2,
+  "max_attempts": 5,
+  "model_under_test": "claude-opus-4-8",
+  "n_attempts": 38,
+  "n_cells": 32,
+  "primary_encoding": "o200k_base",
+  "quickref_cold_instruction_cl100k": {
+    "v0.3_old": 2234,
+    "v0.4_new": 3915
+  },
+  "quickref_cold_instruction_o200k": {
+    "delta": 1682,
+    "v0.3_old": 2244,
+    "v0.4_new": 3926
+  },
+  "schema": "tier3-capability-cold-agent-trial",
+  "secondary_encoding": "cl100k_base",
+  "tasks": [
+    "transform_hits",
+    "emit_budget",
+    "guarded_read",
+    "concat_lines",
+    "select_line",
+    "confined_echo",
+    "confined_grep",
+    "budget_grep"
+  ]
+}

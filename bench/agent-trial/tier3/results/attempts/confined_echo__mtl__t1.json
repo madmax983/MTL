@@ -1,0 +1,1 @@
+{"task":"confined_echo","arm":"mtl","trial":1,"solved":true,"winning_attempt":1,"attempts":[{"n":1,"program":"readline emit","verdict":"PASS","error_type":"pass"}],"ungranted_attempt":false,"ungranted_caps":[]}
