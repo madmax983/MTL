@@ -10,15 +10,33 @@
 //! the mechanization. A program is MECHANIZED-Static iff `check_m1(∅, p, depth)` is
 //! `Some` (the `pre = []` self-contained slice the Verus `T-Static` theorem proves).
 //!
-//! The theorem we assert is the SOUNDNESS DIRECTION of the proven fragment:
+//! ## Milestone 4 — row-polymorphic borrows (the acid metric)
 //!
-//!     mechanized-Static(p)  ⟹  prototype-Static(p)         (for every corpus p)
+//! `mech_static_rp` mechanizes the prototype's lazy-borrow mechanism: it searches for
+//! the shortest all-`Int` `pre` such that `check_m1([AInt; n], p, depth)` is `Some`.
+//! A program is MECHANIZED-Static-**RowPoly** iff such an `n` exists — the checker
+//! then INFERS the non-empty required-input row `pre = [Int; n]` a real
+//! input-borrowing program needs. Each accepted program is backed by the Verus
+//! `thm_static_rowpoly` theorem (`crates/mtl-core/src/checker_verus.rs` §6.5),
+//! instantiated at `pre = [AInt; n]`: for every base ρ and every `n` integer
+//! arguments, running from `ρ ++ args` never faults Underflow/TypeMismatch and any
+//! halt refines `ρ ++ post`. Before M4 the corpus mechanized-Static count was 0
+//! (every corpus program borrows its inputs); `acid_mechanized_rowpoly_static_count`
+//! reports the post-M4 number and gates it `> 0`.
+//!
+//! The theorem we assert is the SOUNDNESS DIRECTION of the proven fragment (both for
+//! the `pre = []` slice and the M4 row-poly lift):
+//!
+//!     mechanized-Static(p)          ⟹  prototype-Static(p)   (for every corpus p)
+//!     mechanized-Static-RowPoly(p)  ⟹  prototype-Static(p)   (for every corpus p)
 //!
 //! i.e. everything the machine-checked judgment blesses `Static`, the executable
 //! prototype also blesses `Static`. (The converse does NOT hold — the prototype is
-//! deliberately broader: row-polymorphic borrows, `OpaqueQuote`/`Any`, an
-//! `Int⊔Quote=Any` join, opaque-seq folds — none of which the narrow mechanized
-//! fragment claims. That gap is the honest Layer-C boundary, not a divergence.)
+//! deliberately broader: `OpaqueQuote`/`Any` cells, an `Int⊔Quote=Any` join,
+//! opaque-seq folds, borrowed-QUOTE inputs — none of which the narrow mechanized
+//! fragment claims. In particular the mechanized borrow can only name `Int` required
+//! inputs, not borrowed quotes; that gap is the honest Layer-C boundary, not a
+//! divergence.)
 //!
 //! We also assert the prototype's corpus **Static count is unchanged (27)** — the
 //! soundness-critical, design-doc figure — and record the mechanized-Static count.
@@ -279,6 +297,121 @@ fn check_m1(astk: &[AbsVal], p: &[Word], depth: usize) -> Option<Vec<AbsVal>> {
 /// MECHANIZED-Static: `check_m1(∅, p, depth)` accepts (the `pre = []` slice).
 fn mech_static(program: &[Word], depth: usize) -> bool {
     check_m1(&[], program, depth).is_some()
+}
+
+/// Largest inferred `pre` length the row-poly borrow search will try.
+const MAX_PRE: usize = 8;
+
+/// MECHANIZED-Static-RowPoly (milestone 4): the borrow-inference mirror. Searches
+/// for the SHORTEST all-`AInt` `pre` such that `check_m1([AInt; n], p, depth)` is
+/// `Some`, returning `Some((n, post))`. This mechanizes the prototype's lazy-borrow
+/// pop-from-empty mechanism, specialized to the milestone lattice: a borrowed cell
+/// consumed by the program is inferred as `Int` (the only borrowable kind the
+/// `AInt | ALit` lattice can name — a borrowed *quote* would need its literal body,
+/// which is unknowable, so those stay a marked gap). By the bottom-frame lemma
+/// (`lemma_check_frame`) the succeeding lengths are upward-closed, so the shortest
+/// is the tight inferred `pre`. Each accepted program is backed by the Verus
+/// `thm_static_rowpoly` theorem instantiated at `pre = [AInt; n]`.
+fn mech_static_rp(program: &[Word], depth: usize) -> Option<(usize, Vec<AbsVal>)> {
+    for n in 0..=MAX_PRE {
+        let pre = vec![AbsVal::AInt; n];
+        if let Some(post) = check_m1(&pre, program, depth) {
+            return Some((n, post));
+        }
+    }
+    None
+}
+
+/// THE ACID METRIC (milestone 4). Reports the mechanized-Static-**RowPoly** count
+/// over the corpus and asserts it is `> 0` — the whole point of M4 (before M4 the
+/// self-contained `pre = []` count was 0, since every corpus program borrows its
+/// inputs). Also asserts the SOUNDNESS DIRECTION for the row-poly judgment:
+///
+///     mechanized-Static-RowPoly(p)  ⟹  prototype-Static(p)   (every corpus p)
+///
+/// i.e. every program the machine-checked row-poly judgment (backed by the Verus
+/// `thm_static_rowpoly` theorem, instantiated at the inferred all-`Int` `pre`)
+/// blesses `Static`, the executable prototype also blesses `Static`.
+#[test]
+fn acid_mechanized_rowpoly_static_count() {
+    let rows = gather();
+    assert!(!rows.is_empty(), "corpus enumeration found no programs");
+
+    let mut count = 0usize;
+    let mut names: Vec<String> = Vec::new();
+    let mut divergences: Vec<String> = Vec::new();
+    for (tier, name, src) in &rows {
+        let prog = match parse(src) {
+            Ok(p) => p,
+            Err(_) => continue,
+        };
+        if let Some((n, _post)) = mech_static_rp(&prog, DEPTH) {
+            count += 1;
+            names.push(format!("[{tier}] {name} (pre.len={n}) `{src}`"));
+            if !mtl_check::check(&prog).is_static() {
+                divergences.push(format!(
+                    "[{tier}] {name} `{src}`: RowPoly-Static but prototype = {}",
+                    mtl_check::check(&prog).tag()
+                ));
+            }
+        }
+    }
+
+    eprintln!(
+        "ACID METRIC: mechanized-Static-RowPoly = {count} / {} corpus programs \
+         (all also prototype-Static = {})",
+        rows.len(),
+        count - divergences.len()
+    );
+    for nm in &names {
+        eprintln!("  RP-Static: {nm}");
+    }
+
+    assert!(
+        divergences.is_empty(),
+        "SOUNDNESS-DIRECTION divergence (mechanized-Static-RowPoly ⊄ prototype-Static):\n{}",
+        divergences.join("\n")
+    );
+    // The acid gate: M4 must make the mechanized judgment cover REAL (input-borrowing)
+    // corpus programs. Was 0 before M4.
+    assert!(
+        count > 0,
+        "ACID METRIC FAILED: mechanized-Static-RowPoly count is 0 — M4 did not lift the \
+         self-contained slice to row-polymorphic borrows"
+    );
+}
+
+/// NON-VACUITY probes for the row-poly borrow inference. Each program BORROWS its
+/// inputs (so `mech_static` on `pre = []` is `false`), yet `mech_static_rp` infers
+/// the right non-empty `pre` length and both the mechanization and the prototype
+/// bless it `Static`. Exercises the borrow bookkeeping through arith (`3*7+`,
+/// pre.len=1: `x -> x*3+7`), shuffles (`~@` = swap;rot, pre.len=3, kind-agnostic
+/// cells conservatively typed Int), and the `PrimRec` combinator (`[1][*]&`,
+/// factorial, pre.len=1).
+#[test]
+fn rowpoly_borrow_probe() {
+    // (program, expects mech_static(pre=[]) false, expected inferred pre.len, proto tag)
+    let cases = [
+        ("3*7+", 1usize, "Static"),   // affine: borrow 1 Int, x -> 3x+7
+        ("2%0=", 1usize, "Static"),   // is_even: borrow 1 Int
+        ("~@", 3usize, "Static"),     // rev3: swap;rot — borrow 3, kind-agnostic
+        ("[1][*]&", 1usize, "Static"), // factorial: primrec, borrow 1 Int count
+        ("[0][+]&", 1usize, "Static"), // sum_to: primrec, borrow 1 Int count
+    ];
+    for (src, exp_pre_len, exp_proto) in cases {
+        let prog = parse(src).expect("parse");
+        // borrows inputs => the pre=[] slice does NOT accept it.
+        assert!(
+            !mech_static(&prog, DEPTH),
+            "pre=[] slice should reject the input-borrowing `{src}`"
+        );
+        let (n, _post) = mech_static_rp(&prog, DEPTH)
+            .unwrap_or_else(|| panic!("row-poly borrow inference should accept `{src}`"));
+        assert_eq!(n, exp_pre_len, "inferred pre.len for `{src}`");
+        let proto = mtl_check::check(&prog);
+        assert_eq!(proto.tag(), exp_proto, "prototype(`{src}`)");
+        assert!(proto.is_static(), "subset: RowPoly-Static(`{src}`) => prototype-Static");
+    }
 }
 
 const DEPTH: usize = 512;

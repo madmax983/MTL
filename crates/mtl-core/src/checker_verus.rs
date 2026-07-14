@@ -1,4 +1,4 @@
-//! Layer C — Static stack-effect checker soundness (Milestone 1)
+//! Layer C — Static stack-effect checker soundness (Milestones 1–4)
 //! ==============================================================
 //!
 //! Mechanization of the v0.6 checker's soundness theorems (docs/design/v0.6-checker.md
@@ -57,6 +57,16 @@
 //!       `lemma_stepn_compose`) + `lemma_check_depth_mono` + `lemma_joinable_eq` collapse
 //!       the branch/join mismatch, so the induction on the concrete step count closes with
 //!       NO `assume`. The milestone-1 gap is GONE.
+//!     * `thm_static_rowpoly` / `thm_static_rowpoly_allint` (§6.5) — **milestone-4
+//!       row-polymorphic T-Static**: the FULL effect `∀ρ. ρ ++ pre → ρ ++ post` with
+//!       NON-EMPTY `pre` (real input-borrowing corpus programs). The M1–M3 slice fixed
+//!       `pre = []`; M4 lifts to arbitrary `pre` by observing `lemma_check_invariant` was
+//!       already row-polymorphic in the base ρ — `pre` IS a non-empty starting abstract
+//!       stack, and `lemma_models_stack_append` shows `ρ ++ args` (args matching `pre`)
+//!       refines it. Borrowed-`Int` inputs are FULLY COVERED across the entire M1–M3
+//!       fragment (same induction, no per-construct re-proof); a borrowed cell used as a
+//!       QUOTE operand is a loudly marked UNPROVEN GAP (the `AInt | ALit` lattice cannot
+//!       name an opaque borrowed quote — Layer-C boundary, see §6.5).
 
 use vstd::prelude::*;
 
@@ -2386,6 +2396,173 @@ pub proof fn thm_static_with_if(p: Seq<SpecWord>, rho: Seq<SpecValue>, k: nat, d
     assert(models_stack(rho, Seq::<AbsVal>::empty()));
     assert(check_m1(Seq::<AbsVal>::empty(), s0.cont, depth) is Some);
     lemma_check_invariant(s0, Seq::<AbsVal>::empty(), depth, k);
+}
+
+// ============================================================
+// 6.5 T-Static-RowPoly — non-empty `pre` (milestone 4) — FULLY PROVEN
+// ============================================================
+//
+// M1–M3 proved the `pre = []` (self-contained) slice: `thm_static_with_if`
+// hardcodes the initial abstract stack to `empty`, so accepted programs push their
+// own operands before consuming. Real corpus programs BORROW their inputs — they
+// pop operands that the caller supplied below. The row-polymorphic effect is
+// `∀ρ. ρ ++ pre → ρ ++ post`, and this milestone lifts to arbitrary `pre != []`.
+//
+// The KEY OBSERVATION: `lemma_check_invariant` (the M2/M3 inductive driver) is
+// ALREADY row-polymorphic in a strong sense — it is quantified over an ARBITRARY
+// starting abstract stack `astk`, and `models_stack(s.stack, astk)` constrains only
+// the TOP `astk.len()` cells, leaving the base ρ free and (by the frame lemmas)
+// untouched. The `pre = []` limitation lived ONLY in the top-level entry point.
+// So `pre`, as an ordered list of required input cells, IS exactly a non-empty
+// starting `astk`: feed `check_m1(pre, p, depth)` and the invariant does the rest.
+//
+// A concrete initial stack `ρ ++ args` where `args` MATCHES `pre` (same length,
+// each value's kind refines the corresponding required cell) refines the abstract
+// stack `pre` over the free base ρ — that is `lemma_models_stack_append`. The
+// borrow bookkeeping the prototype performs (pop-from-empty records a required
+// input) is thereby DISCHARGED: a pop justified by a `pre` entry of the right kind
+// is a `models_val` obligation the caller's `args` satisfy, so no Underflow and no
+// TypeMismatch — precisely what `lemma_prim_step_sound` already establishes for the
+// arith/If/combinator operands, now sourced from `pre` instead of pushed literals.
+//
+// INFERENCE (which `pre` to pick) lives in the executable mirror
+// (`crates/mtl-check/tests/differential.rs`): it searches for the shortest all-`Int`
+// `pre` (the borrow mechanism specialized to the `AInt | ALit` lattice — see the
+// scope note below). This theorem VALIDATES any such `pre`; the two are cleanly
+// separated (checker finds `pre`, theorem certifies it), exactly as a real
+// type-inferencer relates to its soundness proof.
+//
+// SCOPE (honest boundary — the milestone lattice constrains what `pre` can name):
+//   * A borrowed cell CONSUMED as an integer (arith/cmp operand, `If` flag,
+//     `Times`/`PrimRec` counter, `Fold` seed) is inferred `AInt` — FULLY COVERED,
+//     row-polymorphically, for the whole straight-line + `If` + `Times` + `PrimRec`
+//     + homogeneous-Int `Fold` + literal-`Uncons` fragment (the induction is the
+//     SAME `lemma_check_invariant`, so every construct M1–M3 proved is now proven
+//     with non-empty `pre` too — no per-construct re-proof was needed).
+//   * A borrowed cell that is only SHUFFLED (`Dup`/`Drop`/`Swap`/`Rot`/`Over`) is
+//     kind-agnostic; the mechanization conservatively types it `AInt` (Int). This
+//     is SOUND (we prove safety for Int inputs) but not most-general (the true
+//     requirement is `Any`); the `AInt | ALit` lattice cannot NAME `Any`.
+//   * UNPROVEN GAP (milestone 4): a borrowed cell used as a QUOTE OPERAND (applied,
+//     or an `If`/`Times`/… body) would require `pre` to carry that quote's LITERAL
+//     body `ALit(·)`, which is unknowable for a caller-supplied input. `check_m1`
+//     has no borrowed-`Quote` cell, so such programs are REJECTED (sound). Closing
+//     this needs an opaque-quote abstract value with a stack-effect signature —
+//     Layer-C-boundary work, out of scope by construction (the design's §14.5 seam).
+
+/// A concrete argument sequence `args` MATCHES a required-input row `pre`: equal
+/// length, and each argument value refines the corresponding required cell (its
+/// kind satisfies the requirement `AInt`→Int / `ALit(b)`→that exact quote body).
+/// This is the "value-sequence that matches `pre`" of the M4 theorem statement.
+pub open spec fn args_match_pre(args: Seq<SpecValue>, pre: Seq<AbsVal>) -> bool {
+    &&& args.len() == pre.len()
+    &&& forall|j: int| 0 <= j < pre.len() ==> models_val(#[trigger] args[j], pre[j])
+}
+
+/// **Borrowed-row refinement.** If `args` matches the required row `pre`, then for
+/// EVERY base ρ the concrete stack `ρ ++ args` refines the abstract stack `pre`
+/// (top `pre.len()` cells refine cell-by-cell; ρ is the free polymorphic base).
+/// This is the bridge that turns "caller supplied inputs of the right kind" into
+/// the `models_stack` precondition of `lemma_check_invariant`.
+pub proof fn lemma_models_stack_append(rho: Seq<SpecValue>, args: Seq<SpecValue>, pre: Seq<AbsVal>)
+    requires
+        args_match_pre(args, pre),
+    ensures
+        models_stack(rho + args, pre),
+{
+    let cs = rho + args;
+    assert(cs.len() == rho.len() + args.len());
+    assert(cs.len() >= pre.len());
+    assert forall|j: int| 0 <= j < pre.len() implies
+        models_val(cs[cs.len() - pre.len() + j], pre[j])
+    by {
+        // args.len() == pre.len(), so the offset lands exactly at args[j].
+        assert(cs.len() - pre.len() + j == rho.len() + j);
+        assert(cs[rho.len() + j] == args[j]);
+        assert(models_val(args[j], pre[j]));
+    }
+}
+
+/// **T-Static-RowPoly (full row-polymorphic T-Static) — FULLY PROVEN (milestone 4).**
+/// If the checker accepts `p` from a required-input row `pre` with post-shape
+/// `post = check_m1(pre, p, depth)`, then for EVERY base ρ and every argument
+/// sequence `args` that MATCHES `pre`, running `spec_step` from `{stack: ρ ++ args,
+/// cont: p}` for any number of steps `k`:
+///   * never reaches `Fault(Underflow)` or `Fault(TypeMismatch)` (the borrow of each
+///     consumed input is justified by a `pre` entry of the right kind — so no
+///     underflow, no type mismatch; only Overflow / DivByZero remain possible), and
+///   * if it `Halt`s, the final stack refines `ρ ++ post` (the base ρ carried
+///     through, `post` on top).
+/// The `pre = []` slice (`thm_static_with_if`, `args = []`) is the special case.
+/// Discharged directly by the SAME `lemma_check_invariant` used for `pre = []`,
+/// instantiated at the non-empty starting abstract stack `astk = pre` — the M2/M3
+/// invariant/frame/compose machinery was already row-polymorphic in the base, so
+/// no per-construct re-proof was required.
+pub proof fn thm_static_rowpoly(
+    p: Seq<SpecWord>, pre: Seq<AbsVal>, rho: Seq<SpecValue>, args: Seq<SpecValue>, k: nat, depth: nat,
+)
+    requires
+        check_m1(pre, p, depth) is Some,
+        args_match_pre(args, pre),
+    ensures
+        ({
+            let s0 = SpecState { stack: rho + args, cont: p };
+            &&& !(spec_stepn(s0, k) matches SpecStep::Fault(e)
+                    && (e == Error::Underflow || e == Error::TypeMismatch))
+            &&& (spec_stepn(s0, k) matches SpecStep::Halt(fin)
+                    ==> models_stack(fin, check_m1(pre, p, depth)->Some_0))
+        }),
+{
+    let s0 = SpecState { stack: rho + args, cont: p };
+    lemma_models_stack_append(rho, args, pre);
+    assert(models_stack(s0.stack, pre));
+    assert(check_m1(pre, s0.cont, depth) is Some);
+    lemma_check_invariant(s0, pre, depth, k);
+}
+
+/// The all-`Int` required row of length `n` — the `pre` the executable borrow
+/// mirror infers (a program that borrows `n` integer inputs). Every cell is `AInt`.
+pub open spec fn all_int_pre(n: nat) -> Seq<AbsVal> {
+    Seq::new(n, |_j: int| AbsVal::AInt)
+}
+
+/// A value sequence is all-integer.
+pub open spec fn all_int_args(args: Seq<SpecValue>) -> bool {
+    forall|j: int| 0 <= j < args.len() ==> (#[trigger] args[j]) is Int
+}
+
+/// **T-Static-RowPoly, all-`Int` borrows (the mechanized-inference case) — FULLY
+/// PROVEN.** The specialization the executable mirror actually discovers: if
+/// `check_m1([AInt; n], p, depth)` accepts, then for every base ρ and every `n`
+/// integer arguments, running `p` from `ρ ++ args` never faults
+/// Underflow/TypeMismatch and any halt refines `ρ ++ post`. This is the direct
+/// certificate behind each corpus program the acid metric counts as
+/// mechanized-Static-RowPoly.
+pub proof fn thm_static_rowpoly_allint(
+    p: Seq<SpecWord>, n: nat, rho: Seq<SpecValue>, args: Seq<SpecValue>, k: nat, depth: nat,
+)
+    requires
+        check_m1(all_int_pre(n), p, depth) is Some,
+        args.len() == n,
+        all_int_args(args),
+    ensures
+        ({
+            let s0 = SpecState { stack: rho + args, cont: p };
+            &&& !(spec_stepn(s0, k) matches SpecStep::Fault(e)
+                    && (e == Error::Underflow || e == Error::TypeMismatch))
+            &&& (spec_stepn(s0, k) matches SpecStep::Halt(fin)
+                    ==> models_stack(fin, check_m1(all_int_pre(n), p, depth)->Some_0))
+        }),
+{
+    let pre = all_int_pre(n);
+    assert(args_match_pre(args, pre)) by {
+        assert(args.len() == pre.len());
+        assert forall|j: int| 0 <= j < pre.len() implies models_val(args[j], pre[j]) by {
+            assert(pre[j] == AbsVal::AInt);
+            assert(args[j] is Int);
+        }
+    }
+    thm_static_rowpoly(p, pre, rho, args, k, depth);
 }
 
 // ============================================================
