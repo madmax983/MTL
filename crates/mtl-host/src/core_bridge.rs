@@ -94,6 +94,9 @@ impl Host for HostShim<'_> {
         // (1) grant check — an ungranted capability is unreachable: no effect,
         // no output. The host shim owns the NotGranted path (design §2.2).
         if !self.reg.contains(name) {
+            // Record which capability the (confined) program illegally reached
+            // for, so the oracle can report `NotGranted <name>`.
+            self.ctx.note_denied(name);
             return HostResult::HostFault(HostCode::NotGranted);
         }
 

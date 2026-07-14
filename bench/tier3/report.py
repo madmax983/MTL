@@ -24,7 +24,7 @@ from tokcount import ENCODINGS, count, encoder_error  # noqa: E402
 sys.path.insert(0, str(_HERE))
 from measure import TASKS, exec_source  # noqa: E402
 
-REPORT_DATE = "2026-07-13"
+REPORT_DATE = "2026-07-14"
 SUITE = "T_tier3-agentic"
 O, CL = ENCODINGS  # "o200k_base", "cl100k_base"
 
@@ -137,9 +137,25 @@ def build_report() -> str:
     P("## Aggregate ratios (token-sum)")
     P("")
     P(f"- **design-sketch**: o200k **{_ratio(tp_o, ts_o)}**, cl100k "
-      f"**{_ratio(tp_c, ts_c)}**  (reproduces the design's projected 1.96x).")
+      f"**{_ratio(tp_c, ts_c)}**  (the original 8 tasks reproduce the design's "
+      "projected 1.96x; the 16-task aggregate is lower because the 8 new tasks "
+      "add capability-name-heavy pipelines and confinement duplicates that MTL "
+      "compresses only modestly — the Tier-3 thesis is confinement, not "
+      "compression).")
     P(f"- **executable**: o200k **{_ratio(tp_o, te_o)}**, cl100k "
       f"**{_ratio(tp_c, te_c)}**  (the lexer-safe programs actually run).")
+    P("")
+    P("The suite now spans **16 tasks**. The original 8 (design §8) are joined by "
+      "**8 v0.4 tasks** in four new categories: **budget-aware** (`emit_budget`, "
+      "`budget_grep` — a per-capability `emit` budget stops the run at exactly N "
+      "effects), **fault-handling** (`guarded_read` — an `endp` guard makes every "
+      "`nextline` safe, so the faulting over-read is never reached), "
+      "**string-handle pipelines** (`concat_lines`, `select_line`, "
+      "`transform_hits` — compose opaque handles via `concat`/`select`/`transform`), "
+      "and **capability confinement** (`confined_echo`, `confined_grep` — driven "
+      "against a RESTRICTED grant set, where an ungranted `Call` faults "
+      "`NotGranted`). The `tier3run` oracle binary drives any of the 16 from "
+      "stdin and prints a single greppable verdict.")
     P("")
     P("The small gap between sketch and exec is `retry_on_fault` (12 → 14 tokens): "
       "the executable corrects the sketch's LinRec branch bodies so the success "
@@ -181,7 +197,7 @@ def build_report() -> str:
       "reconciliation is a one-file change.")
     P(f"- **tiktoken version**: measured under {tk} (the design pinned 0.8.0; the "
       "o200k/cl100k vocabularies are stable across these versions — the "
-      "design-sketch aggregate reproduces 1.96x exactly).")
+      "original-8 design-sketch aggregate reproduces 1.96x exactly).")
     P("")
     return "\n".join(lines) + "\n"
 

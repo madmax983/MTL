@@ -48,6 +48,35 @@ TASKS = [
     ("word_count",
      "def solve():\n    return len(tokenize(read_text()))",
      "read-text tokenize 0[_1+](emit-int"),
+    # ---- v0.4 expansion: 8 new tasks (multi-cap, budget-aware, fault-handling,
+    #      string-handle pipelines, capability confinement). These are new tasks
+    #      with no separate §8 design sketch, so the sketch column is the
+    #      hyphenated form of the executable program (same shape, hyphenated
+    #      capability names, matching the naming convention of the originals).
+    ("transform_hits",
+     "def solve():\n    for line in read_lines():\n        if line_hit(line):\n            emit(transform(line))",
+     "read-lines 0[line-hit[transform emit][_]?](_"),
+    ("emit_budget",
+     "def solve():\n    for line in read_lines()[:2]:\n        emit(line)",
+     "read-lines>@emit_>@emit__"),
+    ("guarded_read",
+     "def solve():\n    while not end_p():\n        emit(next_line())",
+     "[end?][][next-line emit][]|"),
+    ("concat_lines",
+     "def solve():\n    emit(concat(next_line(), next_line()))",
+     "next-line next-line concat emit"),
+    ("select_line",
+     "def solve():\n    emit(select(read_lines(), 2))",
+     "read-lines 2 select emit"),
+    ("confined_echo",
+     "def solve():\n    emit(read_line())",
+     "read-line emit"),
+    ("confined_grep",
+     "def solve():\n    for line in read_lines():\n        if line_hit(line):\n            emit(line)",
+     "read-lines 0[line-hit[emit][_]?](_"),
+    ("budget_grep",
+     "def solve():\n    for line in read_lines():\n        if line_hit(line):\n            emit(line)",
+     "read-lines 0[line-hit[emit][_]?](_"),
 ]
 
 

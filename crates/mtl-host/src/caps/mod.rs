@@ -1,13 +1,19 @@
-//! The standard capability set for the eight Tier-3 tasks (design §8), plus
-//! per-task fixture builders. All names are lexer-safe (lowercase alphanumeric,
+//! The standard capability set for the Tier-3 tasks (design §8), plus per-task
+//! fixture builders. All names are lexer-safe (lowercase alphanumeric,
 //! `[a-z][a-z0-9]*`) so they parse as `Call` words: the mtl-syntax lexer treats
 //! `-` as `sub` and `?` as `if`, so the design's `read-line`/`done?` become
 //! `readline`/`donep` here.
+//!
+//! [`standard_registry`] grants 22 capabilities (the original 18 plus the v0.4
+//! expansion `nextline`/`endp`/`concat`/`select`). [`restricted_registry_and_ctx`]
+//! builds a *confined* grant set for the `confined_*` tasks, and
+//! [`task_setup`] is the deterministic oracle (fixture + correct registry +
+//! expected output) shared by the tests and the `tier3run` validator binary.
 
 use mtl_core::interp::Value;
 
 use crate::capability::{Capability, FaultKind, Registry, StackEffect};
-use crate::handle::{list_of_handles, HandleTable};
+use crate::handle::{handles_from_list, list_of_handles, HandleTable};
 use crate::host::{HostCtx, HostFault, TaskFixture};
 use crate::meter::MeterError;
 
@@ -240,12 +246,87 @@ pub fn standard_registry() -> Registry {
         Ok(())
     }));
 
+    // nextline : ( -- h ) — intern lines[read_cursor], advance the cursor, push
+    // the handle. If the cursor is already past the end, fault InputClosed and
+    // DO NOT advance (the fault-handling tasks rely on this being guardable).
+    reg.register(cap("nextline", 0, 1, vec![FaultKind::InputClosed], |ctx, stack| {
+        if ctx.read_cursor >= ctx.fixture.lines.len() {
+            return Err(HostFault::InputClosed);
+        }
+        let line = ctx.fixture.lines[ctx.read_cursor].clone();
+        ctx.read_cursor += 1;
+        let h = ctx.handles.intern(line);
+        stack.push(Value::Int(h));
+        Ok(())
+    }));
+
+    // endp : ( -- 0|1 ) — push 1 iff the read cursor is at/past end-of-input.
+    // Never faults, so it can guard `nextline` in a linrec loop.
+    reg.register(cap("endp", 0, 1, vec![], |ctx, stack| {
+        let done = ctx.read_cursor >= ctx.fixture.lines.len();
+        stack.push(Value::Int(if done { 1 } else { 0 }));
+        Ok(())
+    }));
+
+    // concat : ( h1 h2 -- h ) — for stack `... h1 h2`, resolve both and intern
+    // resolve(h1) + resolve(h2), pushing the fresh handle. ToolError if either
+    // handle can't resolve.
+    reg.register(cap("concat", 2, 1, vec![FaultKind::ToolError], |ctx, stack| {
+        let h2 = match stack.pop() {
+            Some(Value::Int(n)) => n,
+            _ => return Err(HostFault::ToolError("concat: expected Int on top".into())),
+        };
+        let h1 = match stack.pop() {
+            Some(Value::Int(n)) => n,
+            _ => return Err(HostFault::ToolError("concat: expected Int below top".into())),
+        };
+        let s1 = resolve_owned(&ctx.handles, h1, "concat")?;
+        let s2 = resolve_owned(&ctx.handles, h2, "concat")?;
+        let h = ctx.handles.intern(format!("{s1}{s2}"));
+        stack.push(Value::Int(h));
+        Ok(())
+    }));
+
+    // select : ( [h...] n -- h ) — pop index n and a quote of handles, push the
+    // n-th handle (0-indexed). ToolError if the value is not a handle list or n
+    // is out of range.
+    reg.register(cap("select", 2, 1, vec![FaultKind::ToolError], |_ctx, stack| {
+        let n = match stack.pop() {
+            Some(Value::Int(n)) => n,
+            _ => return Err(HostFault::ToolError("select: expected Int index on top".into())),
+        };
+        let list = stack
+            .pop()
+            .ok_or_else(|| HostFault::ToolError("select: missing handle list".into()))?;
+        let handles = handles_from_list(&list)
+            .ok_or_else(|| HostFault::ToolError("select: not a handle list".into()))?;
+        let idx = usize::try_from(n)
+            .map_err(|_| HostFault::ToolError("select: negative index".into()))?;
+        let h = *handles
+            .get(idx)
+            .ok_or_else(|| HostFault::ToolError(format!("select: index {idx} out of range")))?;
+        stack.push(Value::Int(h));
+        Ok(())
+    }));
+
     reg
 }
 
 /// Build both the standard registry and a fresh context around `fixture`.
 pub fn standard_registry_and_ctx(fixture: TaskFixture) -> (Registry, HostCtx) {
     (standard_registry(), HostCtx::new(fixture))
+}
+
+/// Build a CONFINED registry granting only `allowed`, plus a fresh context.
+/// Starts from [`standard_registry`] and drops every capability not named in
+/// `allowed`, so any `Call` to a removed name faults `NotGranted`.
+pub fn restricted_registry_and_ctx(
+    fixture: TaskFixture,
+    allowed: &[&str],
+) -> (Registry, HostCtx) {
+    let mut reg = standard_registry();
+    reg.retain(allowed);
+    (reg, HostCtx::new(fixture))
 }
 
 // ------------------------------------------------------------------------
@@ -308,4 +389,163 @@ pub fn fixture_word_count() -> TaskFixture {
         text: "the quick brown fox".into(),
         ..Default::default()
     }
+}
+
+// ---- v0.4 expansion fixtures (8 new tasks) --------------------------------
+
+pub fn fixture_transform_hits() -> TaskFixture {
+    TaskFixture {
+        lines: vec!["apple".into(), "banana".into(), "apricot".into(), "cherry".into()],
+        predicate_char: Some('a'),
+        ..Default::default()
+    }
+}
+
+pub fn fixture_emit_budget() -> TaskFixture {
+    TaskFixture {
+        lines: vec!["one".into(), "two".into(), "three".into(), "four".into()],
+        ..Default::default()
+    }
+}
+
+pub fn fixture_guarded_read() -> TaskFixture {
+    TaskFixture {
+        lines: vec!["x".into(), "y".into(), "z".into()],
+        ..Default::default()
+    }
+}
+
+pub fn fixture_concat_lines() -> TaskFixture {
+    TaskFixture {
+        lines: vec!["foo".into(), "bar".into()],
+        ..Default::default()
+    }
+}
+
+pub fn fixture_select_line() -> TaskFixture {
+    TaskFixture {
+        lines: vec!["a".into(), "b".into(), "c".into(), "d".into()],
+        ..Default::default()
+    }
+}
+
+pub fn fixture_confined_echo() -> TaskFixture {
+    TaskFixture {
+        lines: vec!["hello".into()],
+        ..Default::default()
+    }
+}
+
+pub fn fixture_confined_grep() -> TaskFixture {
+    TaskFixture {
+        lines: vec!["cat".into(), "dog".into(), "car".into(), "fish".into()],
+        predicate_char: Some('c'),
+        ..Default::default()
+    }
+}
+
+pub fn fixture_budget_grep() -> TaskFixture {
+    TaskFixture {
+        lines: vec!["ant".into(), "bee".into(), "art".into(), "cod".into()],
+        predicate_char: Some('a'),
+        ..Default::default()
+    }
+}
+
+// ------------------------------------------------------------------------
+// The deterministic task oracle — shared by the tests and `tier3run`.
+// ------------------------------------------------------------------------
+
+/// The fully-built inputs for one task: the correct grant set (restricted for
+/// `confined_*`, budgeted for `emit_budget`/`budget_grep`, standard otherwise),
+/// a fresh host context, and the expected stdout the program must produce.
+pub struct TaskSetup {
+    pub reg: Registry,
+    pub ctx: HostCtx,
+    pub expected_output: String,
+}
+
+/// Build the registry + context + expected output for `task`, or `None` for an
+/// unknown task name. This is the single source of truth the `tier3run`
+/// validator binary uses as its deterministic oracle.
+pub fn task_setup(task: &str) -> Option<TaskSetup> {
+    let (reg, ctx, expected_output) = match task {
+        "echo_line" => {
+            let (r, c) = standard_registry_and_ctx(fixture_echo_line());
+            (r, c, "hello world\n".to_string())
+        }
+        "grep_filter" => {
+            let (r, c) = standard_registry_and_ctx(fixture_grep_filter());
+            (r, c, "apple\napricot\n".to_string())
+        }
+        "agent_loop" => {
+            // Stack-based task; produces no output.
+            let (r, c) = standard_registry_and_ctx(fixture_agent_loop());
+            (r, c, String::new())
+        }
+        "json_field" => {
+            let (r, c) = standard_registry_and_ctx(fixture_json_field());
+            (r, c, "neo\n".to_string())
+        }
+        "two_tool_pipeline" => {
+            let (r, c) = standard_registry_and_ctx(fixture_two_tool_pipeline());
+            (r, c, "parsed:q1\n".to_string())
+        }
+        "retry_on_fault" => {
+            // Stack-based task; produces no output.
+            let (r, c) = standard_registry_and_ctx(fixture_retry_on_fault());
+            (r, c, String::new())
+        }
+        "map_lines_tool" => {
+            let (r, c) = standard_registry_and_ctx(fixture_map_lines_tool());
+            (r, c, "A\nB\nC\n".to_string())
+        }
+        "word_count" => {
+            let (r, c) = standard_registry_and_ctx(fixture_word_count());
+            (r, c, "4\n".to_string())
+        }
+        "transform_hits" => {
+            let (r, c) = standard_registry_and_ctx(fixture_transform_hits());
+            (r, c, "APPLE\nAPRICOT\n".to_string())
+        }
+        "emit_budget" => {
+            let (r, mut c) = standard_registry_and_ctx(fixture_emit_budget());
+            c.meter.set_call_budget("emit", 2);
+            (r, c, "one\ntwo\n".to_string())
+        }
+        "guarded_read" => {
+            let (r, c) = standard_registry_and_ctx(fixture_guarded_read());
+            (r, c, "x\ny\nz\n".to_string())
+        }
+        "concat_lines" => {
+            let (r, c) = standard_registry_and_ctx(fixture_concat_lines());
+            (r, c, "foobar\n".to_string())
+        }
+        "select_line" => {
+            let (r, c) = standard_registry_and_ctx(fixture_select_line());
+            (r, c, "c\n".to_string())
+        }
+        "confined_echo" => {
+            let (r, c) = restricted_registry_and_ctx(fixture_confined_echo(), &["readline", "emit"]);
+            (r, c, "hello\n".to_string())
+        }
+        "confined_grep" => {
+            let (r, c) = restricted_registry_and_ctx(
+                fixture_confined_grep(),
+                &["readlines", "linehit", "emit"],
+            );
+            (r, c, "cat\ncar\n".to_string())
+        }
+        "budget_grep" => {
+            let (r, mut c) = standard_registry_and_ctx(fixture_budget_grep());
+            c.meter.set_call_budget("emit", 2);
+            (r, c, "ant\nart\n".to_string())
+        }
+        _ => return None,
+    };
+    Some(TaskSetup {
+        reg,
+        ctx,
+        expected_output,
+    })
 }
