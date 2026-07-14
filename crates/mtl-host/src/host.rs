@@ -74,6 +74,12 @@ pub struct HostCtx {
     pub fixture: TaskFixture,
     /// Running count of `tryop` invocations (models flakiness).
     pub flaky_calls: u64,
+    /// Sequential read cursor into `fixture.lines` for `nextline`/`endp`.
+    pub read_cursor: usize,
+    /// The name of the most recently DENIED (ungranted) capability call, if any.
+    /// Set by the servicing shim on the `NotGranted` path so callers/oracles can
+    /// report *which* capability the confined program illegally reached for.
+    pub last_denied: Option<String>,
     /// Per-capability service counts (for at-most-once / call-count assertions).
     call_log: HashMap<String, u64>,
 }
@@ -87,8 +93,16 @@ impl HostCtx {
             output: Vec::new(),
             fixture,
             flaky_calls: 0,
+            read_cursor: 0,
+            last_denied: None,
             call_log: HashMap::new(),
         }
+    }
+
+    /// Record that capability `name` was DENIED (not granted) on the most recent
+    /// service attempt — used by the confinement oracle to name the offender.
+    pub fn note_denied(&mut self, name: &str) {
+        self.last_denied = Some(name.to_string());
     }
 
     /// Append raw bytes to the output buffer. Callers MUST have already charged

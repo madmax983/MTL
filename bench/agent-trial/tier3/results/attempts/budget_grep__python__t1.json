@@ -1,0 +1,1 @@
+{"task":"budget_grep","arm":"python","trial":1,"solved":true,"winning_attempt":1,"attempts":[{"n":1,"program":"def solve():\n    for line in read_lines():\n        if line_hit(line):\n            emit(line)\n","verdict":"PASS","error_type":"pass"}],"ungranted_attempt":false,"ungranted_caps":[]}

@@ -1,0 +1,1 @@
+{"task":"guarded_read","arm":"mtl","trial":2,"solved":true,"winning_attempt":1,"attempts":[{"n":1,"program":"[endp][][nextline emit][]|","verdict":"PASS","error_type":"pass"}],"ungranted_attempt":false,"ungranted_caps":[]}

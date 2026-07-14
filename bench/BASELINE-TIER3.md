@@ -1,10 +1,10 @@
 # MTL Tier-3 agentic suite — token + security-posture baseline (T_tier3-agentic)
 
-- Report date: 2026-07-13
+- Report date: 2026-07-14
 - Metric: STATIC program-source tokens under `o200k_base` + `cl100k_base` (tiktoken), one trailing newline stripped per source; ratio = tokens(python-idiomatic) / tokens(mtl), same encoding (higher = better for MTL).
 - Two MTL columns: **sketch** = the design's canonical hyphenated program (`docs/design/v0.4-effects.md` §8); **exec** = the executable, lexer-safe `solution.mtl` actually run and validated by `crates/mtl-host`.
 
-> Tokenizer availability: tiktoken **0.13.0**. 
+> Tokenizer availability: tiktoken **0.8.0**. 
 > Both `o200k_base` and `cl100k_base` loaded; all cells populated.
 
 ## Per-task token counts
@@ -19,12 +19,22 @@
 | `retry_on_fault` | 30 | 30 | 12 | 12 | 14 | 14 | 2.14x |
 | `map_lines_tool` | 15 | 15 | 9 | 9 | 9 | 9 | 1.67x |
 | `word_count` | 11 | 11 | 11 | 11 | 11 | 11 | 1.00x |
-| **TOTAL** | **131** | **131** | **67** | **67** | **69** | **69** | **1.90x** |
+| `transform_hits` | 21 | 21 | 13 | 13 | 13 | 13 | 1.62x |
+| `emit_budget` | 17 | 17 | 8 | 8 | 8 | 8 | 2.12x |
+| `guarded_read` | 14 | 14 | 9 | 9 | 9 | 9 | 1.56x |
+| `concat_lines` | 13 | 12 | 6 | 6 | 6 | 6 | 2.17x |
+| `select_line` | 12 | 12 | 6 | 6 | 6 | 6 | 2.00x |
+| `confined_echo` | 8 | 8 | 3 | 3 | 3 | 3 | 2.67x |
+| `confined_grep` | 20 | 20 | 12 | 12 | 12 | 12 | 1.67x |
+| `budget_grep` | 20 | 20 | 12 | 12 | 12 | 12 | 1.67x |
+| **TOTAL** | **256** | **255** | **136** | **136** | **138** | **138** | **1.86x** |
 
 ## Aggregate ratios (token-sum)
 
-- **design-sketch**: o200k **1.96x**, cl100k **1.96x**  (reproduces the design's projected 1.96x).
-- **executable**: o200k **1.90x**, cl100k **1.90x**  (the lexer-safe programs actually run).
+- **design-sketch**: o200k **1.88x**, cl100k **1.88x**  (the original 8 tasks reproduce the design's projected 1.96x; the 16-task aggregate is lower because the 8 new tasks add capability-name-heavy pipelines and confinement duplicates that MTL compresses only modestly — the Tier-3 thesis is confinement, not compression).
+- **executable**: o200k **1.86x**, cl100k **1.85x**  (the lexer-safe programs actually run).
+
+The suite now spans **16 tasks**. The original 8 (design §8) are joined by **8 v0.4 tasks** in four new categories: **budget-aware** (`emit_budget`, `budget_grep` — a per-capability `emit` budget stops the run at exactly N effects), **fault-handling** (`guarded_read` — an `endp` guard makes every `nextline` safe, so the faulting over-read is never reached), **string-handle pipelines** (`concat_lines`, `select_line`, `transform_hits` — compose opaque handles via `concat`/`select`/`transform`), and **capability confinement** (`confined_echo`, `confined_grep` — driven against a RESTRICTED grant set, where an ungranted `Call` faults `NotGranted`). The `tier3run` oracle binary drives any of the 16 from stdin and prints a single greppable verdict.
 
 The small gap between sketch and exec is `retry_on_fault` (12 → 14 tokens): the executable corrects the sketch's LinRec branch bodies so the success result is left on the stack (see its `contract.md`). All other tasks are token-identical up to the hyphen/`?` → lexer-safe renames.
 
@@ -55,5 +65,5 @@ Tier-3's case for MTL is **capability confinement / safety**, not compression (d
 - **Executable names differ from design sketches.** The `mtl-syntax` lexer reads `-` as `sub` and `?` as `if`, so `read-line`/`done?` are mangled to `readline`/`donep`. Long `Call` names cost several BPE tokens each, which is why capability-name-dominated tasks (e.g. `word_count`) barely move.
 - **The token case is secondary.** Per design §8, compression here is control-flow-driven; the loop tasks (`agent_loop`, `retry_on_fault`) win via `linrec`/`fold`, while name-heavy pipelines tie. The real deliverable is the confinement/safety posture above.
 - **Adapter seam.** The host sources `Invoke` events by peeking the core's continuation (`core_bridge.rs`) until `mtl-core` lands `SpecStep::Invoke`; reconciliation is a one-file change.
-- **tiktoken version**: measured under 0.13.0 (the design pinned 0.8.0; the o200k/cl100k vocabularies are stable across these versions — the design-sketch aggregate reproduces 1.96x exactly).
+- **tiktoken version**: measured under 0.8.0 (the design pinned 0.8.0; the o200k/cl100k vocabularies are stable across these versions — the original-8 design-sketch aggregate reproduces 1.96x exactly).
 

@@ -92,4 +92,21 @@ impl Registry {
     pub fn get_mut(&mut self, name: &str) -> Option<&mut Capability> {
         self.map.get_mut(name)
     }
+
+    /// Confine the grant set to exactly the names in `allowed`, dropping every
+    /// other capability. This realizes capability confinement: after `retain`,
+    /// any `Call` to a removed name is unreachable and faults `NotGranted`.
+    pub fn retain(&mut self, allowed: &[&str]) {
+        self.map.retain(|k, _| allowed.contains(&k.as_str()));
+    }
+
+    /// The number of granted capabilities.
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    /// Whether the grant set is empty.
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
 }

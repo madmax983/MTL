@@ -1,0 +1,1 @@
+{"task":"guarded_read","arm":"python","trial":2,"solved":true,"winning_attempt":1,"attempts":[{"n":1,"program":"def solve():\n    while not end_p():\n        emit(next_line())\n","verdict":"PASS","error_type":"pass"}],"ungranted_attempt":false,"ungranted_caps":[]}

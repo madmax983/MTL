@@ -1,0 +1,1 @@
+{"task":"confined_echo","arm":"python","trial":2,"solved":true,"winning_attempt":1,"attempts":[{"n":1,"program":"def solve():\n    line = read_line()\n    emit(line)\n","verdict":"PASS","error_type":"pass"}],"ungranted_attempt":false,"ungranted_caps":[]}

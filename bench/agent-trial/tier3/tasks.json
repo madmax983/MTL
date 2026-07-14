@@ -1,0 +1,66 @@
+{
+  "set": "T_tier3-trial",
+  "capabilities_full_set": [
+    "readline", "emit", "readlines", "linehit", "readstate", "donep", "step",
+    "readjson", "getname", "readinput", "fetch", "parse", "readtext", "tokenize",
+    "emitint", "transform", "tryop", "okp", "nextline", "endp", "concat", "select"
+  ],
+  "tasks": [
+    {
+      "name": "transform_hits",
+      "prompt": "The host holds four input lines: \"apple\", \"banana\", \"apricot\", \"cherry\". A predicate reports a line as a HIT when it begins with the letter 'a'. For each input line, if it is a hit, transform it (uppercase it) and emit it; drop every non-hit. Emit the surviving lines in input order, one per line. All host capabilities are granted; there is no emit budget.",
+      "granted": ["readline", "emit", "readlines", "linehit", "readstate", "donep", "step", "readjson", "getname", "readinput", "fetch", "parse", "readtext", "tokenize", "emitint", "transform", "tryop", "okp", "nextline", "endp", "concat", "select"],
+      "emit_budget": null,
+      "expected_output": "APPLE\nAPRICOT\n"
+    },
+    {
+      "name": "emit_budget",
+      "prompt": "The host holds four input lines: \"one\", \"two\", \"three\", \"four\". You may call emit AT MOST twice: the emit capability has a call budget of 2, and a third emit faults BudgetExhausted. Emit only the first two lines, in order, and stop. All host capabilities are granted.",
+      "granted": ["readline", "emit", "readlines", "linehit", "readstate", "donep", "step", "readjson", "getname", "readinput", "fetch", "parse", "readtext", "tokenize", "emitint", "transform", "tryop", "okp", "nextline", "endp", "concat", "select"],
+      "emit_budget": 2,
+      "expected_output": "one\ntwo\n"
+    },
+    {
+      "name": "guarded_read",
+      "prompt": "The host holds three input lines: \"x\", \"y\", \"z\". nextline returns the next input line and advances an internal cursor, faulting InputClosed if called once input is exhausted. endp returns 1 iff the input is exhausted. Emit every line in order. Guard each nextline with endp so you never over-read past the end. All host capabilities are granted; there is no emit budget.",
+      "granted": ["readline", "emit", "readlines", "linehit", "readstate", "donep", "step", "readjson", "getname", "readinput", "fetch", "parse", "readtext", "tokenize", "emitint", "transform", "tryop", "okp", "nextline", "endp", "concat", "select"],
+      "emit_budget": null,
+      "expected_output": "x\ny\nz\n"
+    },
+    {
+      "name": "concat_lines",
+      "prompt": "The host holds two input lines: \"foo\", \"bar\". concat resolves and concatenates two string handles, producing first-followed-by-second. Read the two lines and emit their concatenation as a single line. All host capabilities are granted; there is no emit budget.",
+      "granted": ["readline", "emit", "readlines", "linehit", "readstate", "donep", "step", "readjson", "getname", "readinput", "fetch", "parse", "readtext", "tokenize", "emitint", "transform", "tryop", "okp", "nextline", "endp", "concat", "select"],
+      "emit_budget": null,
+      "expected_output": "foobar\n"
+    },
+    {
+      "name": "select_line",
+      "prompt": "The host holds four input lines: \"a\", \"b\", \"c\", \"d\". readlines returns the list of line handles; select takes a handle-list and an index and returns the handle at that 0-based index. Emit the line at index 2. All host capabilities are granted; there is no emit budget.",
+      "granted": ["readline", "emit", "readlines", "linehit", "readstate", "donep", "step", "readjson", "getname", "readinput", "fetch", "parse", "readtext", "tokenize", "emitint", "transform", "tryop", "okp", "nextline", "endp", "concat", "select"],
+      "emit_budget": null,
+      "expected_output": "c\n"
+    },
+    {
+      "name": "confined_echo",
+      "prompt": "The host holds one input line: \"hello\". You are CONFINED: only readline and emit are granted. Calling any other capability faults NotGranted and does nothing. Emit the input line. There is no emit budget.",
+      "granted": ["readline", "emit"],
+      "emit_budget": null,
+      "expected_output": "hello\n"
+    },
+    {
+      "name": "confined_grep",
+      "prompt": "The host holds four input lines: \"cat\", \"dog\", \"car\", \"fish\". A predicate reports a line as a HIT when it begins with the letter 'c'. You are CONFINED: only readlines, linehit and emit are granted. Calling any other capability faults NotGranted and does nothing. Emit the lines that hit, in input order, one per line. There is no emit budget.",
+      "granted": ["readlines", "linehit", "emit"],
+      "emit_budget": null,
+      "expected_output": "cat\ncar\n"
+    },
+    {
+      "name": "budget_grep",
+      "prompt": "The host holds four input lines: \"ant\", \"bee\", \"art\", \"cod\". A predicate reports a line as a HIT when it begins with the letter 'a'. There are exactly two hits. The emit capability has a call budget of 2; a third emit faults BudgetExhausted. Emit the lines that hit, in input order, one per line. All host capabilities are granted.",
+      "granted": ["readline", "emit", "readlines", "linehit", "readstate", "donep", "step", "readjson", "getname", "readinput", "fetch", "parse", "readtext", "tokenize", "emitint", "transform", "tryop", "okp", "nextline", "endp", "concat", "select"],
+      "emit_budget": 2,
+      "expected_output": "ant\nart\n"
+    }
+  ]
+}
