@@ -1084,6 +1084,1611 @@ pub proof fn p4_audit_all_glyphs() {
     assert(prims.len() == 23);
 }
 
+// ============================================================
+// 15. Executable printer (exec-mode refinement of spec_print).
+//
+// Exec datatypes mirror the ghost AST but use Vec/i64 (executable) instead of
+// Seq/int (ghost). Their `view()` maps back to the ghost types, and
+// `exec_print` is PROVEN to produce exactly `spec_print` of the viewed program.
+// ============================================================
+
+// Executable mirror of GPrim (23 variants, identical order).
+pub enum EPrim {
+    Dup, Drop, Swap, Rot, Over, Apply, Cat, Cons, Dip,
+    Add, Sub, Mul, Div, Mod, Eq, Lt, If,
+    PrimRec, Times, LinRec, Uncons, Fold, Xor,
+}
+
+impl View for EPrim {
+    type V = GPrim;
+    open spec fn view(&self) -> GPrim {
+        match self {
+            EPrim::Dup => GPrim::Dup, EPrim::Drop => GPrim::Drop, EPrim::Swap => GPrim::Swap,
+            EPrim::Rot => GPrim::Rot, EPrim::Over => GPrim::Over, EPrim::Apply => GPrim::Apply,
+            EPrim::Cat => GPrim::Cat, EPrim::Cons => GPrim::Cons, EPrim::Dip => GPrim::Dip,
+            EPrim::Add => GPrim::Add, EPrim::Sub => GPrim::Sub, EPrim::Mul => GPrim::Mul,
+            EPrim::Div => GPrim::Div, EPrim::Mod => GPrim::Mod, EPrim::Eq => GPrim::Eq,
+            EPrim::Lt => GPrim::Lt, EPrim::If => GPrim::If, EPrim::PrimRec => GPrim::PrimRec,
+            EPrim::Times => GPrim::Times, EPrim::LinRec => GPrim::LinRec, EPrim::Uncons => GPrim::Uncons,
+            EPrim::Fold => GPrim::Fold, EPrim::Xor => GPrim::Xor,
+        }
+    }
+}
+
+// Executable mirror of GWord.
+pub enum EWord {
+    EPushInt(i64),
+    EPushQuote(Vec<EWord>),
+    EPrim(EPrim),
+    ECall(Vec<char>),
+}
+
+// View of one exec word to its ghost. Mirrors the toks_word/toks_words
+// lexicographic decreases pattern (word measure `(w, 0)`, seq measure
+// `(s, s.len())`) so the mutual recursion through PushQuote terminates.
+pub open spec fn eword_view(w: EWord) -> GWord
+    decreases w, 0nat,
+{
+    match w {
+        EWord::EPushInt(i) => GWord::PushInt(i as int),
+        EWord::EPrim(p) => GWord::Prim(p.view()),
+        EWord::ECall(v) => GWord::Call(v@),
+        EWord::EPushQuote(ws) => GWord::PushQuote(ewords_view(ws@)),
+    }
+}
+
+pub open spec fn ewords_view(s: Seq<EWord>) -> Seq<GWord>
+    decreases s, s.len(),
+{
+    if s.len() == 0 {
+        Seq::<GWord>::empty()
+    } else {
+        seq![eword_view(s[0])] + ewords_view(s.subrange(1, s.len() as int))
+    }
+}
+
+// Singleton unfolds (spell out the base case for the recursive-fn fuel).
+pub proof fn lemma_ewords_view_singleton(x: EWord)
+    ensures ewords_view(seq![x]) == seq![eword_view(x)],
+{
+    let s = seq![x];
+    assert(s.len() == 1 && s[0] == x);
+    assert(s.subrange(1, s.len() as int) =~= Seq::<EWord>::empty());
+    assert(ewords_view(s.subrange(1, s.len() as int)) == Seq::<GWord>::empty());
+    assert(ewords_view(s) =~= seq![eword_view(x)]);
+}
+
+pub proof fn lemma_toks_words_singleton(w: GWord)
+    ensures toks_words(seq![w]) == toks_word(w),
+{
+    let s = seq![w];
+    assert(s.len() == 1 && s[0] == w);
+    assert(s.subrange(1, s.len() as int) =~= Seq::<GWord>::empty());
+    assert(toks_words(s.subrange(1, s.len() as int)) == Seq::<Token>::empty());
+    assert(toks_words(s) =~= toks_word(w));
+}
+
+// Class of the last-emitted token in a stream (None if empty). Threaded by the
+// exec printer as its `last: Option<Cls>` boundary bookkeeping.
+pub open spec fn last_cls(prev: Option<Cls>, ts: Seq<Token>) -> Option<Cls> {
+    if ts.len() == 0 { prev } else { Some(tok_class(ts[ts.len() as int - 1])) }
+}
+
+// toks_words distributes over sequence concatenation.
+pub proof fn lemma_toks_words_append(a: Seq<GWord>, b: Seq<GWord>)
+    ensures toks_words(a + b) == toks_words(a) + toks_words(b),
+    decreases a.len(),
+{
+    if a.len() == 0 {
+        assert(a + b =~= b);
+        assert(toks_words(a) =~= Seq::<Token>::empty());
+    } else {
+        let arest = a.subrange(1, a.len() as int);
+        assert((a + b)[0] == a[0]);
+        assert((a + b).subrange(1, (a + b).len() as int) =~= arest + b);
+        lemma_toks_words_append(arest, b);
+        // toks_words(a+b) = toks_word(a[0]) + toks_words(arest + b)
+        //                 = toks_word(a[0]) + toks_words(arest) + toks_words(b)
+        assert(toks_words(a + b) =~= toks_words(a) + toks_words(b));
+    }
+}
+
+// last_cls composes over concatenation.
+pub proof fn lemma_last_cls_append(prev: Option<Cls>, a: Seq<Token>, b: Seq<Token>)
+    ensures last_cls(prev, a + b) == last_cls(last_cls(prev, a), b),
+{
+    if b.len() == 0 {
+        assert(a + b =~= a);
+    } else {
+        assert((a + b)[(a + b).len() - 1] == b[b.len() - 1]);
+    }
+}
+
+// The central "loop = fold" identity: rendering a concatenation is the render of
+// the first part, followed by the render of the second part started from the
+// boundary class left behind by the first.
+pub proof fn lemma_render_append(prev: Option<Cls>, a: Seq<Token>, b: Seq<Token>)
+    ensures render_h(prev, a + b) == render_h(prev, a) + render_h(last_cls(prev, a), b),
+    decreases a.len(),
+{
+    if a.len() == 0 {
+        assert(a + b =~= b);
+        assert(render_h(prev, a) =~= Seq::<char>::empty());
+        assert(last_cls(prev, a) == prev);
+        assert(render_h(prev, a) + render_h(prev, b) =~= render_h(prev, b));
+    } else {
+        let t = a[0];
+        let arest = a.subrange(1, a.len() as int);
+        assert((a + b)[0] == t);
+        assert((a + b).subrange(1, (a + b).len() as int) =~= arest + b);
+        let sep = if needs_sep_opt(prev, tok_first(t)) { seq![' '] } else { Seq::<char>::empty() };
+        lemma_render_append(Some(tok_class(t)), arest, b);
+        assert(last_cls(prev, a) == last_cls(Some(tok_class(t)), arest)) by {
+            if arest.len() == 0 {
+                assert(a[a.len() - 1] == t);
+            } else {
+                assert(a[a.len() - 1] == arest[arest.len() - 1]);
+            }
+        }
+        // render_h(prev, a+b) = sep + piece(t) + render_h(Some class, arest + b)
+        //   = sep + piece(t) + [render_h(Some class, arest) + render_h(last_cls(prev,a), b)]
+        //   = [sep + piece(t) + render_h(Some class, arest)] + render_h(last_cls(prev,a), b)
+        //   = render_h(prev, a) + render_h(last_cls(prev, a), b)
+        assert(render_h(prev, a + b) =~= render_h(prev, a) + render_h(last_cls(prev, a), b));
+    }
+}
+
+// Rendering a single token: an optional leading space plus the token's piece.
+pub proof fn lemma_render_single(prev: Option<Cls>, t: Token)
+    requires valid_tok(t),
+    ensures render_h(prev, seq![t]) ==
+        (if needs_sep_opt(prev, tok_first(t)) { seq![' '] } else { Seq::<char>::empty() }) + tok_piece(t),
+{
+    let ts = seq![t];
+    lemma_piece_nonempty(t);
+    assert(ts.len() == 1);
+    assert(ts[0] == t);
+    assert(ts.subrange(1, ts.len() as int) =~= Seq::<Token>::empty());
+    assert(render_h(Some(tok_class(t)), Seq::<Token>::empty()) =~= Seq::<char>::empty());
+    assert(render_h(prev, ts) =~=
+        (if needs_sep_opt(prev, tok_first(t)) { seq![' '] } else { Seq::<char>::empty() }) + tok_piece(t));
+}
+
+// ewords_view distributes over concatenation; and its length/indexing agree
+// elementwise with eword_view.
+pub proof fn lemma_ewords_view_append(a: Seq<EWord>, b: Seq<EWord>)
+    ensures ewords_view(a + b) == ewords_view(a) + ewords_view(b),
+    decreases a.len(),
+{
+    if a.len() == 0 {
+        assert(a + b =~= b);
+        assert(ewords_view(a) =~= Seq::<GWord>::empty());
+    } else {
+        let arest = a.subrange(1, a.len() as int);
+        assert((a + b)[0] == a[0]);
+        assert((a + b).subrange(1, (a + b).len() as int) =~= arest + b);
+        lemma_ewords_view_append(arest, b);
+        assert(ewords_view(a + b) =~= ewords_view(a) + ewords_view(b));
+    }
+}
+
+pub proof fn lemma_ewords_view_len_index(s: Seq<EWord>)
+    ensures
+        ewords_view(s).len() == s.len(),
+        forall|i: int| 0 <= i < s.len() ==> ewords_view(s)[i] == eword_view(#[trigger] s[i]),
+    decreases s.len(),
+{
+    if s.len() == 0 {
+    } else {
+        let srest = s.subrange(1, s.len() as int);
+        lemma_ewords_view_len_index(srest);
+        assert forall|i: int| 0 <= i < s.len() implies
+            ewords_view(s)[i] == eword_view(#[trigger] s[i]) by {
+            if i == 0 {
+                assert(ewords_view(s)[0] == eword_view(s[0]));
+            } else {
+                assert(ewords_view(s)[i] == ewords_view(srest)[i - 1]);
+                assert(srest[i - 1] == s[i]);
+            }
+        }
+    }
+}
+
+// wf_words gives wf_word of every element.
+pub proof fn lemma_wf_words_index(s: Seq<GWord>, i: int)
+    requires wf_words(s), 0 <= i < s.len(),
+    ensures wf_word(s[i]),
+    decreases s.len(),
+{
+    if i == 0 {
+    } else {
+        lemma_wf_words_index(s.subrange(1, s.len() as int), i - 1);
+        assert(s.subrange(1, s.len() as int)[i - 1] == s[i]);
+    }
+}
+
+// --- exec character predicates (mirror the spec predicates) ---
+
+fn exec_is_digit(c: char) -> (r: bool)
+    ensures r == is_digit(c),
+{
+    '0' <= c && c <= '9'
+}
+
+fn exec_is_lower(c: char) -> (r: bool)
+    ensures r == is_lower(c),
+{
+    'a' <= c && c <= 'z'
+}
+
+// exec mirror of needs_sep.
+fn exec_needs_sep(left: Cls, b: char) -> (r: bool)
+    ensures r == needs_sep(left, b),
+{
+    if exec_is_digit(b) {
+        match left { Cls::CInt => true, Cls::CName => true, Cls::CPunct => false }
+    } else if exec_is_lower(b) {
+        match left { Cls::CName => true, _ => false }
+    } else {
+        false
+    }
+}
+
+// exec glyph lookup (mirror of spec_glyph).
+fn eprim_glyph(p: &EPrim) -> (r: char)
+    ensures r == spec_glyph(p.view()),
+{
+    match p {
+        EPrim::Dup => ':', EPrim::Drop => '_', EPrim::Swap => '~', EPrim::Rot => '@',
+        EPrim::Over => '^', EPrim::Apply => '!', EPrim::Cat => ',', EPrim::Cons => ';',
+        EPrim::Dip => '\'', EPrim::Add => '+', EPrim::Sub => '-', EPrim::Mul => '*',
+        EPrim::Div => '/', EPrim::Mod => '%', EPrim::Eq => '=', EPrim::Lt => '<',
+        EPrim::If => '?', EPrim::PrimRec => '&', EPrim::Times => '.', EPrim::LinRec => '|',
+        EPrim::Uncons => '>', EPrim::Fold => '(', EPrim::Xor => '$',
+    }
+}
+
+// --- exec decimal digits (mirror of the spec `digits`) ---
+
+fn exec_digit_char(k: u64) -> (r: char)
+    requires k < 10,
+    ensures r == digit_char(k as nat),
+{
+    if k == 0 { '0' } else if k == 1 { '1' } else if k == 2 { '2' }
+    else if k == 3 { '3' } else if k == 4 { '4' } else if k == 5 { '5' }
+    else if k == 6 { '6' } else if k == 7 { '7' } else if k == 8 { '8' }
+    else { '9' }
+}
+
+// Emit the decimal representation of `n`, most-significant digit first.
+fn exec_digits(n: u64) -> (r: Vec<char>)
+    ensures r@ == digits(n as nat),
+    decreases n,
+{
+    if n < 10 {
+        let mut v: Vec<char> = Vec::new();
+        v.push(exec_digit_char(n));
+        proof { assert(v@ =~= digits(n as nat)); }
+        v
+    } else {
+        let mut v = exec_digits(n / 10);
+        v.push(exec_digit_char(n % 10));
+        proof {
+            assert((n as nat) / 10 == (n / 10) as nat);
+            assert((n as nat) % 10 == (n % 10) as nat);
+            assert(v@ =~= digits(n as nat));
+        }
+        v
+    }
+}
+
+// Append a printed token `piece` (of ghost token `t`, class `class`) to `out`,
+// inserting one separating space first iff the boundary rule demands it. Grows
+// `out` by exactly `render_h(last, seq![t])` and returns the new boundary class.
+fn emit_token(out: &mut Vec<char>, last: Option<Cls>, piece: &Vec<char>, class: Cls, t: Ghost<Token>) -> (r: Option<Cls>)
+    requires
+        valid_tok(t@),
+        piece@ == tok_piece(t@),
+        class == tok_class(t@),
+    ensures
+        final(out)@ == old(out)@ + render_h(last, seq![t@]),
+        r == last_cls(last, seq![t@]),
+        r == Some(tok_class(t@)),
+{
+    let ghost old0 = out@;
+    proof { lemma_piece_nonempty(t@); }
+    // tok_first(t@) == piece@[0] == piece[0]
+    let need: bool = match last {
+        None => false,
+        Some(l) => exec_needs_sep(l, piece[0]),
+    };
+    assert(need == needs_sep_opt(last, tok_first(t@)));
+    if need {
+        out.push(' ');
+    }
+    let ghost after_sep = out@;
+    assert(after_sep =~= old0 + (if need { seq![' '] } else { Seq::<char>::empty() }));
+    let mut j: usize = 0;
+    while j < piece.len()
+        invariant
+            0 <= j <= piece.len(),
+            out@ == after_sep + piece@.subrange(0, j as int),
+        decreases piece.len() - j,
+    {
+        out.push(piece[j]);
+        proof {
+            assert(piece@.subrange(0, (j + 1) as int) =~= piece@.subrange(0, j as int).push(piece@[j as int]));
+        }
+        j = j + 1;
+    }
+    proof {
+        assert(piece@.subrange(0, piece@.len() as int) =~= piece@);
+        lemma_render_single(last, t@);
+        assert(out@ =~= old0 + render_h(last, seq![t@]));
+        // last_cls(last, seq![t@]) : the singleton's last element is t@.
+        assert(seq![t@][seq![t@].len() - 1] == t@);
+    }
+    Some(class)
+}
+
+// Emit one word (mirrors production `emit_word`), threading `last` so nested
+// quotations share the same boundary bookkeeping. Grows `out` by exactly
+// `render_h(last, toks_word(eword_view(*w)))`.
+fn exec_emit_word(out: &mut Vec<char>, last: Option<Cls>, w: &EWord) -> (r: Option<Cls>)
+    requires wf_word(eword_view(*w)),
+    ensures
+        final(out)@ == old(out)@ + render_h(last, toks_word(eword_view(*w))),
+        r == last_cls(last, toks_word(eword_view(*w))),
+    decreases *w, 0nat,
+{
+    match w {
+        EWord::EPushInt(i) => {
+            assert(*i as int >= 0);
+            assert(*i >= 0);
+            let piece = exec_digits(*i as u64);
+            proof {
+                assert(*i as u64 == *i as int);
+                assert((*i as u64) as nat == (*i as int) as nat);
+                assert(piece@ == tok_piece(Token::TInt(*i as int)));
+            }
+            let r = emit_token(out, last, &piece, Cls::CInt, Ghost(Token::TInt(*i as int)));
+            proof { assert(toks_word(eword_view(*w)) =~= seq![Token::TInt(*i as int)]); }
+            r
+        }
+        EWord::EPrim(p) => {
+            let g = eprim_glyph(p);
+            let mut piece: Vec<char> = Vec::new();
+            piece.push(g);
+            proof { assert(piece@ =~= seq![spec_glyph(p.view())]); }
+            let r = emit_token(out, last, &piece, Cls::CPunct, Ghost(Token::TGlyph(p.view())));
+            proof { assert(toks_word(eword_view(*w)) =~= seq![Token::TGlyph(p.view())]); }
+            r
+        }
+        EWord::ECall(v) => {
+            let r = emit_token(out, last, v, Cls::CName, Ghost(Token::TName(v@)));
+            proof { assert(toks_word(eword_view(*w)) =~= seq![Token::TName(v@)]); }
+            r
+        }
+        EWord::EPushQuote(ws) => {
+            let ghost start = out@;
+            let ghost q = ewords_view(ws@);
+            let mut ob: Vec<char> = Vec::new();
+            ob.push('[');
+            proof { assert(ob@ =~= seq!['[']); }
+            let l1 = emit_token(out, last, &ob, Cls::CPunct, Ghost(Token::TOpen));
+            let l2 = exec_emit_words(out, l1, ws);
+            let mut cb: Vec<char> = Vec::new();
+            cb.push(']');
+            proof { assert(cb@ =~= seq![']']); }
+            let l3 = emit_token(out, l2, &cb, Cls::CPunct, Ghost(Token::TClose));
+            proof {
+                let a = seq![Token::TOpen];
+                let b = toks_words(q);
+                let c = seq![Token::TClose];
+                // toks_word(PushQuote(q)) == a + b + c
+                assert(toks_word(eword_view(*w)) =~= (a + b) + c);
+                // l1 == last_cls(last, a) == Some(CPunct); l2 == last_cls(l1, b).
+                lemma_render_append(l1, b, c);
+                lemma_render_append(last, a, b + c);
+                assert(last_cls(last, a) == l1);
+                assert(last_cls(l1, b) == l2);
+                // out@ == start + Rh(last,a) + Rh(l1,b) + Rh(l2,c)
+                //       == start + Rh(last, a + (b + c)) == start + Rh(last, (a+b)+c)
+                assert(a + (b + c) =~= (a + b) + c);
+                assert(out@ =~= start + render_h(last, toks_word(eword_view(*w))));
+                // l3 == last_cls(last, toks_word(PushQuote(q)))
+                lemma_last_cls_append(last, a + b, c);
+                lemma_last_cls_append(l1, b, c);
+                assert(last_cls(last, toks_word(eword_view(*w))) == l3);
+            }
+            l3
+        }
+    }
+}
+
+// Emit all words of `ws`, threading `last`. The loop invariant ties the emitted
+// prefix to `render_h` over `toks_words` of the already-processed words.
+fn exec_emit_words(out: &mut Vec<char>, last: Option<Cls>, ws: &Vec<EWord>) -> (r: Option<Cls>)
+    requires wf_words(ewords_view(ws@)),
+    ensures
+        final(out)@ == old(out)@ + render_h(last, toks_words(ewords_view(ws@))),
+        r == last_cls(last, toks_words(ewords_view(ws@))),
+    decreases ws@, ws@.len(),
+{
+    let ghost start = out@;
+    let ghost gws = ws@;
+    let mut cur: Option<Cls> = last;
+    let mut i: usize = 0;
+    while i < ws.len()
+        invariant
+            0 <= i <= ws.len(),
+            ws@ == gws,
+            wf_words(ewords_view(ws@)),
+            out@ == start + render_h(last, toks_words(ewords_view(ws@.subrange(0, i as int)))),
+            cur == last_cls(last, toks_words(ewords_view(ws@.subrange(0, i as int)))),
+        decreases ws.len() - i,
+    {
+        proof {
+            lemma_ewords_view_len_index(ws@);
+            lemma_wf_words_index(ewords_view(ws@), i as int);
+        }
+        let ci = exec_emit_word(out, cur, &ws[i]);
+        proof {
+            let x = ws@[i as int];
+            let pre = ws@.subrange(0, i as int);
+            let nx = ws@.subrange(0, (i + 1) as int);
+            assert(nx =~= pre + seq![x]);
+            lemma_ewords_view_singleton(x);
+            lemma_ewords_view_append(pre, seq![x]);
+            assert(ewords_view(nx) =~= ewords_view(pre) + seq![eword_view(x)]);
+            let st = seq![eword_view(x)];
+            lemma_toks_words_singleton(eword_view(x));
+            lemma_toks_words_append(ewords_view(pre), st);
+            let t = toks_words(ewords_view(pre));
+            let wtoks = toks_word(eword_view(x));
+            assert(toks_words(ewords_view(nx)) =~= t + wtoks);
+            lemma_render_append(last, t, wtoks);
+            lemma_last_cls_append(last, t, wtoks);
+        }
+        cur = ci;
+        i = i + 1;
+    }
+    proof { assert(ws@.subrange(0, ws.len() as int) =~= ws@); }
+    cur
+}
+
+// The executable printer, PROVEN to refine spec_print over the well-formed
+// domain: `r@ == spec_print(ewords_view(p@))`.
+pub fn exec_print(p: &Vec<EWord>) -> (r: Vec<char>)
+    requires wf_words(ewords_view(p@)),
+    ensures r@ == spec_print(ewords_view(p@)),
+{
+    let mut out: Vec<char> = Vec::new();
+    let last: Option<Cls> = None;
+    let _ = exec_emit_words(&mut out, last, p);
+    proof { assert(out@ =~= render_h(None, toks_words(ewords_view(p@)))); }
+    out
+}
+
+// Non-vacuity: the exec printer's well-formed domain is inhabited (its
+// `requires` is satisfiable), so `exec_print`'s refinement is not vacuous.
+pub proof fn exec_print_domain_nonvacuous()
+    ensures wf_words(ewords_view(seq![EWord::EPushInt(0), EWord::EPrim(EPrim::Dup)])),
+{
+    let s = seq![EWord::EPushInt(0), EWord::EPrim(EPrim::Dup)];
+    lemma_ewords_view_len_index(s);
+    let g = ewords_view(s);
+    assert(s[0] == EWord::EPushInt(0) && s[1] == EWord::EPrim(EPrim::Dup));
+    assert(g.len() == 2);
+    assert(g[0] == eword_view(s[0]) && g[0] == GWord::PushInt(0));
+    assert(g[1] == eword_view(s[1]) && g[1] == GWord::Prim(GPrim::Dup));
+    assert(wf_word(g[0]) && wf_word(g[1]));
+    let tl = g.subrange(1, g.len() as int);
+    assert(tl.len() == 1 && tl[0] == g[1]);
+    assert(tl.subrange(1, tl.len() as int) =~= Seq::<GWord>::empty());
+    assert(wf_words(tl.subrange(1, tl.len() as int)));
+    assert(wf_words(tl));
+    assert(wf_words(g));
+}
+
+// ============================================================
+// 16. Executable lexer/parser (exec-mode refinement of spec_parse).
+//
+// The exec parser mirrors the SPEC (`lex` / `group_fold` / `spec_parse`),
+// arm-for-arm and suffix-for-suffix, in the same recursion shape used for the
+// printer. Because production integer literals are i64, the executable side
+// must ERROR on any digit run whose value exceeds i64::MAX, while the ghost
+// `spec_parse` returns Ok with an unbounded int. So unconditional refinement
+// is FALSE. We therefore state refinement CONDITIONALLY on `all_ints_fit`
+// (every maximal digit run fits i64); on that domain the exec parser reproduces
+// spec_parse exactly, and off it, it diverges only by an overflow rejection.
+// The round-trip corollary (section 22) then dodges overflow entirely, because
+// `exec_print` of a `Vec<EWord>` (whose ints are i64 by construction) always
+// yields in-range digit runs.
+// ============================================================
+
+// Executable mirror of `Token`. TInt carries i64 (bounded) vs ghost `int`.
+pub enum ExecToken {
+    ETInt(i64),
+    ETName(Vec<char>),
+    ETGlyph(EPrim),
+    ETOpen,
+    ETClose,
+}
+
+impl View for ExecToken {
+    type V = Token;
+    open spec fn view(&self) -> Token {
+        match self {
+            ExecToken::ETInt(n) => Token::TInt(*n as int),
+            ExecToken::ETName(v) => Token::TName(v@),
+            ExecToken::ETGlyph(p) => Token::TGlyph(p@),
+            ExecToken::ETOpen => Token::TOpen,
+            ExecToken::ETClose => Token::TClose,
+        }
+    }
+}
+
+// Elementwise view of a token sequence. ExecToken does not nest, so a plain
+// length decreases suffices (unlike ewords_view).
+pub open spec fn etoks_view(s: Seq<ExecToken>) -> Seq<Token>
+    decreases s.len(),
+{
+    if s.len() == 0 {
+        Seq::<Token>::empty()
+    } else {
+        seq![s[0]@] + etoks_view(s.subrange(1, s.len() as int))
+    }
+}
+
+// Cons distributes over etoks_view (the lex_cons shape).
+pub proof fn lemma_etoks_view_cons(x: ExecToken, rest: Seq<ExecToken>)
+    ensures etoks_view(seq![x] + rest) == seq![x@] + etoks_view(rest),
+{
+    let s = seq![x] + rest;
+    assert(s.len() == rest.len() + 1);
+    assert(s[0] == x);
+    assert(s.subrange(1, s.len() as int) =~= rest);
+}
+
+// The i64 upper bound, as a ghost int.
+pub open spec fn imax() -> int { 9223372036854775807 }
+
+// `all_ints_fit(cs)`: mirrors `lex`'s control flow exactly, additionally
+// requiring every maximal digit run's value to be <= i64::MAX. This is the
+// precise in-range domain on which the exec lexer refines `lex`.
+pub open spec fn all_ints_fit(cs: Seq<char>) -> bool
+    decreases cs.len(),
+    via all_ints_fit_termination
+{
+    if cs.len() == 0 {
+        true
+    } else {
+        let c = cs[0];
+        if is_ws(c) {
+            all_ints_fit(cs.subrange(1, cs.len() as int))
+        } else if is_digit(c) {
+            let k = leading_digits_len(cs);
+            (nat_of_digits(cs.subrange(0, k as int)) as int <= imax())
+                && all_ints_fit(cs.subrange(k as int, cs.len() as int))
+        } else if is_lower(c) {
+            let k = leading_name_len(cs);
+            all_ints_fit(cs.subrange(k as int, cs.len() as int))
+        } else if c == '[' {
+            all_ints_fit(cs.subrange(1, cs.len() as int))
+        } else if c == ']' {
+            all_ints_fit(cs.subrange(1, cs.len() as int))
+        } else {
+            match glyph_to_gprim(c) {
+                Some(_) => all_ints_fit(cs.subrange(1, cs.len() as int)),
+                None => true,
+            }
+        }
+    }
+}
+
+#[verifier::decreases_by]
+proof fn all_ints_fit_termination(cs: Seq<char>) {
+    if cs.len() == 0 {
+    } else {
+        let c = cs[0];
+        if is_ws(c) {
+        } else if is_digit(c) {
+            ldl_bound(cs); ldl_pos(cs);
+        } else if is_lower(c) {
+            lnl_bound(cs); lnl_pos(cs);
+        } else {
+        }
+    }
+}
+
+// ============================================================
+// 17. Exec lexer helpers (character classes, digit value, munch scanners).
+// ============================================================
+
+fn exec_is_ws(c: char) -> (r: bool)
+    ensures r == is_ws(c),
+{
+    c == ' ' || c == '\t' || c == '\n' || c == '\r'
+}
+
+fn exec_is_namechar(c: char) -> (r: bool)
+    ensures r == is_namechar(c),
+{
+    exec_is_lower(c) || exec_is_digit(c)
+}
+
+// exec digit value. The if-chain is identical to `digit_val`, so equality holds
+// for every char (no exhaustion argument needed); all branches return 0..=9.
+fn exec_digit_val(c: char) -> (r: u64)
+    ensures r as nat == digit_val(c), r < 10,
+{
+    if c == '0' { 0 } else if c == '1' { 1 } else if c == '2' { 2 }
+    else if c == '3' { 3 } else if c == '4' { 4 } else if c == '5' { 5 }
+    else if c == '6' { 6 } else if c == '7' { 7 } else if c == '8' { 8 }
+    else { 9 }
+}
+
+// exec glyph lookup (mirror of glyph_to_gprim). Same if-chain, so the view
+// relation holds branch-by-branch.
+fn exec_glyph_to_prim(c: char) -> (r: Option<EPrim>)
+    ensures
+        match r {
+            Some(p) => glyph_to_gprim(c) == Some(p@),
+            None => glyph_to_gprim(c) == None::<GPrim>,
+        },
+{
+    if c == ':' { Some(EPrim::Dup) }
+    else if c == '_' { Some(EPrim::Drop) }
+    else if c == '~' { Some(EPrim::Swap) }
+    else if c == '@' { Some(EPrim::Rot) }
+    else if c == '^' { Some(EPrim::Over) }
+    else if c == '!' { Some(EPrim::Apply) }
+    else if c == ',' { Some(EPrim::Cat) }
+    else if c == ';' { Some(EPrim::Cons) }
+    else if c == '\'' { Some(EPrim::Dip) }
+    else if c == '+' { Some(EPrim::Add) }
+    else if c == '-' { Some(EPrim::Sub) }
+    else if c == '*' { Some(EPrim::Mul) }
+    else if c == '/' { Some(EPrim::Div) }
+    else if c == '%' { Some(EPrim::Mod) }
+    else if c == '=' { Some(EPrim::Eq) }
+    else if c == '<' { Some(EPrim::Lt) }
+    else if c == '?' { Some(EPrim::If) }
+    else if c == '&' { Some(EPrim::PrimRec) }
+    else if c == '.' { Some(EPrim::Times) }
+    else if c == '|' { Some(EPrim::LinRec) }
+    else if c == '>' { Some(EPrim::Uncons) }
+    else if c == '(' { Some(EPrim::Fold) }
+    else if c == '$' { Some(EPrim::Xor) }
+    else { None }
+}
+
+// forward step of nat_of_digits: appending a digit multiplies by 10 and adds.
+pub proof fn lemma_nat_of_digits_push(s: Seq<char>, x: char)
+    ensures nat_of_digits(s.push(x)) == nat_of_digits(s) * 10 + digit_val(x),
+{
+    let t = s.push(x);
+    assert(t.len() == s.len() + 1);
+    assert(t.subrange(0, t.len() as int - 1) =~= s);
+    assert(t[t.len() as int - 1] == x);
+}
+
+// Copy the sub-slice cs[i..j] into a fresh Vec<char>.
+fn slice_copy(cs: &Vec<char>, i: usize, j: usize) -> (r: Vec<char>)
+    requires i <= j <= cs.len(),
+    ensures r@ == cs@.subrange(i as int, j as int),
+{
+    let mut r: Vec<char> = Vec::new();
+    let mut k = i;
+    while k < j
+        invariant
+            i <= k <= j <= cs.len(),
+            r@ == cs@.subrange(i as int, k as int),
+        decreases j - k,
+    {
+        r.push(cs[k]);
+        proof {
+            assert(cs@.subrange(i as int, (k + 1) as int)
+                =~= cs@.subrange(i as int, k as int).push(cs@[k as int]));
+        }
+        k = k + 1;
+    }
+    proof { assert(r@ =~= cs@.subrange(i as int, j as int)); }
+    r
+}
+
+// Maximal-munch digit scanner. Returns (end index, Option<i64> value): Some(v)
+// if the run's value fits i64, None on overflow. The end index equals
+// i + leading_digits_len of the suffix.
+fn scan_digits(cs: &Vec<char>, i: usize) -> (res: (usize, Option<i64>))
+    requires
+        i < cs.len(),
+        is_digit(cs@[i as int]),
+    ensures ({
+        let suf = cs@.subrange(i as int, cs@.len() as int);
+        let k = leading_digits_len(suf);
+        &&& i < res.0 <= cs@.len()
+        &&& i as int + k == res.0 as int
+        &&& suf.subrange(0, k as int) =~= cs@.subrange(i as int, res.0 as int)
+        &&& match res.1 {
+                Some(v) => v >= 0
+                    && (v as nat) == nat_of_digits(cs@.subrange(i as int, res.0 as int))
+                    && (v as int) <= imax(),
+                None => nat_of_digits(cs@.subrange(i as int, res.0 as int)) as int > imax(),
+            }
+    }),
+{
+    let mut j = i;
+    let mut acc: Option<i64> = Some(0i64);
+    while j < cs.len() && exec_is_digit(cs[j])
+        invariant
+            i <= j <= cs.len(),
+            forall|t: int| i <= t < j ==> is_digit(cs@[t]),
+            match acc {
+                Some(v) => v >= 0
+                    && (v as nat) == nat_of_digits(cs@.subrange(i as int, j as int))
+                    && (v as int) <= imax(),
+                None => nat_of_digits(cs@.subrange(i as int, j as int)) as int > imax(),
+            },
+        decreases cs.len() - j,
+    {
+        let ghost run = cs@.subrange(i as int, j as int);
+        let d: u64 = exec_digit_val(cs[j]);
+        proof {
+            assert(cs@.subrange(i as int, (j + 1) as int)
+                =~= run.push(cs@[j as int]));
+            lemma_nat_of_digits_push(run, cs@[j as int]);
+        }
+        let ghost gval_new = nat_of_digits(cs@.subrange(i as int, (j + 1) as int));
+        acc = match acc {
+            None => {
+                proof {
+                    // gval was > imax; gval_new = gval*10 + d >= gval > imax.
+                    assert(nat_of_digits(run) * 10 >= nat_of_digits(run)) by (nonlinear_arith);
+                }
+                None
+            }
+            Some(v) => {
+                if v > 922337203685477580 || (v == 922337203685477580 && d > 7) {
+                    proof {
+                        // v == nat_of_digits(run); gval_new = v*10 + d > imax.
+                        if v > 922337203685477580 {
+                            assert((v as int) * 10 + (d as int) > 9223372036854775807) by (nonlinear_arith)
+                                requires v as int >= 922337203685477581, d as int >= 0;
+                        } else {
+                            assert((v as int) * 10 + (d as int) > 9223372036854775807) by (nonlinear_arith)
+                                requires v as int == 922337203685477580, d as int >= 8;
+                        }
+                    }
+                    None
+                } else {
+                    // v <= q and (v < q or d <= rr): v*10 + d fits i64.
+                    proof {
+                        if v < 922337203685477580 {
+                            assert((v as int) * 10 + (d as int) <= 9223372036854775807) by (nonlinear_arith)
+                                requires v as int <= 922337203685477579, d as int <= 9;
+                        } else {
+                            assert((v as int) * 10 + (d as int) <= 9223372036854775807) by (nonlinear_arith)
+                                requires v as int == 922337203685477580, d as int <= 7;
+                        }
+                    }
+                    Some(v * 10 + (d as i64))
+                }
+            }
+        };
+        j = j + 1;
+    }
+    proof {
+        let suf = cs@.subrange(i as int, cs@.len() as int);
+        let a = cs@.subrange(i as int, j as int);
+        let b = cs@.subrange(j as int, cs@.len() as int);
+        assert(a + b =~= suf);
+        assert(b.len() == 0 || !is_digit(b[0])) by {
+            if b.len() != 0 {
+                assert(b[0] == cs@[j as int]);
+            }
+        }
+        lemma_ldl_all(a, b);
+        assert(suf.subrange(0, (j - i) as int) =~= a);
+    }
+    (j, acc)
+}
+
+// Maximal-munch name scanner. Returns end index = i + leading_name_len(suffix).
+fn scan_name(cs: &Vec<char>, i: usize) -> (j: usize)
+    requires
+        i < cs.len(),
+        is_lower(cs@[i as int]),
+    ensures ({
+        let suf = cs@.subrange(i as int, cs@.len() as int);
+        let k = leading_name_len(suf);
+        &&& i < j <= cs@.len()
+        &&& i as int + k == j as int
+        &&& suf.subrange(0, k as int) =~= cs@.subrange(i as int, j as int)
+    }),
+{
+    let mut j = i;
+    while j < cs.len() && exec_is_namechar(cs[j])
+        invariant
+            i <= j <= cs.len(),
+            forall|t: int| i <= t < j ==> is_namechar(cs@[t]),
+        decreases cs.len() - j,
+    {
+        j = j + 1;
+    }
+    proof {
+        let suf = cs@.subrange(i as int, cs@.len() as int);
+        let a = cs@.subrange(i as int, j as int);
+        let b = cs@.subrange(j as int, cs@.len() as int);
+        assert(a + b =~= suf);
+        assert(b.len() == 0 || !is_namechar(b[0])) by {
+            if b.len() != 0 {
+                assert(b[0] == cs@[j as int]);
+            }
+        }
+        // is_lower(cs[i]) ==> is_namechar, so j > i.
+        assert(is_namechar(cs@[i as int]));
+        lemma_lnl_all(a, b);
+        assert(suf.subrange(0, (j - i) as int) =~= a);
+    }
+    j
+}
+
+// ============================================================
+// 18. The exec lexer: recursive, mirrors `lex` suffix-for-suffix. On the
+// in-range domain (`all_ints_fit`) it reproduces `lex`; off it, it reports
+// overflow.
+// ============================================================
+
+pub enum ExecLexRes {
+    LOk(Vec<ExecToken>),
+    LBadChar,
+    LOverflow,
+}
+
+fn exec_lex(cs: &Vec<char>, i: usize) -> (r: ExecLexRes)
+    requires i <= cs.len(),
+    ensures ({
+        let suf = cs@.subrange(i as int, cs@.len() as int);
+        match r {
+            ExecLexRes::LOverflow => !all_ints_fit(suf),
+            ExecLexRes::LOk(ts) => all_ints_fit(suf) && lex(suf) == Some(etoks_view(ts@)),
+            ExecLexRes::LBadChar => all_ints_fit(suf) && lex(suf) == None::<Seq<Token>>,
+        }
+    }),
+    decreases cs.len() - i,
+{
+    let ghost suf = cs@.subrange(i as int, cs@.len() as int);
+    if i == cs.len() {
+        proof {
+            assert(suf =~= Seq::<char>::empty());
+            assert(etoks_view(Seq::<ExecToken>::empty()) =~= Seq::<Token>::empty());
+        }
+        return ExecLexRes::LOk(Vec::new());
+    }
+    let c = cs[i];
+    assert(suf.len() > 0 && suf[0] == c);
+    if exec_is_ws(c) {
+        let r = exec_lex(cs, i + 1);
+        proof {
+            assert(cs@.subrange((i + 1) as int, cs@.len() as int) =~= suf.subrange(1, suf.len() as int));
+        }
+        r
+    } else if exec_is_digit(c) {
+        let (j, ov) = scan_digits(cs, i);
+        let ghost k = leading_digits_len(suf);
+        let ghost blk = suf.subrange(0, k as int);
+        let ghost suf2 = cs@.subrange(j as int, cs@.len() as int);
+        proof {
+            assert(suf2 =~= suf.subrange(k as int, suf.len() as int));
+            assert(blk =~= cs@.subrange(i as int, j as int));
+        }
+        match ov {
+            None => {
+                proof {
+                    assert(nat_of_digits(blk) as int > imax());
+                    // all_ints_fit(suf) unfolds to a false first conjunct.
+                }
+                ExecLexRes::LOverflow
+            }
+            Some(v) => {
+                let rest = exec_lex(cs, j);
+                match rest {
+                    ExecLexRes::LOverflow => {
+                        ExecLexRes::LOverflow
+                    }
+                    ExecLexRes::LBadChar => {
+                        proof {
+                            assert(nat_of_digits(blk) as int <= imax());
+                            assert(lex(suf) == lex_cons(Token::TInt(nat_of_digits(blk) as int), lex(suf2)));
+                        }
+                        ExecLexRes::LBadChar
+                    }
+                    ExecLexRes::LOk(ts) => {
+                        let mut out = ts;
+                        out.insert(0, ExecToken::ETInt(v));
+                        proof {
+                            let gts = etoks_view(out@);
+                            assert(out@ =~= seq![ExecToken::ETInt(v)] + ts@);
+                            lemma_etoks_view_cons(ExecToken::ETInt(v), ts@);
+                            assert(ExecToken::ETInt(v)@ == Token::TInt(v as int));
+                            assert(v as int == nat_of_digits(blk) as int);
+                            assert(lex(suf) == lex_cons(Token::TInt(nat_of_digits(blk) as int), lex(suf2)));
+                            assert(lex(suf) == Some(seq![Token::TInt(v as int)] + etoks_view(ts@)));
+                        }
+                        ExecLexRes::LOk(out)
+                    }
+                }
+            }
+        }
+    } else if exec_is_lower(c) {
+        let j = scan_name(cs, i);
+        let ghost k = leading_name_len(suf);
+        let ghost blk = suf.subrange(0, k as int);
+        let ghost suf2 = cs@.subrange(j as int, cs@.len() as int);
+        let name = slice_copy(cs, i, j);
+        proof {
+            assert(suf2 =~= suf.subrange(k as int, suf.len() as int));
+            assert(blk =~= cs@.subrange(i as int, j as int));
+            assert(name@ == blk);
+        }
+        let rest = exec_lex(cs, j);
+        match rest {
+            ExecLexRes::LOverflow => ExecLexRes::LOverflow,
+            ExecLexRes::LBadChar => {
+                proof {
+                    assert(lex(suf) == lex_cons(Token::TName(blk), lex(suf2)));
+                }
+                ExecLexRes::LBadChar
+            }
+            ExecLexRes::LOk(ts) => {
+                let mut out = ts;
+                out.insert(0, ExecToken::ETName(name));
+                proof {
+                    assert(out@ =~= seq![ExecToken::ETName(name)] + ts@);
+                    lemma_etoks_view_cons(ExecToken::ETName(name), ts@);
+                    assert(ExecToken::ETName(name)@ == Token::TName(blk));
+                    assert(lex(suf) == lex_cons(Token::TName(blk), lex(suf2)));
+                }
+                ExecLexRes::LOk(out)
+            }
+        }
+    } else if c == '[' {
+        let ghost suf2 = cs@.subrange((i + 1) as int, cs@.len() as int);
+        proof {
+            assert(suf2 =~= suf.subrange(1, suf.len() as int));
+            assert(!is_ws('[') && !is_digit('[') && !is_lower('['));
+        }
+        let rest = exec_lex(cs, i + 1);
+        match rest {
+            ExecLexRes::LOverflow => ExecLexRes::LOverflow,
+            ExecLexRes::LBadChar => {
+                proof { assert(lex(suf) == lex_cons(Token::TOpen, lex(suf2))); }
+                ExecLexRes::LBadChar
+            }
+            ExecLexRes::LOk(ts) => {
+                let mut out = ts;
+                out.insert(0, ExecToken::ETOpen);
+                proof {
+                    assert(out@ =~= seq![ExecToken::ETOpen] + ts@);
+                    lemma_etoks_view_cons(ExecToken::ETOpen, ts@);
+                    assert(ExecToken::ETOpen@ == Token::TOpen);
+                    assert(lex(suf) == lex_cons(Token::TOpen, lex(suf2)));
+                }
+                ExecLexRes::LOk(out)
+            }
+        }
+    } else if c == ']' {
+        let ghost suf2 = cs@.subrange((i + 1) as int, cs@.len() as int);
+        proof {
+            assert(suf2 =~= suf.subrange(1, suf.len() as int));
+            assert(!is_ws(']') && !is_digit(']') && !is_lower(']') && ']' != '[');
+        }
+        let rest = exec_lex(cs, i + 1);
+        match rest {
+            ExecLexRes::LOverflow => ExecLexRes::LOverflow,
+            ExecLexRes::LBadChar => {
+                proof { assert(lex(suf) == lex_cons(Token::TClose, lex(suf2))); }
+                ExecLexRes::LBadChar
+            }
+            ExecLexRes::LOk(ts) => {
+                let mut out = ts;
+                out.insert(0, ExecToken::ETClose);
+                proof {
+                    assert(out@ =~= seq![ExecToken::ETClose] + ts@);
+                    lemma_etoks_view_cons(ExecToken::ETClose, ts@);
+                    assert(ExecToken::ETClose@ == Token::TClose);
+                    assert(lex(suf) == lex_cons(Token::TClose, lex(suf2)));
+                }
+                ExecLexRes::LOk(out)
+            }
+        }
+    } else {
+        proof {
+            assert(!is_ws(c) && !is_digit(c) && !is_lower(c) && c != '[' && c != ']');
+        }
+        match exec_glyph_to_prim(c) {
+            Some(p) => {
+                let ghost suf2 = cs@.subrange((i + 1) as int, cs@.len() as int);
+                proof {
+                    assert(suf2 =~= suf.subrange(1, suf.len() as int));
+                    assert(glyph_to_gprim(c) == Some(p@));
+                }
+                let rest = exec_lex(cs, i + 1);
+                match rest {
+                    ExecLexRes::LOverflow => ExecLexRes::LOverflow,
+                    ExecLexRes::LBadChar => {
+                        proof { assert(lex(suf) == lex_cons(Token::TGlyph(p@), lex(suf2))); }
+                        ExecLexRes::LBadChar
+                    }
+                    ExecLexRes::LOk(ts) => {
+                        let mut out = ts;
+                        out.insert(0, ExecToken::ETGlyph(p));
+                        proof {
+                            assert(out@ =~= seq![ExecToken::ETGlyph(p)] + ts@);
+                            lemma_etoks_view_cons(ExecToken::ETGlyph(p), ts@);
+                            assert(ExecToken::ETGlyph(p)@ == Token::TGlyph(p@));
+                            assert(lex(suf) == lex_cons(Token::TGlyph(p@), lex(suf2)));
+                        }
+                        ExecLexRes::LOk(out)
+                    }
+                }
+            }
+            None => {
+                proof {
+                    assert(glyph_to_gprim(c) == None::<GPrim>);
+                    assert(lex(suf) == None::<Seq<Token>>);
+                }
+                ExecLexRes::LBadChar
+            }
+        }
+    }
+}
+
+// ============================================================
+// 19. Exec grouper machinery: the level stack and its view.
+// ============================================================
+
+// View of a level stack (Vec<Vec<EWord>>) to the ghost Seq<Seq<GWord>>.
+pub open spec fn stack_view(levels: Seq<Vec<EWord>>) -> Seq<Seq<GWord>>
+    decreases levels.len(),
+{
+    if levels.len() == 0 {
+        Seq::<Seq<GWord>>::empty()
+    } else {
+        seq![ewords_view(levels[0]@)] + stack_view(levels.subrange(1, levels.len() as int))
+    }
+}
+
+pub proof fn lemma_stack_view_len_index(s: Seq<Vec<EWord>>)
+    ensures
+        stack_view(s).len() == s.len(),
+        forall|i: int| 0 <= i < s.len() ==> stack_view(s)[i] == ewords_view(#[trigger] s[i]@),
+    decreases s.len(),
+{
+    if s.len() == 0 {
+    } else {
+        let srest = s.subrange(1, s.len() as int);
+        lemma_stack_view_len_index(srest);
+        assert forall|i: int| 0 <= i < s.len() implies
+            stack_view(s)[i] == ewords_view(#[trigger] s[i]@) by {
+            if i == 0 {
+                assert(stack_view(s)[0] == ewords_view(s[0]@));
+            } else {
+                assert(stack_view(s)[i] == stack_view(srest)[i - 1]);
+                assert(srest[i - 1] == s[i]);
+            }
+        }
+    }
+}
+
+pub proof fn lemma_stack_view_push(s: Seq<Vec<EWord>>, v: Vec<EWord>)
+    ensures stack_view(s.push(v)) == stack_view(s).push(ewords_view(v@)),
+    decreases s.len(),
+{
+    if s.len() == 0 {
+        let sv = s.push(v);
+        assert(sv =~= seq![v]);
+        assert(sv.len() == 1 && sv[0] == v);
+        assert(sv.subrange(1, sv.len() as int) =~= Seq::<Vec<EWord>>::empty());
+        assert(stack_view(sv.subrange(1, sv.len() as int)) == Seq::<Seq<GWord>>::empty());
+        assert(stack_view(sv) =~= seq![ewords_view(v@)]);
+        assert(stack_view(s) =~= Seq::<Seq<GWord>>::empty());
+        assert(stack_view(s).push(ewords_view(v@)) =~= seq![ewords_view(v@)]);
+    } else {
+        let srest = s.subrange(1, s.len() as int);
+        assert((s.push(v))[0] == s[0]);
+        assert((s.push(v)).subrange(1, (s.push(v)).len() as int) =~= srest.push(v));
+        lemma_stack_view_push(srest, v);
+        assert(stack_view(s.push(v)) =~= stack_view(s).push(ewords_view(v@)));
+    }
+}
+
+pub proof fn lemma_stack_view_last_drop(s: Seq<Vec<EWord>>)
+    requires s.len() >= 1,
+    ensures
+        stack_view(s).last() == ewords_view(s.last()@),
+        stack_view(s).drop_last() == stack_view(s.drop_last()),
+{
+    assert(s =~= s.drop_last().push(s.last()));
+    lemma_stack_view_push(s.drop_last(), s.last());
+}
+
+// ewords_view distributes over Seq::push (derived from append + singleton).
+pub proof fn lemma_ewords_view_push(s: Seq<EWord>, x: EWord)
+    ensures ewords_view(s.push(x)) == ewords_view(s).push(eword_view(x)),
+{
+    assert(s.push(x) =~= s + seq![x]);
+    lemma_ewords_view_append(s, seq![x]);
+    lemma_ewords_view_singleton(x);
+    assert(ewords_view(s).push(eword_view(x)) =~= ewords_view(s) + seq![eword_view(x)]);
+}
+
+// Reconstruct an owned EPrim from a reference (EPrim has no Copy derive here).
+fn clone_eprim(p: &EPrim) -> (r: EPrim)
+    ensures r@ == p@,
+{
+    match p {
+        EPrim::Dup => EPrim::Dup, EPrim::Drop => EPrim::Drop, EPrim::Swap => EPrim::Swap,
+        EPrim::Rot => EPrim::Rot, EPrim::Over => EPrim::Over, EPrim::Apply => EPrim::Apply,
+        EPrim::Cat => EPrim::Cat, EPrim::Cons => EPrim::Cons, EPrim::Dip => EPrim::Dip,
+        EPrim::Add => EPrim::Add, EPrim::Sub => EPrim::Sub, EPrim::Mul => EPrim::Mul,
+        EPrim::Div => EPrim::Div, EPrim::Mod => EPrim::Mod, EPrim::Eq => EPrim::Eq,
+        EPrim::Lt => EPrim::Lt, EPrim::If => EPrim::If, EPrim::PrimRec => EPrim::PrimRec,
+        EPrim::Times => EPrim::Times, EPrim::LinRec => EPrim::LinRec, EPrim::Uncons => EPrim::Uncons,
+        EPrim::Fold => EPrim::Fold, EPrim::Xor => EPrim::Xor,
+    }
+}
+
+// Push a word onto the top (last) level, mirroring `push_word` on the view.
+fn push_top(levels: Vec<Vec<EWord>>, w: EWord) -> (r: Vec<Vec<EWord>>)
+    requires levels.len() >= 1,
+    ensures
+        stack_view(r@) == push_word(stack_view(levels@), eword_view(w)),
+        r.len() == levels.len(),
+{
+    let ghost gw = eword_view(w);
+    let mut lv = levels;
+    let ghost bigl = lv@;
+    let mut top = lv.pop().unwrap();
+    top.push(w);
+    lv.push(top);
+    proof {
+        lemma_stack_view_push(bigl.drop_last(), top);
+        lemma_stack_view_last_drop(bigl);
+        lemma_ewords_view_push(bigl.last()@, w);
+        assert(stack_view(lv@) =~= push_word(stack_view(bigl), gw));
+    }
+    lv
+}
+
+// ============================================================
+// 20. The exec grouper: recursive, mirrors `group_fold` token-for-token.
+// ============================================================
+
+fn exec_group(ts: &Vec<ExecToken>, idx: usize, levels: Vec<Vec<EWord>>) -> (r: Option<Vec<Vec<EWord>>>)
+    requires
+        idx <= ts.len(),
+        levels.len() >= 1,
+    ensures ({
+        let sub = etoks_view(ts@.subrange(idx as int, ts@.len() as int));
+        match r {
+            Some(out) => group_fold(sub, stack_view(levels@)) == Some(stack_view(out@)),
+            None => group_fold(sub, stack_view(levels@)) == None::<Seq<Seq<GWord>>>,
+        }
+    }),
+    decreases ts.len() - idx,
+{
+    let ghost sub = etoks_view(ts@.subrange(idx as int, ts@.len() as int));
+    if idx == ts.len() {
+        proof {
+            assert(ts@.subrange(idx as int, ts@.len() as int) =~= Seq::<ExecToken>::empty());
+            assert(sub =~= Seq::<Token>::empty());
+        }
+        return Some(levels);
+    }
+    let ghost sub2 = etoks_view(ts@.subrange((idx + 1) as int, ts@.len() as int));
+    let ghost head = ts@[idx as int]@;
+    let ghost sv = stack_view(levels@);
+    proof {
+        assert(ts@.subrange(idx as int, ts@.len() as int)
+            =~= seq![ts@[idx as int]] + ts@.subrange((idx + 1) as int, ts@.len() as int));
+        lemma_etoks_view_cons(ts@[idx as int], ts@.subrange((idx + 1) as int, ts@.len() as int));
+        // sub == seq![head] + sub2
+        assert(sub[0] == head);
+        assert(sub.subrange(1, sub.len() as int) =~= sub2);
+        lemma_stack_view_len_index(levels@);
+        assert(sv.len() == levels.len());
+    }
+    match &ts[idx] {
+        ExecToken::ETOpen => {
+            let mut lv = levels;
+            let ghost pre = lv@;
+            let empty_level: Vec<EWord> = Vec::new();
+            proof { assert(ewords_view(empty_level@) =~= Seq::<GWord>::empty()); }
+            lv.push(empty_level);
+            proof {
+                lemma_stack_view_push(pre, empty_level);
+                assert(stack_view(lv@) =~= sv.push(Seq::<GWord>::empty()));
+                assert(head == Token::TOpen);
+                assert(group_fold(sub, sv) == group_fold(sub2, sv.push(Seq::<GWord>::empty())));
+            }
+            exec_group(ts, idx + 1, lv)
+        }
+        ExecToken::ETClose => {
+            if levels.len() <= 1 {
+                proof {
+                    assert(head == Token::TClose);
+                    assert(sv.len() <= 1);
+                    assert(group_fold(sub, sv) == None::<Seq<Seq<GWord>>>);
+                }
+                None
+            } else {
+                let mut lv = levels;
+                let ghost bigl = lv@;
+                let inner = lv.pop().unwrap();
+                let lv2 = push_top(lv, EWord::EPushQuote(inner));
+                proof {
+                    lemma_stack_view_last_drop(bigl);
+                    // stack_view(lv@) == sv.drop_last(); inner@ views to sv.last()
+                    assert(eword_view(EWord::EPushQuote(inner)) == GWord::PushQuote(sv.last()));
+                    assert(stack_view(lv2@) == push_word(sv.drop_last(), GWord::PushQuote(sv.last())));
+                    assert(head == Token::TClose);
+                    assert(sv.len() > 1);
+                    assert(group_fold(sub, sv)
+                        == group_fold(sub2, push_word(sv.drop_last(), GWord::PushQuote(sv.last()))));
+                }
+                exec_group(ts, idx + 1, lv2)
+            }
+        }
+        ExecToken::ETInt(n) => {
+            let lv = push_top(levels, EWord::EPushInt(*n));
+            proof {
+                assert(head == Token::TInt(*n as int));
+                assert(eword_view(EWord::EPushInt(*n)) == GWord::PushInt(*n as int));
+                assert(group_fold(sub, sv) == group_fold(sub2, push_word(sv, GWord::PushInt(*n as int))));
+            }
+            exec_group(ts, idx + 1, lv)
+        }
+        ExecToken::ETName(v) => {
+            let name = slice_copy(v, 0, v.len());
+            proof { assert(name@ == v@); }
+            let lv = push_top(levels, EWord::ECall(name));
+            proof {
+                assert(head == Token::TName(v@));
+                assert(eword_view(EWord::ECall(name)) == GWord::Call(v@));
+                assert(group_fold(sub, sv) == group_fold(sub2, push_word(sv, GWord::Call(v@))));
+            }
+            exec_group(ts, idx + 1, lv)
+        }
+        ExecToken::ETGlyph(p) => {
+            let ep = clone_eprim(p);
+            proof { assert(ep@ == p@); }
+            let lv = push_top(levels, EWord::EPrim(ep));
+            proof {
+                assert(head == Token::TGlyph(p@));
+                assert(eword_view(EWord::EPrim(ep)) == GWord::Prim(p@));
+                assert(group_fold(sub, sv) == group_fold(sub2, push_word(sv, GWord::Prim(p@))));
+            }
+            exec_group(ts, idx + 1, lv)
+        }
+    }
+}
+
+// ============================================================
+// 21. The exec parser and its refinement of spec_parse.
+// ============================================================
+
+// Executable parse outcome; views to the ghost ParseOutcome.
+pub enum ExecOutcome {
+    EOk(Vec<EWord>),
+    EErr,
+}
+
+impl View for ExecOutcome {
+    type V = ParseOutcome;
+    open spec fn view(&self) -> ParseOutcome {
+        match self {
+            ExecOutcome::EOk(p) => ParseOutcome::Ok(ewords_view(p@)),
+            ExecOutcome::EErr => ParseOutcome::Err,
+        }
+    }
+}
+
+// The executable parser. On the in-range domain (`all_ints_fit`) it refines
+// `spec_parse` exactly; off it, it rejects (EErr) — the ONLY way the exec parser
+// diverges from the unbounded spec is by rejecting an i64-overflowing literal.
+pub fn exec_parse(cs: &Vec<char>) -> (r: ExecOutcome)
+    ensures
+        all_ints_fit(cs@) ==> r@ == spec_parse(cs@),
+        !all_ints_fit(cs@) ==> r == ExecOutcome::EErr,
+{
+    proof { assert(cs@.subrange(0, cs@.len() as int) =~= cs@); }
+    match exec_lex(cs, 0) {
+        ExecLexRes::LOverflow => ExecOutcome::EErr,
+        ExecLexRes::LBadChar => {
+            // all_ints_fit(cs@) holds; lex(cs@) == None ==> spec_parse == Err.
+            ExecOutcome::EErr
+        }
+        ExecLexRes::LOk(ts) => {
+            // all_ints_fit(cs@); lex(cs@) == Some(etoks_view(ts@)).
+            let mut init: Vec<Vec<EWord>> = Vec::new();
+            let ghost pre = init@;
+            let e: Vec<EWord> = Vec::new();
+            init.push(e);
+            proof {
+                lemma_stack_view_push(pre, e);
+                assert(pre =~= Seq::<Vec<EWord>>::empty());
+                assert(stack_view(pre) =~= Seq::<Seq<GWord>>::empty());
+                assert(ewords_view(e@) =~= Seq::<GWord>::empty());
+                assert(stack_view(init@) =~= seq![Seq::<GWord>::empty()]);
+                assert(ts@.subrange(0, ts@.len() as int) =~= ts@);
+            }
+            match exec_group(&ts, 0, init) {
+                None => {
+                    proof {
+                        assert(group_fold(etoks_view(ts@), seq![Seq::<GWord>::empty()])
+                            == None::<Seq<Seq<GWord>>>);
+                    }
+                    ExecOutcome::EErr
+                }
+                Some(levels) => {
+                    let ghost gl = levels@;
+                    proof {
+                        assert(group_fold(etoks_view(ts@), seq![Seq::<GWord>::empty()])
+                            == Some(stack_view(gl)));
+                        lemma_stack_view_len_index(gl);
+                    }
+                    if levels.len() == 1 {
+                        let mut lv = levels;
+                        let prog = lv.pop().unwrap();
+                        proof {
+                            assert(gl.len() == 1);
+                            assert(gl.last() == gl[0]);
+                            assert(prog@ == gl[0]@);
+                            assert(stack_view(gl)[0] == ewords_view(gl[0]@));
+                            assert(stack_view(gl).len() == 1);
+                        }
+                        ExecOutcome::EOk(prog)
+                    } else {
+                        proof {
+                            assert(stack_view(gl).len() != 1);
+                        }
+                        ExecOutcome::EErr
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ============================================================
+// 22. The EXEC ROUND-TRIP (PRIMARY): exec_parse(exec_print(p)) recovers p.
+//
+// This dodges overflow entirely: p : Vec<EWord> carries i64 ints, so the
+// printer's image only ever has digit runs that fit i64 — the parser never
+// overflows on it. We prove all_ints_fit(exec_print(p)@), then chain the
+// exec printer/parser refinements with the ghost p4_roundtrip.
+// ============================================================
+
+// A token has an i64-representable integer (if it is an int token at all).
+pub open spec fn int_fits(t: Token) -> bool {
+    match t {
+        Token::TInt(n) => 0 <= n <= imax(),
+        _ => true,
+    }
+}
+
+pub open spec fn toks_fit(ts: Seq<Token>) -> bool {
+    forall|i: int| 0 <= i < ts.len() ==> int_fits(#[trigger] ts[i])
+}
+
+pub proof fn lemma_toks_fit_append(a: Seq<Token>, b: Seq<Token>)
+    ensures toks_fit(a + b) == (toks_fit(a) && toks_fit(b)),
+{
+    if toks_fit(a) && toks_fit(b) {
+        assert forall|i: int| 0 <= i < (a + b).len() implies int_fits(#[trigger] (a + b)[i]) by {
+            if i < a.len() {
+                assert((a + b)[i] == a[i]);
+            } else {
+                assert((a + b)[i] == b[i - a.len()]);
+            }
+        }
+    } else if !toks_fit(a) {
+        let i = choose|i: int| 0 <= i < a.len() && !int_fits(#[trigger] a[i]);
+        assert((a + b)[i] == a[i]);
+    } else {
+        let j = choose|j: int| 0 <= j < b.len() && !int_fits(#[trigger] b[j]);
+        assert((a + b)[j + a.len()] == b[j]);
+    }
+}
+
+// The key bridge: any character sequence that lexes to a token stream whose
+// integer tokens all fit i64 is itself in-range (all_ints_fit). Mirrors `lex`'s
+// recursion, matching each digit-run value to its TInt token.
+pub proof fn lemma_lex_all_ints_fit(cs: Seq<char>, ts: Seq<Token>)
+    requires lex(cs) == Some(ts), toks_fit(ts),
+    ensures all_ints_fit(cs),
+    decreases cs.len(),
+{
+    if cs.len() == 0 {
+    } else {
+        let c = cs[0];
+        if is_ws(c) {
+            lemma_lex_all_ints_fit(cs.subrange(1, cs.len() as int), ts);
+        } else if is_digit(c) {
+            ldl_bound(cs); ldl_pos(cs);
+            let k = leading_digits_len(cs);
+            let cs2 = cs.subrange(k as int, cs.len() as int);
+            let val = nat_of_digits(cs.subrange(0, k as int)) as int;
+            let tok = Token::TInt(val);
+            match lex(cs2) {
+                Some(rest) => {
+                    assert(ts =~= seq![tok] + rest);
+                    assert(int_fits(ts[0]) && ts[0] == tok);
+                    assert(val <= imax());
+                    assert(toks_fit(rest)) by {
+                        assert forall|i: int| 0 <= i < rest.len() implies int_fits(#[trigger] rest[i]) by {
+                            assert((seq![tok] + rest)[i + 1] == rest[i]);
+                            assert(int_fits(ts[i + 1]));
+                        }
+                    }
+                    lemma_lex_all_ints_fit(cs2, rest);
+                }
+                None => { assert(false); }
+            }
+        } else if is_lower(c) {
+            lnl_bound(cs); lnl_pos(cs);
+            let k = leading_name_len(cs);
+            let cs2 = cs.subrange(k as int, cs.len() as int);
+            let tok = Token::TName(cs.subrange(0, k as int));
+            match lex(cs2) {
+                Some(rest) => {
+                    assert(ts =~= seq![tok] + rest);
+                    lemma_toks_fit_drop_head(tok, rest, ts);
+                    lemma_lex_all_ints_fit(cs2, rest);
+                }
+                None => { assert(false); }
+            }
+        } else if c == '[' {
+            let cs2 = cs.subrange(1, cs.len() as int);
+            match lex(cs2) {
+                Some(rest) => {
+                    assert(ts =~= seq![Token::TOpen] + rest);
+                    lemma_toks_fit_drop_head(Token::TOpen, rest, ts);
+                    lemma_lex_all_ints_fit(cs2, rest);
+                }
+                None => { assert(false); }
+            }
+        } else if c == ']' {
+            let cs2 = cs.subrange(1, cs.len() as int);
+            match lex(cs2) {
+                Some(rest) => {
+                    assert(ts =~= seq![Token::TClose] + rest);
+                    lemma_toks_fit_drop_head(Token::TClose, rest, ts);
+                    lemma_lex_all_ints_fit(cs2, rest);
+                }
+                None => { assert(false); }
+            }
+        } else {
+            match glyph_to_gprim(c) {
+                Some(p) => {
+                    let cs2 = cs.subrange(1, cs.len() as int);
+                    match lex(cs2) {
+                        Some(rest) => {
+                            assert(ts =~= seq![Token::TGlyph(p)] + rest);
+                            lemma_toks_fit_drop_head(Token::TGlyph(p), rest, ts);
+                            lemma_lex_all_ints_fit(cs2, rest);
+                        }
+                        None => { assert(false); }
+                    }
+                }
+                None => { assert(false); }
+            }
+        }
+    }
+}
+
+// Dropping a non-overflowing (or non-int) head token preserves toks_fit.
+pub proof fn lemma_toks_fit_drop_head(tok: Token, rest: Seq<Token>, ts: Seq<Token>)
+    requires ts == seq![tok] + rest, toks_fit(ts),
+    ensures toks_fit(rest),
+{
+    assert forall|i: int| 0 <= i < rest.len() implies int_fits(#[trigger] rest[i]) by {
+        assert((seq![tok] + rest)[i + 1] == rest[i]);
+        assert(int_fits(ts[i + 1]));
+    }
+}
+
+// The printer's token image of an exec program has only i64-fitting ints:
+// every TInt originates from an EPushInt(i64) whose value is in [0, i64::MAX]
+// on the well-formed domain.
+pub proof fn lemma_toks_fit_word(w: EWord)
+    requires wf_word(eword_view(w)),
+    ensures toks_fit(toks_word(eword_view(w))),
+    decreases w, 0nat,
+{
+    match w {
+        EWord::EPushInt(i) => {
+            assert(toks_word(eword_view(w)) =~= seq![Token::TInt(i as int)]);
+            assert(i <= 9223372036854775807);
+            assert(i as int <= imax());
+            assert(int_fits(Token::TInt(i as int)));
+        }
+        EWord::EPrim(p) => {
+            assert(toks_word(eword_view(w)) =~= seq![Token::TGlyph(p@)]);
+        }
+        EWord::ECall(v) => {
+            assert(toks_word(eword_view(w)) =~= seq![Token::TName(v@)]);
+        }
+        EWord::EPushQuote(ws) => {
+            lemma_toks_fit_words(ws@);
+            let mid = toks_words(ewords_view(ws@));
+            assert(toks_word(eword_view(w)) =~= seq![Token::TOpen] + mid + seq![Token::TClose]);
+            lemma_toks_fit_append(seq![Token::TOpen], mid + seq![Token::TClose]);
+            lemma_toks_fit_append(mid, seq![Token::TClose]);
+            assert(toks_fit(seq![Token::TOpen]));
+            assert(toks_fit(seq![Token::TClose]));
+        }
+    }
+}
+
+pub proof fn lemma_toks_fit_words(s: Seq<EWord>)
+    requires wf_words(ewords_view(s)),
+    ensures toks_fit(toks_words(ewords_view(s))),
+    decreases s, s.len(),
+{
+    if s.len() == 0 {
+        assert(toks_words(ewords_view(s)) =~= Seq::<Token>::empty());
+    } else {
+        let g = ewords_view(s);
+        let srest = s.subrange(1, s.len() as int);
+        lemma_ewords_view_len_index(s);
+        assert(g[0] == eword_view(s[0]));
+        assert(g.subrange(1, g.len() as int) =~= ewords_view(srest));
+        // wf_words(g): head wf_word and tail wf_words.
+        lemma_wf_words_index(g, 0);
+        assert(wf_word(eword_view(s[0])));
+        assert(wf_words(ewords_view(srest)));
+        lemma_toks_fit_word(s[0]);
+        lemma_toks_fit_words(srest);
+        assert(toks_words(g) =~= toks_word(eword_view(s[0])) + toks_words(ewords_view(srest)));
+        lemma_toks_fit_append(toks_word(eword_view(s[0])), toks_words(ewords_view(srest)));
+    }
+}
+
+// PRIMARY THEOREM. Parsing the printout of any well-formed exec program
+// recovers exactly that program (as a view equality to spec Ok). Expressed as
+// an exec fn (it drives the real exec printer + parser) whose postcondition is
+// the machine-checked round-trip statement.
+pub fn exec_roundtrip(p: &Vec<EWord>) -> (r: ExecOutcome)
+    requires wf_words(ewords_view(p@)),
+    ensures r@ == ParseOutcome::Ok(ewords_view(p@)),
+{
+    let printed = exec_print(p);
+    let r = exec_parse(&printed);
+    proof {
+        let g = ewords_view(p@);
+        // 1. exec_print refines spec_print.
+        assert(printed@ == spec_print(g));
+        // 2. printed string lexes back to toks_words(g), whose ints all fit i64.
+        lemma_wf_valid_words(g);
+        lemma_lex_render(None, toks_words(g));
+        assert(lex(spec_print(g)) == Some(toks_words(g)));
+        lemma_toks_fit_words(p@);
+        assert(toks_fit(toks_words(g)));
+        // 3. therefore the printed string is in-range.
+        lemma_lex_all_ints_fit(printed@, toks_words(g));
+        assert(all_ints_fit(printed@));
+        // 4. so exec_parse refines spec_parse here, which round-trips to Ok(g).
+        p4_roundtrip(g);
+        assert(spec_parse(printed@) == ParseOutcome::Ok(g));
+        assert(r@ == spec_parse(printed@));
+    }
+    r
+}
+
 fn main() {}
 
 } // verus!
