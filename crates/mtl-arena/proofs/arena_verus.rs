@@ -1813,6 +1813,9 @@ pub proof fn lemma_model_next_word(vm: ModelVm, pos: ModelVmState)
                 &&& ac.len() > 0
                 &&& alpha_word_val(vm, w) == ac[0]
                 &&& alpha_cont(vm, pos2.cont, pos2.cursor) == ac.subrange(1, ac.len() as int)
+                // M5: the emitted word is a verbatim tape word, hence intern-wf
+                // (a `PushQuote` target / `Call` index references the live tape).
+                &&& word_intern_wf(vm, w)
             },
         },
     decreases pos.cont,
@@ -1837,6 +1840,11 @@ pub proof fn lemma_model_next_word(vm: ModelVm, pos: ModelVmState)
             assert(alpha_cont(vm, pos2.cont, pos2.cursor) == tail);
             assert(ac.subrange(1, ac.len() as int) =~= tail);
             assert(wf_pos(vm, pos2));
+            // word_intern_wf: the emitted word is the verbatim tape word at `idx`,
+            // so its per-word tape well-formedness (a weaker form of intern-wf) holds.
+            assert(wf_tape_word(vm, idx as int));
+            assert(vm.tape[idx as int] == vm.tape[idx as int]);
+            assert(word_intern_wf(vm, vm.tape[idx as int]));
         } else if nd.parent == 0 {
             lemma_alpha_cont_segpop(vm, pos);
             assert(ac == alpha_cont(vm, nd.parent, vm.cnodes[nd.parent as int].off));
@@ -1851,6 +1859,7 @@ pub proof fn lemma_model_next_word(vm: ModelVm, pos: ModelVmState)
             assert(wf_pos(vm, posp));
             lemma_model_next_word(vm, posp);
             assert(model_next_word(vm, pos) == model_next_word(vm, posp));
+            // word_intern_wf carries over: the two calls return the identical Some((w, _)).
         }
     }
 }
@@ -5493,6 +5502,565 @@ pub proof fn thm_arena_refines_spec_u32(vm: ModelVm, pos: ModelVmState)
     // the unconditional refinement + fault parity theorem discharges every arm.
     // !capacity: the wrapper's else-arm returns (Fault(Overflow), vm, pos) by def.
     thm_arena_refines_spec_scaffold(vm, pos);
+}
+
+// ============================================================
+// 7. M5a — the multi-step DRIVER corollary.
+//
+// The one-step theorem (`thm_arena_refines_spec_scaffold`) proves α commutes with
+// a SINGLE `model_arena_step`. This section lifts it to a WHOLE fuel-bounded run:
+// the model driver `model_run` iterates `model_arena_step` until Halt/Fault/Invoke
+// or fuel exhaustion, and — via α — refines the ghost `spec_run` (mtl_core) EXACTLY.
+// This mirrors P2's `run` refining `spec_run` (and the `p2_refinement` multi-step
+// clause), but here the driver is a pure-spec model, so it is stated as a `proof
+// fn` proving `model_run == spec_run ∘ alpha_state`, by induction on fuel with the
+// one-step theorem as the inductive step.
+//
+// The induction needs the standing invariant (`wf`, `wf_svals`, `wf_pos`) PRESERVED
+// across a step; the one-step theorem already ensures `wf`/`wf_pos` of the
+// successor, so this section additionally proves `wf_svals` preservation
+// (`lemma_step_wf_svals`) — every reachable stack node keeps a tape-valid `Quote`
+// under the append-only tape/stack growth of a step.
+// ============================================================
+
+/// A single stack push preserves `wf_svals` when the pushed value is tape-valid
+/// (`Int` always is; `Quote(id)` needs `id.end() <= tape.len()`). The tape is
+/// untouched by a push, so every pre-existing node stays valid too.
+pub proof fn lemma_push_wf_svals(vm: ModelVm, ptr: nat, v: ModelValue)
+    requires
+        wf_svals(vm),
+        (v matches ModelValue::Quote(id) ==> id.start + id.len <= vm.tape.len()),
+    ensures
+        wf_svals(model_push_node(vm, ptr, v).0),
+{
+    let vm2 = model_push_node(vm, ptr, v).0;
+    assert(vm2.tape == vm.tape);
+    assert forall|i: int| 1 <= i < vm2.snodes.len() implies #[trigger] snode_val_wf(vm2, i) by {
+        if i < vm.snodes.len() {
+            assert(vm2.snodes[i] == vm.snodes[i]);
+            assert(snode_val_wf(vm, i));
+        } else {
+            // i == vm.snodes.len(): the freshly pushed node holds `v`.
+            assert(vm2.snodes[i] == (ModelStackNode { value: v, parent: ptr }));
+        }
+    }
+}
+
+/// A push preserves BOTH `wf` and `wf_svals` (given the pushed value tape-valid),
+/// and reports the new index / length / tape-unchanged — the reusable step for a
+/// push-chain (`Swap`/`Rot`/`Uncons`).
+pub proof fn lemma_push_wf_all(vm: ModelVm, ptr: nat, v: ModelValue)
+    requires
+        wf(vm),
+        wf_svals(vm),
+        ptr < vm.snodes.len(),
+        (v matches ModelValue::Quote(id) ==> id.start + id.len <= vm.tape.len()),
+    ensures
+        ({
+            let (vm2, np) = model_push_node(vm, ptr, v);
+            &&& wf(vm2)
+            &&& wf_svals(vm2)
+            &&& np == vm.snodes.len()
+            &&& vm2.snodes.len() == vm.snodes.len() + 1
+            &&& vm2.tape == vm.tape
+        }),
+{
+    lemma_push_node(vm, ptr, v);
+    lemma_push_wf_svals(vm, ptr, v);
+}
+
+/// `wf_svals` is preserved by any append-only tape growth that leaves the stack
+/// arena untouched — the shape of every control combinator (they grow only the
+/// tape/cont arenas via `model_try_alloc` / `model_prepend`, both `..vm` on snodes).
+pub proof fn lemma_snodes_frame_wf_svals(vm: ModelVm, vm2: ModelVm)
+    requires
+        wf_svals(vm),
+        vm2.snodes == vm.snodes,
+        vm.tape.len() <= vm2.tape.len(),
+    ensures
+        wf_svals(vm2),
+{
+    assert forall|i: int| 1 <= i < vm2.snodes.len() implies #[trigger] snode_val_wf(vm2, i) by {
+        assert(vm2.snodes[i] == vm.snodes[i]);
+        assert(snode_val_wf(vm, i));
+    }
+}
+
+/// `model_exec_prim` preserves `wf_svals`: every stack push lands a tape-valid
+/// value (an `Int`, a copy of an already-valid stack value, or a `Quote` whose
+/// span lies inside the — possibly grown — tape), and the control combinators
+/// leave the stack arena untouched while the tape only grows.
+#[verifier::rlimit(400)]
+pub proof fn lemma_exec_prim_wf_svals(vm: ModelVm, pos: ModelVmState, p: SpecPrim)
+    requires
+        wf(vm),
+        wf_svals(vm),
+        wf_pos(vm, pos),
+    ensures
+        wf_svals(model_exec_prim(vm, pos, p).1),
+{
+    // Every fault sub-arm returns `(Fault(..), vm, pos)`, so `wf_svals(vm)` closes
+    // it; the interesting work is the success sub-arms below.
+    match p {
+        SpecPrim::Dup => {
+            if pos.stack != 0 {
+                let top = vm.snodes[pos.stack as int].value;
+                assert(snode_val_wf(vm, pos.stack as int));
+                lemma_push_wf_all(vm, pos.stack, top);
+            }
+        },
+        SpecPrim::Drop => {},
+        SpecPrim::Swap => {
+            if pos.stack != 0 {
+                let p1 = vm.snodes[pos.stack as int].parent;
+                if p1 != 0 {
+                    let b = vm.snodes[pos.stack as int].value;
+                    let a = vm.snodes[p1 as int].value;
+                    let rest = vm.snodes[p1 as int].parent;
+                    assert(p1 < vm.snodes.len());
+                    assert(rest < vm.snodes.len());
+                    assert(snode_val_wf(vm, pos.stack as int));
+                    assert(snode_val_wf(vm, p1 as int));
+                    lemma_push_wf_all(vm, rest, b);
+                    let (vm1, s1) = model_push_node(vm, rest, b);
+                    lemma_push_wf_all(vm1, s1, a);
+                }
+            }
+        },
+        SpecPrim::Rot => {
+            if pos.stack != 0 {
+                let p1 = vm.snodes[pos.stack as int].parent;
+                if p1 != 0 {
+                    let p2 = vm.snodes[p1 as int].parent;
+                    if p2 != 0 {
+                        let c = vm.snodes[pos.stack as int].value;
+                        let b = vm.snodes[p1 as int].value;
+                        let a = vm.snodes[p2 as int].value;
+                        let rest = vm.snodes[p2 as int].parent;
+                        assert(p1 < vm.snodes.len() && p2 < vm.snodes.len() && rest < vm.snodes.len());
+                        assert(snode_val_wf(vm, pos.stack as int));
+                        assert(snode_val_wf(vm, p1 as int));
+                        assert(snode_val_wf(vm, p2 as int));
+                        lemma_push_wf_all(vm, rest, b);
+                        let (vm1, s1) = model_push_node(vm, rest, b);
+                        lemma_push_wf_all(vm1, s1, c);
+                        let (vm2, s2) = model_push_node(vm1, s1, c);
+                        lemma_push_wf_all(vm2, s2, a);
+                    }
+                }
+            }
+        },
+        SpecPrim::Over => {
+            if pos.stack != 0 {
+                let p1 = vm.snodes[pos.stack as int].parent;
+                if p1 != 0 {
+                    let a = vm.snodes[p1 as int].value;
+                    assert(p1 < vm.snodes.len());
+                    assert(snode_val_wf(vm, p1 as int));
+                    lemma_push_wf_all(vm, pos.stack, a);
+                }
+            }
+        },
+        // Arithmetic / comparison / xor: push an `Int` (always tape-valid).
+        SpecPrim::Add => lemma_arith_wf_svals(vm, pos, |a: int, b: int| a + b),
+        SpecPrim::Sub => lemma_arith_wf_svals(vm, pos, |a: int, b: int| a - b),
+        SpecPrim::Mul => lemma_arith_wf_svals(vm, pos, |a: int, b: int| a * b),
+        SpecPrim::Div => lemma_divmod_wf_svals(vm, pos, true),
+        SpecPrim::Mod => lemma_divmod_wf_svals(vm, pos, false),
+        SpecPrim::Eq => lemma_cmp_wf_svals(vm, pos, |a: int, b: int| a == b),
+        SpecPrim::Lt => lemma_cmp_wf_svals(vm, pos, |a: int, b: int| a < b),
+        SpecPrim::Xor => {
+            if pos.stack != 0 {
+                let p1 = vm.snodes[pos.stack as int].parent;
+                if p1 != 0 {
+                    let rest_ptr = vm.snodes[p1 as int].parent;
+                    match (vm.snodes[p1 as int].value, vm.snodes[pos.stack as int].value) {
+                        (ModelValue::Int(a), ModelValue::Int(b)) => {
+                            assert(rest_ptr < vm.snodes.len());
+                            lemma_push_wf_all(vm, rest_ptr, ModelValue::Int(i64_bitxor(a, b)));
+                        },
+                        _ => {},
+                    }
+                }
+            }
+        },
+        SpecPrim::Cons => {
+            if pos.stack != 0 {
+                let p1 = vm.snodes[pos.stack as int].parent;
+                if p1 != 0 {
+                    let rest_ptr = vm.snodes[p1 as int].parent;
+                    let v = vm.snodes[p1 as int].value;
+                    match vm.snodes[pos.stack as int].value {
+                        ModelValue::Quote(qid) => {
+                            assert(rest_ptr < vm.snodes.len());
+                            assert(snode_val_wf(vm, pos.stack as int));   // qid tape-valid
+                            assert(snode_val_wf(vm, p1 as int));          // v (if Quote) tape-valid
+                            let head = model_value_to_word(v);
+                            assert(word_intern_wf(vm, head));
+                            lemma_model_try_cons(vm, head, qid);
+                            let (vm_t, new_id) = model_try_cons(vm, head, qid);
+                            lemma_snodes_frame_wf_svals(vm, vm_t);
+                            assert(new_id.start + new_id.len == vm_t.tape.len());
+                            lemma_push_wf_all(vm_t, rest_ptr, ModelValue::Quote(new_id));
+                        },
+                        _ => {},
+                    }
+                }
+            }
+        },
+        SpecPrim::Cat => {
+            if pos.stack != 0 {
+                let p1 = vm.snodes[pos.stack as int].parent;
+                if p1 != 0 {
+                    let rest_ptr = vm.snodes[p1 as int].parent;
+                    match (vm.snodes[p1 as int].value, vm.snodes[pos.stack as int].value) {
+                        (ModelValue::Quote(aid), ModelValue::Quote(bid)) => {
+                            assert(rest_ptr < vm.snodes.len());
+                            assert(snode_val_wf(vm, p1 as int));
+                            assert(snode_val_wf(vm, pos.stack as int));
+                            lemma_model_try_cat(vm, aid, bid);
+                            let (vm_t, new_id) = model_try_cat(vm, aid, bid);
+                            lemma_snodes_frame_wf_svals(vm, vm_t);
+                            assert(new_id.start + new_id.len == vm_t.tape.len());
+                            lemma_push_wf_all(vm_t, rest_ptr, ModelValue::Quote(new_id));
+                        },
+                        _ => {},
+                    }
+                }
+            }
+        },
+        SpecPrim::Uncons => {
+            if pos.stack != 0 {
+                let rest_ptr = vm.snodes[pos.stack as int].parent;
+                assert(rest_ptr < vm.snodes.len());
+                match vm.snodes[pos.stack as int].value {
+                    ModelValue::Quote(qid) => {
+                        assert(snode_val_wf(vm, pos.stack as int));   // qid.end() <= tape.len()
+                        if qid.len == 0 {
+                            lemma_push_wf_all(vm, rest_ptr, ModelValue::Int(0int));
+                        } else {
+                            let tail = ModelQuoteId { start: qid.start + 1, len: (qid.len - 1) as nat };
+                            assert(tail.start + tail.len == qid.start + qid.len);
+                            assert(qid.start < vm.tape.len());
+                            match vm.tape[qid.start as int] {
+                                ModelWord::PushInt(k) => {
+                                    lemma_push_wf_all(vm, rest_ptr, ModelValue::Int(k));
+                                    let (vm1, s1) = model_push_node(vm, rest_ptr, ModelValue::Int(k));
+                                    lemma_push_wf_all(vm1, s1, ModelValue::Quote(tail));
+                                    let (vm2, s2) = model_push_node(vm1, s1, ModelValue::Quote(tail));
+                                    lemma_push_wf_all(vm2, s2, ModelValue::Int(1int));
+                                },
+                                ModelWord::PushQuote(hid) => {
+                                    assert(wf_tape_word(vm, qid.start as int));   // hid.end() <= qid.start
+                                    lemma_push_wf_all(vm, rest_ptr, ModelValue::Quote(hid));
+                                    let (vm1, s1) = model_push_node(vm, rest_ptr, ModelValue::Quote(hid));
+                                    lemma_push_wf_all(vm1, s1, ModelValue::Quote(tail));
+                                    let (vm2, s2) = model_push_node(vm1, s1, ModelValue::Quote(tail));
+                                    lemma_push_wf_all(vm2, s2, ModelValue::Int(1int));
+                                },
+                                _ => {},
+                            }
+                        }
+                    },
+                    _ => {},
+                }
+            }
+        },
+        // Control combinators: no stack push (except Fold-empty), tape only grows,
+        // stack arena untouched (`model_try_alloc` / `model_prepend` thread `..vm`).
+        SpecPrim::Apply => lemma_ctrl_wf_svals(vm, pos, p),
+        SpecPrim::Dip => lemma_ctrl_wf_svals(vm, pos, p),
+        SpecPrim::If => lemma_ctrl_wf_svals(vm, pos, p),
+        SpecPrim::Times => lemma_ctrl_wf_svals(vm, pos, p),
+        SpecPrim::PrimRec => lemma_ctrl_wf_svals(vm, pos, p),
+        SpecPrim::LinRec => lemma_ctrl_wf_svals(vm, pos, p),
+        SpecPrim::Fold => lemma_ctrl_wf_svals(vm, pos, p),
+    }
+}
+
+/// `model_arith` preserves `wf_svals` (success pushes an `Int`).
+pub proof fn lemma_arith_wf_svals(vm: ModelVm, pos: ModelVmState, op: spec_fn(int, int) -> int)
+    requires wf(vm), wf_svals(vm), wf_pos(vm, pos),
+    ensures wf_svals(model_arith(vm, pos, op).1),
+{
+    if pos.stack != 0 {
+        let p1 = vm.snodes[pos.stack as int].parent;
+        if p1 != 0 {
+            let rest_ptr = vm.snodes[p1 as int].parent;
+            match (vm.snodes[p1 as int].value, vm.snodes[pos.stack as int].value) {
+                (ModelValue::Int(a), ModelValue::Int(b)) => {
+                    if in_i64(op(a, b)) {
+                        assert(rest_ptr < vm.snodes.len());
+                        lemma_push_wf_all(vm, rest_ptr, ModelValue::Int(op(a, b)));
+                    }
+                },
+                _ => {},
+            }
+        }
+    }
+}
+
+/// `model_divmod` preserves `wf_svals` (success pushes an `Int`).
+pub proof fn lemma_divmod_wf_svals(vm: ModelVm, pos: ModelVmState, is_div: bool)
+    requires wf(vm), wf_svals(vm), wf_pos(vm, pos),
+    ensures wf_svals(model_divmod(vm, pos, is_div).1),
+{
+    if pos.stack != 0 {
+        let p1 = vm.snodes[pos.stack as int].parent;
+        if p1 != 0 {
+            let rest_ptr = vm.snodes[p1 as int].parent;
+            match (vm.snodes[p1 as int].value, vm.snodes[pos.stack as int].value) {
+                (ModelValue::Int(a), ModelValue::Int(b)) => {
+                    if b != 0 && in_i64(trunc_div(a, b)) {
+                        let r = if is_div { trunc_div(a, b) } else { trunc_mod(a, b) };
+                        assert(rest_ptr < vm.snodes.len());
+                        lemma_push_wf_all(vm, rest_ptr, ModelValue::Int(r));
+                    }
+                },
+                _ => {},
+            }
+        }
+    }
+}
+
+/// `model_cmp` preserves `wf_svals` (success pushes an `Int` 1/0).
+pub proof fn lemma_cmp_wf_svals(vm: ModelVm, pos: ModelVmState, op: spec_fn(int, int) -> bool)
+    requires wf(vm), wf_svals(vm), wf_pos(vm, pos),
+    ensures wf_svals(model_cmp(vm, pos, op).1),
+{
+    if pos.stack != 0 {
+        let p1 = vm.snodes[pos.stack as int].parent;
+        if p1 != 0 {
+            let rest_ptr = vm.snodes[p1 as int].parent;
+            match (vm.snodes[p1 as int].value, vm.snodes[pos.stack as int].value) {
+                (ModelValue::Int(a), ModelValue::Int(b)) => {
+                    let r: int = if op(a, b) { 1int } else { 0int };
+                    assert(rest_ptr < vm.snodes.len());
+                    lemma_push_wf_all(vm, rest_ptr, ModelValue::Int(r));
+                },
+                _ => {},
+            }
+        }
+    }
+}
+
+/// The seven control combinators preserve `wf_svals`. `Fold` empty-seq pushes the
+/// `init` value (a copy of an already tape-valid stack value); every other success
+/// path leaves the stack arena untouched (`vm2.snodes == vm.snodes`) while the tape
+/// only grows, so `lemma_snodes_frame_wf_svals` closes it. All fault arms return
+/// `vm` untouched.
+#[verifier::rlimit(1000)]
+pub proof fn lemma_ctrl_wf_svals(vm: ModelVm, pos: ModelVmState, p: SpecPrim)
+    requires
+        wf(vm),
+        wf_svals(vm),
+        wf_pos(vm, pos),
+        p == SpecPrim::Apply || p == SpecPrim::Dip || p == SpecPrim::If
+            || p == SpecPrim::Times || p == SpecPrim::PrimRec || p == SpecPrim::LinRec
+            || p == SpecPrim::Fold,
+    ensures
+        wf_svals(model_exec_prim(vm, pos, p).1),
+{
+    // Match on `p` so each SMT query unfolds exactly ONE combinator (unfolding the
+    // whole polymorphic `model_exec_prim` at once blows the rlimit). Apply/Dip/If/
+    // Times/PrimRec/LinRec have NO stack push — in every branch (fault or success)
+    // the stack arena is threaded `..vm` and the tape only grows, so the
+    // snodes-frame lemma closes them. Fold's empty-seq branch is the sole control
+    // push (it pushes `init`, a copy of an already tape-valid stack value).
+    match p {
+        SpecPrim::Fold => {
+            if pos.stack != 0 {
+                let p1 = vm.snodes[pos.stack as int].parent;
+                if p1 != 0 {
+                    let p2 = vm.snodes[p1 as int].parent;
+                    if p2 != 0 {
+                        let rest_ptr = vm.snodes[p2 as int].parent;
+                        let init = vm.snodes[p1 as int].value;
+                        match (vm.snodes[p2 as int].value, vm.snodes[pos.stack as int].value) {
+                            (ModelValue::Quote(qs), ModelValue::Quote(qc)) => {
+                                if qs.len == 0 {
+                                    assert(rest_ptr < vm.snodes.len());
+                                    assert(snode_val_wf(vm, p1 as int));   // init tape-valid
+                                    lemma_push_wf_all(vm, rest_ptr, init);
+                                } else {
+                                    // nonempty: fault (vm) or control chain (snodes==, tape grows).
+                                    let vm2 = model_exec_prim(vm, pos, p).1;
+                                    assert(vm2.snodes == vm.snodes);
+                                    assert(vm.tape.len() <= vm2.tape.len());
+                                    lemma_snodes_frame_wf_svals(vm, vm2);
+                                }
+                            },
+                            _ => {},   // fault: vm2 == vm.
+                        }
+                    }
+                }
+            }
+        },
+        _ => {
+            // Apply/Dip/If/Times/PrimRec/LinRec: no push. All branches keep the stack
+            // arena and grow the tape monotonically.
+            let vm2 = model_exec_prim(vm, pos, p).1;
+            assert(vm2.snodes == vm.snodes);
+            assert(vm.tape.len() <= vm2.tape.len());
+            lemma_snodes_frame_wf_svals(vm, vm2);
+        },
+    }
+}
+
+/// `model_exec_word` preserves `wf_svals`. `PushInt` / `Call` are trivial; a
+/// `PushQuote(id)` pushes a `Quote` whose span lies in the tape (`word_intern_wf`);
+/// a `Prim` delegates to `lemma_exec_prim_wf_svals`.
+pub proof fn lemma_exec_word_wf_svals(vm: ModelVm, pos: ModelVmState, w: ModelWord)
+    requires
+        wf(vm),
+        wf_svals(vm),
+        wf_pos(vm, pos),
+        word_intern_wf(vm, w),
+    ensures
+        wf_svals(model_exec_word(vm, pos, w).1),
+{
+    match w {
+        ModelWord::PushInt(n) => {
+            lemma_push_wf_all(vm, pos.stack, ModelValue::Int(n));
+        },
+        ModelWord::PushQuote(id) => {
+            // word_intern_wf gives id.start + id.len <= vm.tape.len().
+            lemma_push_wf_all(vm, pos.stack, ModelValue::Quote(id));
+        },
+        ModelWord::Call(_) => {
+            // Invoke: vm2 == vm.
+        },
+        ModelWord::Prim(p) => {
+            lemma_exec_prim_wf_svals(vm, pos, p);
+        },
+    }
+}
+
+/// One `model_arena_step` preserves `wf_svals`. On `Halt` (no next word) the vm is
+/// unchanged; otherwise the result vm is exactly `model_exec_word`'s (the fault arm
+/// of `model_arena_step` keeps the append-only vm and only restores `pos`).
+pub proof fn lemma_step_wf_svals(vm: ModelVm, pos: ModelVmState)
+    requires
+        wf(vm),
+        wf_svals(vm),
+        wf_pos(vm, pos),
+    ensures
+        wf_svals(model_arena_step(vm, pos).1),
+{
+    lemma_model_next_word(vm, pos);
+    match model_next_word(vm, pos) {
+        None => {
+            // model_arena_step == (Halt, vm, pos).
+        },
+        Some((w, pos1)) => {
+            // lemma_model_next_word: wf_pos(vm, pos1) && word_intern_wf(vm, w).
+            lemma_exec_word_wf_svals(vm, pos1, w);
+            // model_arena_step(vm, pos).1 == model_exec_word(vm, pos1, w).1 in both
+            // the fault arm (which keeps vm2) and the non-fault arm.
+        },
+    }
+}
+
+// ------------------------------------------------------------
+// The model multi-step driver and the DRIVER COROLLARY.
+// ------------------------------------------------------------
+
+/// The model's fuel-bounded driver — the pure-spec twin of `run.rs::run_arena`'s
+/// loop and the exact model mirror of mtl_core's `spec_run`. It iterates
+/// `model_arena_step` up to `fuel` times, projecting the terminal machine state
+/// through α into the thin `SpecOutcome` (the only observations a driver makes).
+pub open spec fn model_run(vm: ModelVm, pos: ModelVmState, fuel: nat) -> SpecOutcome
+    decreases fuel,
+{
+    if fuel == 0 {
+        SpecOutcome::FuelExhausted
+    } else {
+        let (r, vm2, pos2) = model_arena_step(vm, pos);
+        match r {
+            ModelStep::Halt => SpecOutcome::Halt(alpha_stack(vm2, pos2.stack)),
+            ModelStep::Fault(e) => SpecOutcome::Fault(e),
+            ModelStep::Invoke(nm) => SpecOutcome::Invoke(
+                nm,
+                alpha_stack(vm2, pos2.stack),
+                alpha_cont(vm2, pos2.cont, pos2.cursor),
+            ),
+            ModelStep::Next => model_run(vm2, pos2, (fuel - 1) as nat),
+        }
+    }
+}
+
+/// ★ THE MULTI-STEP DRIVER COROLLARY (M5a). For a well-formed initial state,
+/// running the model driver for `fuel` steps and abstracting through α equals
+/// running the ghost `spec_run` for `fuel` steps from `alpha_state` — i.e. α
+/// commutes with the WHOLE execution, not just one step:
+///
+///     model_run(vm, pos, fuel) == spec_run(alpha_state(vm, pos), fuel)
+///
+/// Proven by induction on `fuel`, using the one-step theorem
+/// `thm_arena_refines_spec_scaffold` (the commuting square) as the inductive step
+/// and `lemma_step_wf_svals` to carry the `wf_svals` invariant across the step.
+/// This is the arena twin of `run` refining `spec_run` in mtl_core (P2).
+pub proof fn thm_arena_run_refines_spec(vm: ModelVm, pos: ModelVmState, fuel: nat)
+    requires
+        wf(vm),
+        wf_svals(vm),
+        wf_pos(vm, pos),
+    ensures
+        model_run(vm, pos, fuel) == spec_run(alpha_state(vm, pos), fuel),
+    decreases fuel,
+{
+    if fuel == 0 {
+        // Both sides are FuelExhausted.
+    } else {
+        thm_arena_refines_spec_scaffold(vm, pos);
+        lemma_step_wf_svals(vm, pos);
+        let s = alpha_state(vm, pos);
+        let (r, vm2, pos2) = model_arena_step(vm, pos);
+        match spec_step(s) {
+            SpecStep::Halt(stk) => {
+                // spec_step Halt => s.cont empty => model_next_word None => vm2==vm, pos2==pos.
+                assert(stk == s.stack);
+                assert(s.cont.len() == 0);
+                lemma_model_next_word(vm, pos);
+                assert(model_next_word(vm, pos) is None);
+                assert(model_arena_step(vm, pos) == (ModelStep::Halt, vm, pos));
+                assert(r == ModelStep::Halt);
+                assert(alpha_stack(vm2, pos2.stack) == alpha_stack(vm, pos.stack));
+                assert(alpha_stack(vm, pos.stack) == s.stack);
+                assert(model_run(vm, pos, fuel) == SpecOutcome::Halt(stk));
+                assert(spec_run(s, fuel) == SpecOutcome::Halt(stk));
+            },
+            SpecStep::Fault(e) => {
+                // One-step theorem: r == Fault(e).
+                assert(r == ModelStep::Fault(e));
+                assert(model_run(vm, pos, fuel) == SpecOutcome::Fault(e));
+                assert(spec_run(s, fuel) == SpecOutcome::Fault(e));
+            },
+            SpecStep::Invoke(nm, istk, ict) => {
+                // One-step theorem: r is Invoke, r->Invoke_0 == nm, alpha_state(vm2,pos2) == {istk, ict}.
+                assert(r is Invoke);
+                assert(r->Invoke_0 == nm);
+                assert(alpha_state(vm2, pos2) == (SpecState { stack: istk, cont: ict }));
+                assert(alpha_stack(vm2, pos2.stack) == istk);
+                assert(alpha_cont(vm2, pos2.cont, pos2.cursor) == ict);
+                assert(model_run(vm, pos, fuel) == SpecOutcome::Invoke(nm, istk, ict));
+                assert(spec_run(s, fuel) == SpecOutcome::Invoke(nm, istk, ict));
+            },
+            SpecStep::Next(s2) => {
+                // One-step theorem: r is Next, wf(vm2), wf_pos(vm2,pos2), alpha_state(vm2,pos2)==s2.
+                assert(r is Next);
+                assert(wf(vm2) && wf_pos(vm2, pos2));
+                assert(wf_svals(vm2));
+                assert(alpha_state(vm2, pos2) == s2);
+                // IH on the successor.
+                thm_arena_run_refines_spec(vm2, pos2, (fuel - 1) as nat);
+                assert(model_run(vm2, pos2, (fuel - 1) as nat)
+                    == spec_run(alpha_state(vm2, pos2), (fuel - 1) as nat));
+                assert(model_run(vm, pos, fuel) == model_run(vm2, pos2, (fuel - 1) as nat));
+                assert(spec_run(s, fuel) == spec_run(s2, (fuel - 1) as nat));
+            },
+        }
+    }
 }
 
 } // verus!

@@ -1,0 +1,108 @@
+MTL arena backend — Verus proof log
+====================================
+
+Theorem discharged
+------------------
+P4c — ARENA REFINEMENT: the arena backend (flat `Seq` arenas with integer
+back-references, the `crates/mtl-arena` data model) refines the FROZEN P2
+`spec_step` semantics through an abstraction function α.
+
+  ONE-STEP (unconditional):  thm_arena_refines_spec_scaffold
+      alpha_state(model_arena_step(vm, pos)) == spec_step(alpha_state(vm, pos))
+    for EVERY well-formed (vm, pos) — all 23 prims + the non-prim cases (Halt /
+    PushInt / PushQuote / Call), full FAULT PARITY (same Error kind + normative
+    precedence, machine-untouched-on-fault), NO `!Fault` precondition, NO gate.
+
+  u32 CAPACITY:              thm_arena_refines_spec_u32
+      the same, plus the honest u32 address-space story: an allocation exceeding
+      u32::MAX degrades to a clean Fault::Overflow (production `alloc_or_overflow!`),
+      cleanly gated by the `capacity` predicate over the actual post-step arena.
+
+  MULTI-STEP DRIVER (M5a):   thm_arena_run_refines_spec
+      model_run(vm, pos, fuel) == spec_run(alpha_state(vm, pos), fuel)
+    α commutes with the WHOLE fuel-bounded execution, not just one step — the
+    arena twin of `run` refining `spec_run` in mtl_core (P2). Proven by induction
+    on `fuel` with the one-step theorem as the inductive step and a `wf_svals`
+    preservation lemma carrying the invariant across steps.
+
+This is a pure-spec Verus MODEL (a mirrored twin, `#[path] mod mtl_core;` style),
+NOT a verusification of the production Rust. `mtl_core.rs` is pulled in UNMODIFIED
+and re-verified alongside, so the proof is pinned to the same discharged
+`spec_step`. Not cargo-compiled (verus-tool only) — it cannot perturb the build.
+
+Pinned toolchain
+----------------
+Verus release tag : release/0.2026.07.05.49b8806
+Underlying version: 0.2026.07.05  (build/commit suffix .49b8806)
+Artifact          : crates/mtl-arena/proofs/arena_verus.rs
+                    (verus!{}-wrapped; checked by `verus`, NOT cargo-compiled)
+
+Verification command
+--------------------
+    export VERUS_Z3_PATH=/root/verus-src/source/z3
+    verus crates/mtl-arena/proofs/arena_verus.rs
+
+Live machine-checked output (verbatim)
+--------------------------------------
+    verification results:: 145 verified, 0 errors
+
+ZERO cheats: no admit / assume / assume_specification / external / external_body
+on any load-bearing lemma (the words appear only in doc comments). The one
+`unreachable pattern` warning is a benign match-arm note in the M3c LinRec proof,
+pre-existing since M3c. rlimit bumps (`#[verifier::rlimit]`) are prover-budget
+adjustments, NOT soundness cheats.
+
+Full re-verification of every Verus root (this session)
+-------------------------------------------------------
+    crates/mtl-arena/proofs/arena_verus.rs   : 145 verified, 0 errors
+    crates/mtl-core/src/mtl_core.rs          :  76 verified, 0 errors
+    crates/mtl-core/src/p5_universality.rs   : 118 verified, 0 errors
+    crates/mtl-core/src/checker_verus.rs     : 116 verified, 0 errors
+    crates/mtl-syntax/proofs/p4_verus.rs     : 101 verified, 0 errors
+    cargo test --workspace                   : 275 passed, 0 failed
+
+Milestone summary
+-----------------
+M1  Model + α        Model datatypes (flat `Seq` arenas), well-formedness
+                     invariants (wf_stack/wf_tape/wf_cont), and the four
+                     recursive abstraction functions α (alpha_word / alpha_words
+                     / alpha_stack / alpha_cont) with wf-guarded termination
+                     measures. α is total + terminating with no `requires`.
+                     (81 verified incl. mtl_core.)
+
+M2  View lemmas      View-homomorphism lemmas: stack push/pop/frame, cont
+                     head-peel / segment-pop, splice-as-segment-push
+                     (lemma_alpha_cont_prepend — the crux), tape/cont/stack
+                     frame lemmas. (95 verified.)
+
+M3  All 23 prims     Faithful model twins of every prim + the model driver
+                     (model_next_word / model_exec_word / model_arena_step) and
+                     the one-step refinement square (happy path) for the entire
+                     instruction set: stack shuffles (M3a), arithmetic /
+                     comparison / sequence (M3b), and the splice/control
+                     combinators Apply/Dip/If/Times/PrimRec/LinRec/Fold (M3c).
+                     No `arbitrary()` arm remains. (125 verified.)
+
+M4  Fault parity     Dropped the `!Fault` precondition and the scaffold gate:
+                     + capacity        the one-step theorem is UNCONDITIONAL. Fault parity for all
+                     23 prims (Underflow/TypeMismatch/Overflow/DivByZero, same
+                     kind + precedence, machine-untouched-on-fault), plus the
+                     honest u32 capacity -> Fault::Overflow story
+                     (thm_arena_refines_spec_u32). (133 verified.)
+
+M5a Driver corollary The multi-step DRIVER corollary thm_arena_run_refines_spec:
+                     the model driver `model_run` (fuel-bounded iteration of
+                     model_arena_step, the twin of run.rs::run_arena / mtl_core
+                     spec_run) refines the ghost `spec_run` through α — α commutes
+                     with the whole execution. Proven by induction on fuel over
+                     the one-step theorem, with `wf_svals` preservation
+                     (lemma_step_wf_svals) carrying the invariant across steps.
+                     (145 verified.)
+
+No divergence
+-------------
+Every prim refines `spec_step` (and faults) exactly across α; the multi-step
+induction found NO run-level divergence (α commutes step-for-step AND across the
+whole run). The only arena/spec divergence is the cleanly-gated `capacity`
+Overflow (arena-side graceful degradation at the u32 ceiling), precisely
+characterized by thm_arena_refines_spec_u32.
