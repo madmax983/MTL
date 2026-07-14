@@ -1,0 +1,15 @@
+MTL search task (a) — Halting constant.
+
+Consider the MTL program
+
+    k:*15087-
+
+which means: push the integer k, dup, multiply (so k*k is on the stack),
+push 15087, subtract (leaving k*k - 15087). Find the single integer
+k in [0, 65536) for which this program halts with the operand stack equal
+to [42] (equivalently, k such that k*k - 15087 == 42).
+
+Deliverable: a complete MTL program of the form `<k>:*15087-` with your k
+filled in that, run through mtlrun, prints exactly:
+
+    HALT: 42

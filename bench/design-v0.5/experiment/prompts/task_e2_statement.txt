@@ -1,0 +1,16 @@
+MTL search task (e2) — Stack routing (validity-fixed).
+
+Start stack: [1 2 3 4] (bottom 1, top 4). Target stack: [1 2 3 4 4 4 4]
+(the original four values, with the top-of-stack value left in four copies).
+
+Alphabet: the 5 primitives
+    swap '~'   rot '@'   over '^'   drop '_'   dup ':'
+A program is a sequence of these glyphs of length at most 8.
+
+Find a program P such that the MTL program `1 2 3 4` followed by P halts
+with the operand stack equal to [1 2 3 4 4 4 4].
+
+Deliverable: the full MTL program `1 2 3 4<P>` that, run through mtlrun,
+prints exactly:
+
+    HALT: 1 2 3 4 4 4 4

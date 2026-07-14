@@ -60,6 +60,10 @@ Full table with stack effects and fault semantics: spec §5 ([`docs/mtl-spec.md`
 
 Effects live entirely host-side, behind a single narrow channel. The pure verified core suspends at every capability call and yields a fourth outcome `Invoke(name, stack, cont)` instead of faulting; an unverified host runner services it and resumes the core. The core threads no host state and closes over nothing — which is what keeps P1/P2/P3 intact. Capabilities are a grant whitelist; metering is charged **before** the effect; cancellation (fuel or budget) happens only between steps, so no partial effect is possible; strings are opaque host-side `i64` handles (no `Value::Str` in the core). Confinement is covered by 7 tests in [`crates/mtl-host/tests/security_posture.rs`](crates/mtl-host/tests/security_posture.rs): not-granted is unreachable, budget exhaustion cancels with no partial effect, the output-byte cap is never exceeded, each invocation consumes its budget exactly once, and more.
 
+## Arena execution backend (v0.5, optional)
+
+`crates/mtl-arena` is an **optional, opt-in** arena execution backend — an interned, persistent, O(1)-fork continuation engine that targets the reference interpreter's measured O(n²) hotspots (flat front-pop, primrec re-emission, fold tails). It is **not the verified default**: the `mtl-core` interpreter remains the reference twin and normative oracle, and the arena is never silently substituted — callers select it explicitly, either `mtl_arena::run_arena` (pure execution) or `mtl_arena::host::arena_drive` (host-capability-driven, mirroring `mtl_core::host::drive` outcome-for-outcome with the same global-fuel and cancellation guarantees). It is a **differentially-validated high-performance backend**, bit-identical to the interpreter across a 47-case differential oracle, fault-corpus (`FaultInfo`) parity, and host-driver parity; it adds **no new primitives and no new semantics**, so the language spec is unchanged. It ships this round **without** a machine-checked refinement proof — the P2-style obligation that the arena refines `spec_step` is an explicit, deferred open item, leaving the arena in the same validated-not-proved status as the production interpreter twin. Design and rationale: [`docs/design/v0.5-refactor.md`](docs/design/v0.5-refactor.md); see [`crates/mtl-perf/PERF-BASELINE.md`](crates/mtl-perf/PERF-BASELINE.md) and [`bench/design-v0.5/MEASUREMENTS.md`](bench/design-v0.5/MEASUREMENTS.md) for the measured speedups on the interpreter's O(n²) hotspots.
+
 ## Repository layout
 
 ```
@@ -68,7 +72,8 @@ MTL/
 │   ├── mtl-core/     # verified reference semantics (Verus) + cargo interpreter + host seam + P5
 │   ├── mtl-syntax/   # lexer, parser, canonical printer + P4 round-trip proof
 │   ├── mtl-host/     # v0.4 host runner: capabilities, metering, handles (unverified, above the core)
-│   └── mtl-perf/     # runtime perf benchmarks (perf is a non-goal; measurement only)
+│   ├── mtl-perf/     # runtime perf benchmarks (perf is a non-goal; measurement only)
+│   └── mtl-arena/    # v0.5 optional arena execution backend (opt-in; differentially validated, not the verified default)
 ├── bench/
 │   ├── BASELINE.md, BASELINE-TIER2.md, BASELINE-TIER3.md   # compression measurements
 │   ├── validate/     # parse+execute validation harness (mtlrun bin)

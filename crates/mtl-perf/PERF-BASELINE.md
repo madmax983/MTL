@@ -159,3 +159,57 @@ Fuel is a pure **step counter** (`run(vm, fuel)` increments one unit per `exec_s
 **Yes, for the workloads the corpus represents — and the refactor is not urgent for them.** Every T_v0 and tier-2 v0.3 solution runs in microseconds at ≤115 steps and ≤15 continuation words, with three orders of magnitude of fuel headroom; the O(n²) behaviour never engages because real agent-authored solutions operate on small inputs and shallow recursion. The steady-state interpreter (~35M steps/sec) is more than adequate here.
 
 **The REFACTOR becomes necessary only if MTL targets large-data workloads** — folds, primitive recursion, or flat programs over ~1k–10k+ elements — where the `Vec` continuation's O(n) front-pop, PrimRec re-emission, and Fold tail-clone compound into O(n²) and make 10k-element inputs sluggish (32 ms–223 ms) and 100k inputs unusable (seconds). Crucially, the data **redirects** the §12.3 hypothesis: the `: !` apply splice singled out in the spec is *not* the culprit (it is tail-linear); the actionable targets are `cont.remove(0)` and the PrimRec/Fold re-emission/clone. A single change — a persistent sequence with O(1) head-pop and prepend plus structural tail sharing — addresses all three. That is a spec-first, correctness-preserving change per TAVDD, scoped to when a large-data use case is real; until then, this baseline stands as the regression reference.
+
+---
+
+## Arena backend (v0.5) — arena-vs-interp comparative measurements
+
+The v0.5 REFACTOR landed as the **`mtl-arena`** crate: an opt-in, segment-cursor persistent-continuation backend (`mtl_arena::run_arena`) that replaces the three O(n²) mechanisms above with O(1) primitives (front-pop → cursor bump; PrimRec re-emit → one interned segment prepend; Fold tail → shared `{start+1,len-1}` sub-slice; fork → 12-byte `VmState` copy). It is **not** a silent substitute — `interp::run` remains the default twin/oracle, and the arena is validated only by the differential oracle (47/47). This section adds the arena numbers **alongside** the interp baselines above; it does not replace them.
+
+**These numbers are fresh measurements from this container**, produced by the comparative harness added to this crate. They differ from the spike's figures (`bench/design-v0.5/MEASUREMENTS.md`) because this container's memory subsystem is markedly slower for the interp's O(n) memmove/clone pathologies (see the honest comparison below). Per the standing hardware caveat, **trust the RATIOS and the flat-vs-growing ns/step shape, not the absolute ns.**
+
+### How these were measured
+
+- **Harness (source of the tables):** `cargo run --release --example arena_vs_interp -p mtl-perf`. Monotonic `std::time::Instant`, best-of-N with one warmup (200/50/20-ish reps depending on scale), both backends timed in the **same process/run**. Arena timings include one-time program compile/interning; interp timings include `Vm` construction. **Two independent samples agreed to <1%**, so the numbers below are stable, not one-off noise. Interp is capped at 10k on the O(n²) cases; the 100k row projects interp as O(n²) (10× n ⇒ ~100× time) while the arena is measured.
+- **Criterion cross-check:** `cargo bench -p mtl-perf --bench arena_vs_interp` (registered `[[bench]]`). Groups `arena_vs_interp/{flat_frontpop,primrec_sumto,fold_sum,selfapp_countdown,fork}`, each running `interp/<n>` and `arena/<n>` at matched sizes so the ratio is read directly. Confirms the same shapes (e.g. fork `arena_copy` flat ~2 ns vs `interp_clone` 1.96 µs@1k → 23.5 µs@10k).
+
+### Production arena vs interp — the four stress cases (case | size | interp | arena | speedup)
+
+| case | size | interp | arena | speedup (this container) | spike claim |
+|---|---:|---:|---:|---:|---:|
+| (a) flat front-pop `1 1 + _` | N=256 | 0.0096 ms | 0.0033 ms | 2.9× | — |
+| (a) flat front-pop | N=1024 | 4.714 ms | 0.0125 ms | 378.5× | — |
+| (a) flat front-pop | N=4096 | 81.50 ms | 0.0496 ms | 1643.8× | — |
+| (a) flat front-pop | **N=16384** | **1309.1 ms** | **0.200 ms** | **6549.7×** | interp 93.6 ms / arena 0.124 ms / **754×** |
+| (c) PrimRec `sum_to(n)` | n=1000 | 27.78 ms | 0.091 ms | 305.5× | 22.7× |
+| (c) PrimRec `sum_to(n)` | **n=10000** | **3036.1 ms** | **2.105 ms** | **1442.4×** | interp 253 ms / arena 1.76 ms / **144×** |
+| (c) PrimRec `sum_to(n)` | n=100000 | n/a (proj ~304 s) | 24.77 ms | proj ~12255× | proj ~1503× |
+| (d) Fold `0 [+] (` over n ints | n=1000 | 4.625 ms | 0.116 ms | 39.9× | 3.2× |
+| (d) Fold over n ints | **n=10000** | **489.6 ms** | **1.302 ms** | **376.0×** | interp 36.3 ms / arena 0.91 ms / **40×** |
+| (d) Fold over n ints | n=100000 | n/a (proj ~49 s) | 36.30 ms | proj ~1349× | proj ~131× |
+| (b) `: !` countdown (NON-pathology) | n=1000 | 0.367 ms | 0.179 ms | 2.1× | ~4× |
+| (b) `: !` countdown | n=10000 | 4.124 ms | 2.017 ms | 2.0× | ~4× |
+
+**Arena ns/step is FLAT (O(1))** where interp's grows super-linearly (O(n²)): arena flat front-pop holds ~12 ns/step across a 256× scale (interp balloons 52 → 79,900 ns/step); arena PrimRec 15 → 35 ns/step across 10× n (interp 4,627 → 50,914); arena Fold 19 → 22 → 60 ns/step (interp 770 → 8,160). The arena PrimRec/Fold ns/step drift is the known **cache pressure from the spike-inherited unbounded-tape growth within a run**, not algorithmic — per-element work is O(1). The `: !` case stays linear on both backends: the arena does **not regress** the already-healthy tail-linear case.
+
+### Fork microbenchmark — O(1) fork confirmed
+
+Clone a machine position sitting on a depth-`d` stack. BEFORE: `interp::Vm::clone()` (O(d) `Vec` clone). AFTER: copy an arena `VmState` (3×u32 = 12 bytes, `Copy`) sitting on a depth-d persistent stack.
+
+| stack depth d | interp `Vm::clone()` | arena `VmState` copy |
+|---:|---:|---:|
+| 1 | 45.1 ns | 0.91 ns |
+| 10 | 57.8 ns | 0.92 ns |
+| 100 | 226.6 ns | 0.93 ns |
+| 1000 | 1783.3 ns | 0.93 ns |
+| 10000 | 21058.0 ns | 0.91 ns |
+
+Interp `Vm::clone()` rises **~467× (45 → 21,058 ns) linearly in stack depth**; arena `VmState` copy is **flat at ~0.9 ns** independent of depth — **O(1) fork**. This reproduces the spike (interp 50.9 → 22,988 ns; arena flat ~1.09 ns) essentially exactly.
+
+### Honest spike-vs-production comparison
+
+Did the spike's headline numbers (754× flat, 144× PrimRec, 40× Fold, O(1) fork) reproduce? **The O(1)-vs-O(n²) shape reproduced exactly, and fork reproduced near-exactly; the absolute *ratios* came out larger than the spike, but that is an interp-side artefact of this container, not the arena beating its own spike numbers.** Reading the two sides separately:
+
+- **The arena side matches the spike within production-hygiene overhead.** Arena absolute times here vs the spike: flat N=16384 **0.200 ms vs 0.124 ms (+61%)**; PrimRec 10k **2.105 ms vs 1.757 ms (+20%)**; Fold 10k **1.302 ms vs 0.909 ms (+43%)**; fork **~0.9 ns vs ~1.1 ns**. The 20–60% arena slowdown is the cost of promoting the spike to production hygiene — checked arithmetic, `Option`-returning `compile`, and reference-typed reification through `ArenaRun`/`Outcome` — plus this container running a touch slower. **Promotion did not regress the algorithm**: arena ns/step is still flat, and the arena still finishes 100k PrimRec in ~25 ms and 100k Fold in ~36 ms where interp is projected at ~5 min and ~49 s.
+- **The interp side ran ~12–14× slower on this container than the spike's**, and reproducibly so (two samples <1% apart): PrimRec 10k **3036 ms vs the spike's 253 ms** (and vs the interp-only baseline's 223 ms above); flat 16k **1309 ms vs 93.6 ms**; Fold 10k **490 ms vs 36.3 ms**. Tellingly, the interp cases that are *not* memory-bandwidth-bound were **not** inflated — `: !` countdown (27–32 ns/step) and `Vm::clone()` (matches the spike) are clean — so this is specifically this container punishing the interp's O(n) `cont.remove(0)` memmove and Fold spine-clone harder, not general CPU contention.
+- **Net:** because the win is measured as `interp / arena`, a ~13× slower interp inflates every ratio ~13× over the spike (754× → 6550×, 144× → 1442×, 40× → 376× at 10k). **Do not read those as the arena being 8× better than the spike claimed.** The load-bearing, machine-independent results all reproduced: (i) arena ns/step flat vs interp super-linear; (ii) arena absolute times within ~1.2–1.6× of the spike; (iii) O(1) fork. The Fold n=1000 ratio landed at **39.9×**, coincidentally matching the spike's 40× Fold headline. The arena kills all three O(n²) pathologies documented above and leaves the tail-linear `: !` case unregressed — the v0.5 REFACTOR delivers on the spec §12.3 open question.

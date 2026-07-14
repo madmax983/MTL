@@ -13,3 +13,9 @@ mtl-syntax = { path = "../mtl-syntax" }
 mtl-core = { path = "../mtl-core" }
 mtl-bench-validate = { path = "../../bench/validate" }
 mtl-host = { path = "../mtl-host" }
+# The arena backend (the policed mirror under test) + the validated PERF-BASELINE
+# corpus builders it is differentially checked against, and proptest for the
+# randomized differential oracle. All test-only.
+mtl-arena = { path = "../mtl-arena" }
+mtl-perf = { path = "../mtl-perf" }
+proptest = "1"

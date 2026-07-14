@@ -1,0 +1,15 @@
+MTL search task (b) — Operator-sequence synthesis.
+
+Start stack: [3 5] (bottom 3, top 5). Target stack: [64].
+
+Alphabet: the 5 primitives
+    add '+'   sub '-'   mul '*'   dup ':'   swap '~'
+A program is a sequence of these glyphs of length at most 6.
+
+Find a program P such that the MTL program `3 5` followed by P halts with
+the operand stack equal to [64].
+
+Deliverable: the full MTL program `3 5<P>` that, run through mtlrun, prints
+exactly:
+
+    HALT: 64

@@ -1,0 +1,16 @@
+MTL search task (e) — Stack routing (reversal).
+
+Start stack: [1 2 3 4] (bottom 1, top 4). Target stack: [4 3 2 1]
+(the full reversal).
+
+Alphabet: the 5 primitives
+    swap '~'   rot '@'   over '^'   drop '_'   dup ':'
+A program is a sequence of these glyphs of length at most 8.
+
+Find a program P such that the MTL program `1 2 3 4` followed by P halts
+with the operand stack equal to [4 3 2 1].
+
+Deliverable: the full MTL program `1 2 3 4<P>` that, run through mtlrun,
+prints exactly:
+
+    HALT: 4 3 2 1
