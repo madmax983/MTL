@@ -173,6 +173,11 @@ are worth a sentence in the MTL quick reference.
    truncated, vs `2` in Python, floored). This is a real MTL↔Python porting /
    twin-fidelity trap and deserves an explicit quickref note.
 
+Both flags are now folded into `docs/mtl-quickref.md` in this PR; adding the two
+sentences moved the quickref's own `o200k_base` token count from 2244 to 2369.
+(The static v0.3 snapshot embedded in the round-2 prompts, `quickref_tokens=2244`
+in `manifest.json`, is frozen and unchanged.)
+
 ## Reproduce
 
 ```

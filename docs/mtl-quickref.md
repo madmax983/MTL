@@ -59,6 +59,8 @@ Stack effect notation: top of stack is at the **right**. `[q]` is a quote.
 | `(` | fold | `( [seq] init [C] -- r )` | native left fold; `C:( acc w -- acc' )` runs once per element left-to-right; `[]` gives `init` |
 | `$` | xor | `( a b -- a$b )` | bitwise XOR on the i64 two's-complement; total (no Overflow, no DivByZero) |
 
+**Truncation vs Python.** `/` and `%` truncate toward zero (remainder sign follows the dividend), unlike Python's *floored* `//`/`%`: MTL `-7 % 3` is `-1` (truncated) where Python gives `2` (floored) — a porting trap for twins.
+
 ## Recursion combinators (exact rewrites)
 
 Continuation splicing: `!` and the combinators splice quote bodies into the
@@ -81,6 +83,9 @@ program rather than calling a sub-interpreter.
 - **`>` uncons**: `[h t...] >` → `h [t...] 1`; `[] >` → `0`. It consumes the
   quote once (affine). A non-empty list yields head value, tail quote, and flag
   `1`; empty yields just `0`. A quote whose head is not a pushed value faults.
+- **Fuel is a depth budget.** Interpreter fuel is charged against recursion
+  DEPTH, so a deep-but-valid `&`/`|`/`.` can exhaust fuel before completing;
+  size the fuel budget to the expected recursion depth.
 
 ### List idioms
 
