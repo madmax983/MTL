@@ -162,6 +162,31 @@ jobs:
             exit 1
           fi
 
+      - name: verus verify — arena refinement (arena_step ⇒ spec_step) (crates/mtl-arena/proofs/arena_verus.rs)
+        id: arena
+        # HARD GATE on VERIFICATION (like checkerc/P5, NO continue-on-error):
+        # `arena_verus.rs` mechanizes the production arena backend's refinement of
+        # the frozen `spec_step` — the unconditional one-step theorem
+        # `α(arena_step(s)) = spec_step(α(s))` for all 23 primitives + the non-prim
+        # (PushInt/PushQuote) cases, with fault parity and the u32-capacity→Overflow
+        # characterization, plus the multi-step driver corollary. This DISCHARGES the
+        # §5/§7 P2-style refinement obligation for the arena, mirroring the P2
+        # exec_step refinement. If it regresses, the arena is no longer proven to
+        # refine the spec, so the job goes RED.
+        # STATUS: 145 verified, 0 errors. Admit-free arena refinement.
+        run: |
+          set -o pipefail
+          mkdir -p artifacts
+          if verus crates/mtl-arena/proofs/arena_verus.rs 2>&1 | tee artifacts/arena-proof-log.txt ; then
+            echo "arena_status=pass" >> "$GITHUB_OUTPUT"
+            echo "### Verus arena refinement (arena_step ⇒ spec_step): VERIFIED (145/0)" >> "$GITHUB_STEP_SUMMARY"
+            echo "Machine-checked: α(arena_step(s)) = spec_step(α(s)) for all 23 prims + non-prim cases, fault parity, u32-capacity→Overflow, multi-step driver corollary." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "arena_status=fail" >> "$GITHUB_OUTPUT"
+            echo "### Verus arena refinement (arena_step ⇒ spec_step): FAILED — see arena proof log artifact" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
       - name: verus honesty audit — Layer C --no-cheating (reports the 2 mtl_core stubs; non-fatal)
         if: always()
         # `--no-cheating` rejects assume/admit/external_body. EXPECTED to flag exactly

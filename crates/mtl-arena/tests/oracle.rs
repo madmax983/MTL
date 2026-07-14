@@ -4,9 +4,12 @@
 //! `Vec<mtl_core::interp::Value>`, and assert EQUAL final stacks and the same
 //! terminal kind (Halt / Fault(kind)). Any disagreement is an arena bug.
 //!
-//! Ported verbatim (corpus + check logic) from the spike's `tests/oracle.rs`,
-//! adapted to the production `ArenaRun` surface (`run.state.stack` +
-//! `ArenaEnd`). 47/47 programs must agree.
+//! Ported (corpus + check logic) from the spike's `tests/oracle.rs`, adapted to
+//! the production `ArenaRun` surface (`run.state.stack` + `ArenaEnd`) and WIDENED
+//! well beyond the original 47 cases: the parametric perf-builder sweeps are
+//! densified across depth/breadth and the hand-built arithmetic/comparison
+//! coverage is swept over sign/magnitude, so the arena-vs-reference differential
+//! oracle now exercises 148 programs. All 148/148 must agree.
 
 mod common;
 
@@ -72,50 +75,82 @@ fn corpus() -> Vec<Case> {
 
     let mut cases = Vec::new();
 
-    // ---- 4 stress cases at small n (exact PERF-BASELINE builders) ----
-    for k in [4usize, 16, 64] {
+    // ---- parametric stress sweeps (exact PERF-BASELINE builders) ----
+    // These reuse the proven perf builders across a WIDE, densified parameter
+    // envelope (well within the tested/no-overflow ranges documented on each
+    // builder) so the differential oracle exercises the full recursion/dispatch
+    // machinery — flat front-pop, PrimRec re-emit, Fold spine, self-application
+    // splice, linrec, Times — at many depths/breadths rather than a token few.
+    for k in [1usize, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024] {
         cases.push(Case {
             name: format!("flat_1_1_add_drop_x{}", k),
             init: vec![],
             prog: perf::straightline(k),
         });
     }
-    for n in [5i64, 20, 100] {
+    for n in [0i64, 1, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000] {
         cases.push(from_perf(&format!("primrec_sumto_{}", n), perf::primrec_sumto(n)));
     }
-    for n in [5usize, 20, 100] {
+    for n in [0usize, 1, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000] {
         cases.push(from_perf(&format!("fold_sum_{}", n), perf::fold_sum(n)));
     }
-    for n in [5i64, 20, 100] {
+    for n in [0i64, 1, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000] {
         cases.push(from_perf(&format!("selfapp_countdown_{}", n), perf::selfapp_countdown(n)));
     }
 
-    // ---- other canonical perf shapes ----
-    for n in [5i64, 20] {
+    // ---- other canonical perf shapes (densified) ----
+    for n in [0i64, 1, 2, 3, 5, 10, 20, 50, 100, 200] {
         cases.push(from_perf(&format!("linrec_countdown_{}", n), perf::linrec_countdown(n)));
     }
-    for n in [5i64, 20] {
+    for n in [0i64, 1, 2, 3, 5, 10, 20, 50, 100, 200] {
         cases.push(from_perf(&format!("times_count_{}", n), perf::times_count(n)));
     }
-    for n in [5usize, 20] {
+    for n in [0usize, 1, 2, 3, 5, 10, 20, 50, 100, 200] {
         cases.push(from_perf(&format!("fold_quotes_{}", n), perf::fold_quotes(n)));
     }
 
     // ---- hand-built prim-coverage programs ----
     // arithmetic mix
     cases.push(prog("arith_mix", vec![int(3), int(4), add(), int(2), mul(), int(10), sub()]));
-    // div / mod (truncating toward zero, negative)
-    cases.push(prog("div_pos", vec![int(17), int(5), div()]));
-    cases.push(prog("mod_pos", vec![int(17), int(5), modulo()]));
-    cases.push(prog("div_neg", vec![int(-17), int(5), div()]));
-    cases.push(prog("mod_neg", vec![int(-17), int(5), modulo()]));
-    // comparison + xor
-    cases.push(prog("cmp_lt", vec![int(3), int(7), lt()]));
-    cases.push(prog("cmp_eq", vec![int(9), int(9), eq()]));
-    cases.push(prog("xor_bits", vec![int(12), int(10), xor()]));
-    // If both branches
-    cases.push(prog("if_true", vec![int(1), quote(vec![int(111)]), quote(vec![int(222)]), iff()]));
-    cases.push(prog("if_false", vec![int(0), quote(vec![int(111)]), quote(vec![int(222)]), iff()]));
+    // div / mod (truncating toward zero) across a widened sign/magnitude sweep;
+    // every divisor is nonzero (div-by-zero is a dedicated fault case) and no
+    // pair triggers the i64::MIN / -1 overflow corner.
+    for (a, b) in [
+        (17i64, 5i64),
+        (-17, 5),
+        (17, -5),
+        (-17, -5),
+        (100, 7),
+        (-100, 7),
+        (1, 1),
+        (0, 5),
+        (999, 1000),
+        (-999, 1000),
+    ] {
+        cases.push(prog(&format!("div_{}_{}", a, b), vec![int(a), int(b), div()]));
+        cases.push(prog(&format!("mod_{}_{}", a, b), vec![int(a), int(b), modulo()]));
+    }
+    // comparison (lt / eq) + bitwise xor across a sign/magnitude sweep.
+    for (a, b) in [
+        (3i64, 7i64),
+        (7, 3),
+        (9, 9),
+        (-5, 5),
+        (0, 0),
+        (12, 10),
+        (-1, -1),
+    ] {
+        cases.push(prog(&format!("cmp_lt_{}_{}", a, b), vec![int(a), int(b), lt()]));
+        cases.push(prog(&format!("cmp_eq_{}_{}", a, b), vec![int(a), int(b), eq()]));
+        cases.push(prog(&format!("xor_{}_{}", a, b), vec![int(a), int(b), xor()]));
+    }
+    // If both branches, across truthy/falsy conditions.
+    for c in [1i64, 0, -1, 42, 7] {
+        cases.push(prog(
+            &format!("if_cond_{}", c),
+            vec![int(c), quote(vec![int(111)]), quote(vec![int(222)]), iff()],
+        ));
+    }
     // shuffles
     cases.push(prog(
         "shuffles",
@@ -135,7 +170,7 @@ fn corpus() -> Vec<Case> {
     // apply
     cases.push(prog("apply", vec![int(3), quote(vec![int(4), mul()]), apply()]));
     // primrec factorial: n [1] [*] &   (base 1, combinator multiplies by index)
-    for n in [0i64, 1, 5, 6] {
+    for n in [0i64, 1, 2, 3, 4, 5, 6, 7, 8] {
         cases.push(Case {
             name: format!("primrec_factorial_{}", n),
             init: vec![Value::Int(n)],
@@ -190,5 +225,5 @@ fn differential_oracle() {
         );
     }
     assert_eq!(passed, total);
-    assert_eq!(total, 47, "corpus size drifted from the documented 47 cases");
+    assert_eq!(total, 148, "corpus size drifted from the documented 148 cases");
 }
