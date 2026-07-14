@@ -1,0 +1,13 @@
+You are being tested on your ability to READ and understand programs. Answer using ONLY your own reading. Do NOT run code, do NOT use any tools, and assume no interpreter is available. Be honest: if a program's result cannot be determined or it faults, say so rather than guessing.
+
+Here is a complete Python program:
+
+    def solve(k):
+        xs = [13, 25, 37, 42, 56]
+        acc = 0
+        for _ in range(k):
+            acc += xs.pop(0)
+        return acc
+    solve(7)
+
+What integer does this program produce? If it does not produce an integer, say so and explain.

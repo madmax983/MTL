@@ -1,0 +1,218 @@
+{
+  "mutation/a1/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "~ (was ^)",
+    "position": "the stack-op glyph immediately after '2 4+' (between the '+' and the following '-')"
+  },
+  "mutation/a1/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "b (was a)",
+    "position": "first operand of the subtraction: '(b - a)' was '(a - b)'"
+  },
+  "mutation/a2/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "% (was /)",
+    "position": "the binary operator right after the literal '11', mid-program"
+  },
+  "mutation/a2/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "<= (was <)",
+    "position": "the loop comparison 'if i <= n' was 'if i < n'"
+  },
+  "mutation/a3/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/a3/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/a4/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/a4/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/b1/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "^ (was @)",
+    "position": "inside the inner quote: '[^*]' was '[@*]' (the stack-op just before the '*')"
+  },
+  "mutation/b1/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "d (was e)",
+    "position": "the subtrahend in the return: 'd - d' was 'd - e'"
+  },
+  "mutation/b2/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "! (was ')",
+    "position": "the combinator right after the inner quote '[5*]', inside the outer quote"
+  },
+  "mutation/b2/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "or (was and)",
+    "position": "the guard 'if x > 0 or y > 0' was 'if x > 0 and y > 0'"
+  },
+  "mutation/b3/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "; (was ,)",
+    "position": "between the two inner quotes '[3 4+]' and '[5*]', inside the outer quote"
+  },
+  "mutation/b3/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "b (was a)",
+    "position": "first factor of the product: '(b - a) * (b - c)' was '(a - b) * (b - c)'"
+  },
+  "mutation/b4/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/b4/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/c1/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "8 (was 0)",
+    "position": "the third digit of the 4-digit literal: '1080' was '1000'"
+  },
+  "mutation/c1/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "8 (was 0)",
+    "position": "the interior digit of 'base = 1080' was 'base = 1000'"
+  },
+  "mutation/c2/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "^ (was :)",
+    "position": "inside the times-loop body quote: '[^*]' was '[:*]' (the stack-op before '*')"
+  },
+  "mutation/c2/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "a (was c)",
+    "position": "the third term of the return: 'p - q + a - d' was 'p - q + c - d'"
+  },
+  "mutation/c3/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "= (was <)",
+    "position": "the comparison glyph right after '3 8', selecting the '?' branch"
+  },
+  "mutation/c3/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "<= (was <)",
+    "position": "the loop test 'if i * 2 <= n' was 'if i * 2 < n'"
+  },
+  "mutation/c4/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/c4/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/b5/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "| (was &)",
+    "position": "the recursion combinator right after the '[0][+]' quotes: '|' (linrec) was '&' (primrec)"
+  },
+  "mutation/b5/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "c (was a)",
+    "position": "first operand of the product: '(c - a) * m' was '(a - c) * m'"
+  },
+  "mutation/c5/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "> (removed \u2014 A has an extra uncons that B lacks)",
+    "position": "the second '>' (uncons) in the list-walk prefix: A '>_>__+' uncons twice; B '>___+' uncons once (one '>' deleted)"
+  },
+  "mutation/c5/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "<= (was <)",
+    "position": "the loop test 'if i <= n' was 'if i < n'"
+  },
+  "mutation/d1/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "9 (was 7)",
+    "position": "the middle digit of the literal 137 -> 139 (18th glyph), inside '6*2-137+3*4-'"
+  },
+  "mutation/d2/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "^ (was ~)",
+    "position": "the stack op inside the inner quote of the doubly-nested quote: '[[6 ^-]!...]' was '[[6 ~-]!...]'"
+  },
+  "mutation/d3/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "= (was <)",
+    "position": "the inner conditional predicate '4 6=' was '4 6<', nested in the then-branch of the outer if"
+  },
+  "mutation/d4/mtl": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "& (was ()",
+    "position": "the recursion combinator right after '[6 2 9 4 7]0[+]': '&' (primrec) was '(' (fold)"
+  },
+  "mutation/d5/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/d6/mtl": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/d1/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "1376 (was 1374)",
+    "position": "the literal added each iteration: '+ 1376' was '+ 1374'"
+  },
+  "mutation/d2/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "(b - a) (was (a - b))",
+    "position": "the first term of the returned expression: '(b - a) * c' was '(a - b) * c'"
+  },
+  "mutation/d3/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "<= (was <)",
+    "position": "the loop guard 'if i * 2 <= n' was 'if i * 2 < n'"
+  },
+  "mutation/d4/python": {
+    "schema": "mutation",
+    "differ": true,
+    "changed": "(a * 3 - b) (was (b * 3 - a))",
+    "position": "the second floor-division term: '(a * 3 - b) // (a + 1)' was '(b * 3 - a) // (a + 1)'"
+  },
+  "mutation/d5/python": {
+    "schema": "mutation",
+    "differ": false
+  },
+  "mutation/d6/python": {
+    "schema": "mutation",
+    "differ": false
+  }
+}

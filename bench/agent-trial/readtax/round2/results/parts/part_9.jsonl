@@ -1,0 +1,25 @@
+{"id":"mutation/c5/python","test":"mutation","item":"c5","arm":"python","trial":1,"prediction":{"differ":true,"change":"The comparison operator `<` in Program A (line 9, `if i < n:`) becomes `<=` in Program B (line 18, `if i <= n:`) — an `=` glyph is inserted after the `<`. Result: A prints 8 (6+2), B prints 17 (6+2+9)."}}
+{"id":"mutation/c5/python","test":"mutation","item":"c5","arm":"python","trial":2,"prediction":{"differ":true,"change":"The comparison operator in g's condition changed: Program A has `if i < n` while Program B has `if i <= n` — an `=` glyph was inserted after the `<` (the \"less-than\" comparison became \"less-than-or-equal\"). Effect: A prints 8 (6+2), B prints 17 (6+2+9)."}}
+{"id":"mutation/c5/python","test":"mutation","item":"c5","arm":"python","trial":3,"prediction":{"differ":true,"change":"The comparison operator in g's if-condition changed from \"<\" (Program A, line 9: `if i < n`) to \"<=\" (Program B, line 18: `if i <= n`) — an \"=\" glyph was inserted after the \"<\". This changes the sum from xs[0]+xs[1]=8 to xs[0]+xs[1]+xs[2]=17."}}
+{"id":"confab/divnk/mtl","test":"confab","item":"divnk","arm":"mtl","trial":1,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/divnk/mtl","test":"confab","item":"divnk","arm":"mtl","trial":2,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/divnk/mtl","test":"confab","item":"divnk","arm":"mtl","trial":3,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/divnk/python","test":"confab","item":"divnk","arm":"python","trial":1,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/divnk/python","test":"confab","item":"divnk","arm":"python","trial":2,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/divnk/python","test":"confab","item":"divnk","arm":"python","trial":3,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/condbr/mtl","test":"confab","item":"condbr","arm":"mtl","trial":1,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/condbr/mtl","test":"confab","item":"condbr","arm":"mtl","trial":2,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/condbr/mtl","test":"confab","item":"condbr","arm":"mtl","trial":3,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/condbr/python","test":"confab","item":"condbr","arm":"python","trial":1,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/condbr/python","test":"confab","item":"condbr","arm":"python","trial":2,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/condbr/python","test":"confab","item":"condbr","arm":"python","trial":3,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/dropuf/mtl","test":"confab","item":"dropuf","arm":"mtl","trial":1,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/dropuf/mtl","test":"confab","item":"dropuf","arm":"mtl","trial":2,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/dropuf/mtl","test":"confab","item":"dropuf","arm":"mtl","trial":3,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/dropuf/python","test":"confab","item":"dropuf","arm":"python","trial":1,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/dropuf/python","test":"confab","item":"dropuf","arm":"python","trial":2,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/dropuf/python","test":"confab","item":"dropuf","arm":"python","trial":3,"prediction":{"claims_error":true,"output_int":null,"confidence":"high"}}
+{"id":"confab/safediv/mtl","test":"confab","item":"safediv","arm":"mtl","trial":1,"prediction":{"claims_error":false,"output_int":528,"confidence":"high"}}
+{"id":"confab/safediv/mtl","test":"confab","item":"safediv","arm":"mtl","trial":2,"prediction":{"claims_error":false,"output_int":528,"confidence":"high"}}
+{"id":"confab/safediv/mtl","test":"confab","item":"safediv","arm":"mtl","trial":3,"prediction":{"claims_error":false,"output_int":528,"confidence":"high"}}
+{"id":"confab/safediv/python","test":"confab","item":"safediv","arm":"python","trial":1,"prediction":{"claims_error":false,"output_int":528,"confidence":"high"}}

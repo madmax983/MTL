@@ -1,0 +1,138 @@
+You are being tested on your ability to READ and understand programs. Answer using ONLY your own reading. Do NOT run code, do NOT use any tools, and assume no interpreter is available. Be honest: if a program's result cannot be determined or it faults, say so rather than guessing.
+
+The program below is written in MTL. Here is the complete MTL quick reference you may rely on:
+
+=== BEGIN MTL QUICK REFERENCE ===
+# MTL Quick Reference (v0.3)
+
+MTL is a stack-based, point-free language. A program is a flat sequence of
+words executed left to right against an operand stack. There are no variables,
+names, or environments — all abstraction is done with quotations.
+
+## Value model
+
+- **Int** — a signed 64-bit integer (`i64`).
+- **Quote** — a quotation `[ ... ]`: an unevaluated program pushed as a value.
+  Quotations are the only abstraction (functions, control flow, and lists are
+  all quotes). A list is just a quote of ints, e.g. `[1 2 3]`.
+- There are **no strings** and no booleans: `0` is false, any nonzero is true.
+  Comparisons yield `1` or `0`.
+
+## Literals and lexing
+
+- Integer literals are **unsigned**: `[0-9]+`. A leading `-` is **never** part
+  of a literal — `-` is always the `Sub` primitive. Write `-7` as `0 7 -`
+  (push 0, push 7, subtract).
+- Symbol words are single ASCII characters and **self-delimiting**: write them
+  with no spaces, e.g. `~@^`, `3*7+`, `:!`.
+- **Whitespace is required only** between two adjacent integer literals
+  (`12 34`) or two adjacent named words. It is never needed around symbols:
+  `3:*` is `3 dup *`. `[1 2+]` is a quote pushing 1, 2, then Add.
+- `.` next to a digit is Times, never a decimal point: `3.` is `Int(3) Times`.
+
+## The 23 primitives
+
+Stack effect notation: top of stack is at the **right**. `[q]` is a quote.
+
+| Glyph | Name | Stack effect | Meaning |
+|---|---|---|---|
+| `[` `]` | quote | `( -- [q] )` | delimiters (not a word) |
+| `:` | dup | `( a -- a a )` | duplicate top |
+| `_` | drop | `( a -- )` | discard top |
+| `~` | swap | `( a b -- b a )` | swap top two |
+| `@` | rot | `( a b c -- b c a )` | rotate third to top |
+| `^` | over | `( a b -- a b a )` | copy second over top |
+| `!` | apply | `( [q] -- ... )` | run quote (splice into program) |
+| `,` | cat | `( [a] [b] -- [ab] )` | concatenate quotes |
+| `;` | cons | `( v [q] -- [v q] )` | prepend value into quote |
+| `'` | dip | `( a [q] -- ... a )` | run `q` with `a` temporarily removed, then restore `a` on top |
+| `+` | add | `( a b -- a+b )` | checked |
+| `-` | sub | `( a b -- a-b )` | checked; `-` is always Sub |
+| `*` | mul | `( a b -- a*b )` | checked |
+| `/` | div | `( a b -- a/b )` | truncating; `b=0` faults |
+| `%` | mod | `( a b -- a%b )` | truncating remainder (sign follows dividend); `b=0` faults |
+| `=` | eq | `( a b -- 0\|1 )` | equality |
+| `<` | lt | `( a b -- 0\|1 )` | less-than |
+| `?` | if | `( c [t] [f] -- ... )` | run `[t]` if `c≠0` else `[f]` |
+| `&` | primrec | `( n [I] [C] -- r )` | bounded primitive recursion |
+| `.` | times | `( n [Q] -- ... )` | run `[Q]` n times |
+| `\|` | linrec | `( [P][T][R1][R2] -- ... )` | linear/tail recursion |
+| `>` | uncons | `( [w …] -- w [ … ] 1 )` or `( [] -- 0 )` | split a quote |
+| `(` | fold | `( [seq] init [C] -- r )` | native left fold; `C:( acc w -- acc' )` runs once per element left-to-right; `[]` gives `init` |
+| `$` | xor | `( a b -- a$b )` | bitwise XOR on the i64 two's-complement; total (no Overflow, no DivByZero) |
+
+## Recursion combinators (exact rewrites)
+
+Continuation splicing: `!` and the combinators splice quote bodies into the
+program rather than calling a sub-interpreter.
+
+- **`!` apply**: `[q] !` → runs the words of `q` in place.
+- **`'` dip**: `a [q] '` → removes `a`, runs `q`, then pushes `a` back on top.
+  Use it to operate one level down.
+- **`&` primrec** `n [I] [C] &`: if `n ≤ 0`, run `I`. If `n > 0`, it recurses on
+  `n-1` and then runs `C` with the stack `... n r` where `n` is the current
+  count and `r` is the subresult. So `C` sees both the counter and the recursive
+  result. Example: factorial `[1][*]&` — base pushes 1; combine multiplies the
+  counter `n` by the running product.
+- **`.` times** `n [Q] .`: run `[Q]` exactly `max(n,0)` times, left to right.
+  `Q` sees whatever the stack holds; no counter is supplied.
+- **`|` linrec** `[P][T][R1][R2] |`: desugars to if. Runs `P` (a predicate that
+  leaves a flag on top), then: if flag ≠ 0 run `T` (terminate); else run `R1`,
+  recurse (the whole linrec), then run `R2`. Tail recursion is `R2 = []`.
+  Shape: `[predicate][then][before-recurse][after-recurse]|`.
+- **`>` uncons**: `[h t...] >` → `h [t...] 1`; `[] >` → `0`. It consumes the
+  quote once (affine). A non-empty list yields head value, tail quote, and flag
+  `1`; empty yields just `0`. A quote whose head is not a pushed value faults.
+
+### List idioms
+
+- **Non-destructive null test.** `>` consumes the quote, so to test emptiness
+  without losing the list use `>[;0][[]1]?`: uncons; if non-empty (flag 1) run
+  `[;0]` = cons the head back on and push flag `0` (rebuilt list, "not empty");
+  if empty (flag 0) run `[[]1]` = push empty quote and flag `1`. Result:
+  `[list] not_empty_flag` on top, list preserved.
+- **Re-uncons gotcha.** After a null test rebuilds the list, you still need the
+  head to do work. Re-split with `>` inside the recursive step, and use `>_`
+  when you want the tail but not the flag, or `'` (dip) to work under the tail.
+- **Building an output list.** Start with `[]` and `;` (cons) each element to
+  grow a quote; consing while consuming the input reverses order.
+
+## Faults
+
+Execution halts with a fault (no partial results). Kinds:
+
+- **Underflow** — too few operands for the primitive.
+- **TypeMismatch** — an operand has the wrong type (e.g. `!` on an Int, `+` on
+  a Quote, `>` head is not a value).
+- **Overflow** — a checked arithmetic result leaves `i64`.
+- **DivByZero** — `/` or `%` with divisor 0.
+
+**Precedence** when a primitive cannot fire: **arity first** (Underflow),
+**then operand types** (TypeMismatch), **then semantic checks** (DivByZero /
+Overflow). E.g. `Int(1) Add` with one operand is Underflow, not TypeMismatch.
+
+## Worked examples
+
+1. **Arithmetic** — `n -> 3n+7`: `3*7+`. On stack `[5]`: `5 3 *` → `15`,
+   `7 +` → `22`.
+2. **Times loop** — sum 1..n is not needed here, but e.g. double n times:
+   `[2*].` with `n` and a seed below it runs `2*` n times.
+3. **PrimRec** — `n [I] [C] &`. `[0][+]&` computes `0+1+...+n`: base pushes 0,
+   combine adds the counter to the subresult.
+4. **LinRec over a list** with the non-destructive null test — skeleton:
+   `[ >[;0][[]1]? ][ ...terminate... ][ ...pre... ][ ...post... ]|`.
+   The predicate `>[;0][[]1]?` leaves `[list] flag`; when the list is empty the
+   flag is `1` and `T` runs; otherwise `R1` runs (typically re-uncons with `>`
+   and process the head), then linrec recurses, then `R2` runs.
+5. **Reverse / cons to build output** — begin with an empty accumulator quote
+   `[]`, then for each input element `; ` (cons) it onto the accumulator. Because
+   cons prepends, walking the input front-to-back yields the reversed list. Use
+   `'` (dip) to run the recursion under the growing accumulator, and `>_` to
+   take a tail while discarding the uncons flag.
+=== END MTL QUICK REFERENCE ===
+
+Here is a complete MTL program. The input is already prepended and it runs on an initially empty stack:
+
+    [23 19 15 11 8 22 30 33 4 6 17]1000000[17-/](
+
+What integer does this program produce? If it does not produce an integer, say so and explain.

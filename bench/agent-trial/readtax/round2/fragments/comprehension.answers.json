@@ -1,0 +1,162 @@
+{
+  "comprehension/horner_sq/mtl": {
+    "schema": "comprehension",
+    "expected_int": 30628
+  },
+  "comprehension/horner_sq/python": {
+    "schema": "comprehension",
+    "expected_int": 30628
+  },
+  "comprehension/max_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": 81
+  },
+  "comprehension/max_fold/python": {
+    "schema": "comprehension",
+    "expected_int": 81
+  },
+  "comprehension/xor_scan/mtl": {
+    "schema": "comprehension",
+    "expected_int": 572
+  },
+  "comprehension/xor_scan/python": {
+    "schema": "comprehension",
+    "expected_int": 572
+  },
+  "comprehension/cube_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": 67860
+  },
+  "comprehension/cube_fold/python": {
+    "schema": "comprehension",
+    "expected_int": 67860
+  },
+  "comprehension/factsum_sumsq/mtl": {
+    "schema": "comprehension",
+    "expected_int": 2303415
+  },
+  "comprehension/factsum_sumsq/python": {
+    "schema": "comprehension",
+    "expected_int": 2303415
+  },
+  "comprehension/prod_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": -326
+  },
+  "comprehension/prod_fold/python": {
+    "schema": "comprehension",
+    "expected_int": -326
+  },
+  "comprehension/tri_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": 631
+  },
+  "comprehension/tri_fold/python": {
+    "schema": "comprehension",
+    "expected_int": 631
+  },
+  "comprehension/fact_linrec/mtl": {
+    "schema": "comprehension",
+    "expected_int": 101833528
+  },
+  "comprehension/fact_linrec/python": {
+    "schema": "comprehension",
+    "expected_int": 101833528
+  },
+  "comprehension/fold_of_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": 3733
+  },
+  "comprehension/fold_of_fold/python": {
+    "schema": "comprehension",
+    "expected_int": 3733
+  },
+  "comprehension/sumsq_linrec/mtl": {
+    "schema": "comprehension",
+    "expected_int": 1905
+  },
+  "comprehension/sumsq_linrec/python": {
+    "schema": "comprehension",
+    "expected_int": 1905
+  },
+  "comprehension/uncons_unpack/mtl": {
+    "schema": "comprehension",
+    "expected_int": -7
+  },
+  "comprehension/uncons_unpack/python": {
+    "schema": "comprehension",
+    "expected_int": -7
+  },
+  "comprehension/sumsq_fold/mtl": {
+    "schema": "comprehension",
+    "expected_int": 6773
+  },
+  "comprehension/sumsq_fold/python": {
+    "schema": "comprehension",
+    "expected_int": 6773
+  },
+  "comprehension/d1/mtl": {
+    "schema": "comprehension",
+    "expected_int": 10749
+  },
+  "comprehension/d1/python": {
+    "schema": "comprehension",
+    "expected_int": 10749
+  },
+  "comprehension/d2/mtl": {
+    "schema": "comprehension",
+    "expected_int": 13320
+  },
+  "comprehension/d2/python": {
+    "schema": "comprehension",
+    "expected_int": 13320
+  },
+  "comprehension/d3/mtl": {
+    "schema": "comprehension",
+    "expected_int": 314
+  },
+  "comprehension/d3/python": {
+    "schema": "comprehension",
+    "expected_int": 314
+  },
+  "comprehension/d4/mtl": {
+    "schema": "comprehension",
+    "expected_int": 478
+  },
+  "comprehension/d4/python": {
+    "schema": "comprehension",
+    "expected_int": 478
+  },
+  "comprehension/d5/mtl": {
+    "schema": "comprehension",
+    "expected_int": 6857
+  },
+  "comprehension/d5/python": {
+    "schema": "comprehension",
+    "expected_int": 6857
+  },
+  "comprehension/d6/mtl": {
+    "schema": "comprehension",
+    "expected_int": 20775
+  },
+  "comprehension/d6/python": {
+    "schema": "comprehension",
+    "expected_int": 20775
+  },
+  "comprehension/d7/mtl": {
+    "schema": "comprehension",
+    "expected_int": 498
+  },
+  "comprehension/d7/python": {
+    "schema": "comprehension",
+    "expected_int": 498
+  },
+  "comprehension/d8/mtl": {
+    "schema": "comprehension",
+    "expected_int": -28
+  },
+  "comprehension/d8/python": {
+    "schema": "comprehension",
+    "expected_int": -28
+  }
+}

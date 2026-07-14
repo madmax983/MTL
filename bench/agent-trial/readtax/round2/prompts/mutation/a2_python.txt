@@ -1,0 +1,23 @@
+You are being tested on your ability to READ and understand programs. Answer using ONLY your own reading. Do NOT run code, do NOT use any tools, and assume no interpreter is available. Be honest: if a program's result cannot be determined or it faults, say so rather than guessing.
+
+Here are two Python programs, A and B:
+
+    Program A:
+        def h(n):
+            total = 0
+            for i in range(10):
+                if i < n:
+                    total += i
+            return total
+        print(h(5))
+
+    Program B:
+        def h(n):
+            total = 0
+            for i in range(10):
+                if i <= n:
+                    total += i
+            return total
+        print(h(5))
+
+Do these two programs differ? If so, name the single token/position that changed. If they are identical, say so.

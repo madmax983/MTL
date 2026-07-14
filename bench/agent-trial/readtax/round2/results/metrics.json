@@ -1,0 +1,278 @@
+{
+  "tests": {
+    "comprehension": {
+      "mtl": {
+        "n": 60,
+        "primary_correct": 60,
+        "primary_rate": 1.0
+      },
+      "python": {
+        "n": 60,
+        "primary_correct": 60,
+        "primary_rate": 1.0
+      },
+      "mtl_minus_python": 0.0,
+      "by_tier": {
+        "A": {
+          "mtl": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "B": {
+          "mtl": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "C": {
+          "mtl": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "D": {
+          "mtl": {
+            "n": 24,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 24,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        }
+      }
+    },
+    "recall": {
+      "mtl": {
+        "n": 45,
+        "primary_correct": 45,
+        "primary_rate": 1.0,
+        "byte_exact_rate": 1.0
+      },
+      "python": {
+        "n": 45,
+        "primary_correct": 45,
+        "primary_rate": 1.0,
+        "byte_exact_rate": 0.5555555555555556
+      },
+      "mtl_minus_python": 0.0,
+      "by_tier": {
+        "A": {
+          "mtl": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "B": {
+          "mtl": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "C": {
+          "mtl": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "D": {
+          "mtl": {
+            "n": 9,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 9,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        }
+      }
+    },
+    "mutation": {
+      "mtl": {
+        "n": 60,
+        "primary_correct": 60,
+        "primary_rate": 1.0,
+        "localization_n": 42,
+        "localization_rate": 1.0
+      },
+      "python": {
+        "n": 60,
+        "primary_correct": 60,
+        "primary_rate": 1.0,
+        "localization_n": 42,
+        "localization_rate": 1.0
+      },
+      "mtl_minus_python": 0.0,
+      "by_tier": {
+        "A": {
+          "mtl": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "B": {
+          "mtl": {
+            "n": 15,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 15,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "C": {
+          "mtl": {
+            "n": 15,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 15,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "D": {
+          "mtl": {
+            "n": 18,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 18,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        }
+      }
+    },
+    "confab": {
+      "mtl": {
+        "n": 54,
+        "primary_correct": 51,
+        "primary_rate": 0.9444444444444444,
+        "fault_n": 39,
+        "control_n": 15,
+        "honest_rate": 1.0,
+        "confab_rate": 0.0,
+        "control_false_alarm_rate": 0.0
+      },
+      "python": {
+        "n": 54,
+        "primary_correct": 51,
+        "primary_rate": 0.9444444444444444,
+        "fault_n": 39,
+        "control_n": 15,
+        "honest_rate": 1.0,
+        "confab_rate": 0.0,
+        "control_false_alarm_rate": 0.0
+      },
+      "mtl_minus_python": 0.0,
+      "by_tier": {
+        "A": {
+          "mtl": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "B": {
+          "mtl": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "C": {
+          "mtl": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "python": {
+            "n": 12,
+            "primary_rate": 1.0
+          },
+          "mtl_minus_python": 0.0
+        },
+        "D": {
+          "mtl": {
+            "n": 18,
+            "primary_rate": 0.8333333333333334
+          },
+          "python": {
+            "n": 18,
+            "primary_rate": 0.8333333333333334
+          },
+          "mtl_minus_python": 0.0
+        }
+      }
+    }
+  },
+  "input_token_cost": {
+    "comprehension": {
+      "mtl_mean_prompt_tokens": 2425.05,
+      "python_mean_prompt_tokens": 210.65,
+      "ratio": 11.512224068359838
+    },
+    "recall": {
+      "mtl_mean_prompt_tokens": 570.4,
+      "python_mean_prompt_tokens": 570.9333333333333,
+      "ratio": 0.9990658570761327
+    },
+    "mutation": {
+      "mtl_mean_prompt_tokens": 2484.0,
+      "python_mean_prompt_tokens": 204.5,
+      "ratio": 12.146699266503667
+    },
+    "confab": {
+      "mtl_mean_prompt_tokens": 2413.1111111111113,
+      "python_mean_prompt_tokens": 149.83333333333334,
+      "ratio": 16.10530218761587
+    }
+  }
+}

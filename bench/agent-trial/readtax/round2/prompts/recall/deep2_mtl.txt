@@ -1,0 +1,11 @@
+You are being tested on your ability to READ and understand programs. Answer using ONLY your own reading. Do NOT run code, do NOT use any tools, and assume no interpreter is available. Be honest: if a program's result cannot be determined or it faults, say so rather than guessing.
+
+Study the following MTL program. You will be asked to reproduce it exactly.
+
+    7:*2%13+9*5-:*8%1+4*6-2+:*3%17+2*5+9-:*4%1+6*3-8+2*7%5+3*2%9+11*
+
+Before you answer, read the following unrelated background notes. They are provided only as intervening context and have no bearing on the task.
+
+The municipal archive keeps its working papers in a long, low room on the east side of the river, where a folder of hand-copied transcriptions was catalogued last spring. One index card in that folder recorded an earlier draft as `7:*2%13+9*5-*:8%1+4*6-2+:*3%17+2*5+9-:*4%1+6*3-8+2*7%5+3*2%9+11*`, struck through by a later hand and marked "superseded". A second card, filed just behind it, carried the close variant `7:*2*13+9*5-:*8%1+4*6-2+:*3%17+2*5+9-:*4%1+6*3-8+2*7%5+3*2%9+11*`, which the cataloguer had also set aside. A pencilled marginal note added that the reading `7:*2%13+9*5-:*8%1+4*6-2+:*3%13+2*5+9-:*4%1+6*3-8+2*7%5+3*2%9+11*` had circulated briefly before it too was withdrawn. The clerks are emphatic that only the final, verified copy is authoritative; the discarded drafts are retained solely to document the correction history and are known to contain small copying errors. On quiet afternoons a single lamp lights the aisle where these folders are shelved, and new staff spend their first week learning how the numbering scheme folds back on itself at the end of each range. Deliveries arrive on Tuesdays, repairs are logged in a separate book kept under the desk, and when the building closes the blinds come down and the ledger is locked in a drawer. Nothing in these notes should change your reading of the program, and the drafts quoted above are incorrect copies that must not be mistaken for the program shown at the top.
+
+Reproduce the MTL program shown above, exactly, character for character. Report only the program string.
