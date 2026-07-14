@@ -1,4 +1,7 @@
-# MTL Quick Reference (v0.3)
+# MTL Quick Reference (v0.4)
+
+New in v0.4: the **Host capabilities** section at the end of this document,
+covering Tier-3 capability calls, the grant model, budgets, and host faults.
 
 MTL is a stack-based, point-free language. A program is a flat sequence of
 words executed left to right against an operand stack. There are no variables,
@@ -124,3 +127,127 @@ Overflow). E.g. `Int(1) Add` with one operand is Underflow, not TypeMismatch.
    cons prepends, walking the input front-to-back yields the reversed list. Use
    `'` (dip) to run the recursion under the growing accumulator, and `>_` to
    take a tail while discarding the uncons flag.
+
+## Host capabilities (v0.4 Tier-3)
+
+The pure language above is total and effect-free. Tier-3 programs also reach a
+**host** through *capabilities* — named words serviced outside the verified
+core. This is the only source of I/O, tools, and resources.
+
+### Named words = capability Calls
+
+- A **named word** `[a-z][a-z0-9]*` (e.g. `readline`, `emit`) is a host
+  capability `Call`, **not** a core primitive. The core yields on every named
+  word; the host services it, popping/pushing per the capability's stack effect.
+- **Single glyphs** (`: _ ~ + ? | …`) are always pure core prims. Only
+  lowercase-alphanumeric words hit the host. The lexer reads `-` as `sub` and
+  `?` as `if`, so design names like `read-line`/`done?` are spelled
+  `readline`/`donep`.
+
+### Capability table
+
+Stack effect notation matches the core (top at right). `{output}` = writes
+output bytes (metered). "faults" lists the [`HostCode`](#fault-codes) a call may
+raise; all can also raise `NotGranted`/`BudgetExhausted`.
+
+**Input** (read host-owned fixture data):
+
+| Call | Stack effect | Faults | Note |
+|---|---|---|---|
+| `readline` | `( -- h )` | InputClosed | first input line handle |
+| `nextline` | `( -- h )` | InputClosed | next line handle; advances |
+| `readlines` | `( -- [h…] )` | — | all lines as handle list |
+| `readstate` | `( -- s )` | — | initial agent state (int) |
+| `readjson` | `( -- j )` | — | json document handle |
+| `readinput` | `( -- q )` | — | query string handle |
+| `readtext` | `( -- t )` | — | free-text handle |
+
+**Predicates** (leave input, push a `0|1` flag — the way to cope with limits):
+
+| Call | Stack effect | Note |
+|---|---|---|
+| `endp` | `( -- 0\|1 )` | 1 iff input exhausted |
+| `linehit` | `( h -- h 0\|1 )` | 1 iff line matches predicate |
+| `donep` | `( s -- s 0\|1 )` | 1 iff `s >= threshold` |
+| `okp` | `( r -- r 0\|1 )` | 1 once flaky op warmed up |
+
+**Transforms** (handle/state → new handle/int):
+
+| Call | Stack effect | Faults | Note |
+|---|---|---|---|
+| `step` | `( s -- s' )` | — | `s + 1` |
+| `getname` | `( j -- v )` | ToolError | extract json "name" field |
+| `fetch` | `( q -- doc )` | ToolError | tool: query → document |
+| `parse` | `( doc -- v )` | ToolError | tool: document → value |
+| `tokenize` | `( t -- [w…] )` | — | split text into word handles |
+| `transform` | `( h -- h' )` | — | uppercase the string |
+| `tryop` | `( -- r )` | ToolError | flaky tool; retry until `okp` |
+
+**Handles** (move/combine opaque strings without reading bytes):
+
+| Call | Stack effect | Faults | Note |
+|---|---|---|---|
+| `concat` | `( h1 h2 -- h )` | ToolError | join two string handles |
+| `select` | `( [h…] n -- h )` | ToolError | nth handle (0-indexed) |
+
+**Output** (metered against the byte cap):
+
+| Call | Stack effect | Faults | Note |
+|---|---|---|---|
+| `emit` | `( h -- )` `{output}` | OutputCapExceeded | write string + `\n` |
+| `emitint` | `( n -- )` `{output}` | OutputCapExceeded | write decimal `n` + `\n` |
+
+### Grant model
+
+The **grant set** (registry) fixes which names are callable. Calling a name that
+is **not granted** faults `NotGranted` and does nothing — no pop, no push, no
+effect. A task may grant only a restricted subset ("you may only use `readline`,
+`emit`); staying inside that set is part of the task. Assume nothing is granted
+unless the task lists it.
+
+### Budgets
+
+Two orthogonal host meters, each charged **before** the effect, atomically (a
+refused charge runs nothing, mutates nothing):
+
+- **Per-name call budget** — a capability may be capped at `N` calls. The
+  `N+1`th faults `BudgetExhausted` and does not run.
+- **Total output-byte cap** — a shared budget across all `{output}` calls. An
+  `emit`/`emitint` whose bytes would exceed it faults `OutputCapExceeded` and
+  writes nothing.
+
+Unbudgeted names/bytes are unlimited. Bound your calls to stay inside a stated
+budget — there is no refund and no retry after the fault.
+
+### Fault codes
+
+`HostCode`: `InputClosed`, `OutputCapExceeded`, `BudgetExhausted`, `ToolError`,
+`Timeout`, `NotGranted`.
+
+A **host fault is terminal**: it ends the run with no partial effect, and there
+is **no in-MTL catch** — `?`/`|` cannot recover from a fault that already fired.
+So you **cope by predicting**: call a predicate capability, read its `0|1` flag,
+and branch with `?`/`|` so you never make the call that would over-read or
+over-budget. Guard input with `endp`/`linehit`, loops with `donep`, retries with
+`okp`.
+
+### String handles
+
+The core has no string type. A string is an **opaque `i64` handle** on the
+stack. The core can only **move** a handle — `:` dup, `_` drop, `~` swap, and
+list ops — it cannot read, compare, or build the bytes behind it. All string
+work happens host-side inside capabilities (`transform`, `concat`, `getname`, …).
+`0` is never a valid handle (usable as a sentinel).
+
+### Examples
+
+1. **Echo one line** — `readline emit`: read the first line's handle, write it.
+2. **Grep by predicate** — `readlines 0[linehit[emit][_]?](_`: fold over the
+   line handles; `linehit` leaves the handle and a flag, `?` emits it or drops
+   it.
+3. **Drain input safely** — `[endp][][nextline emit][]|`: linrec whose predicate
+   `endp` terminates on exhaustion; otherwise `nextline emit` then recurse.
+   `endp` guards `nextline` so it never faults `InputClosed`.
+4. **Retry a flaky tool** — `tryop[okp][_][_ tryop][]|`: seed one `tryop`, then
+   loop while `okp`'s flag is `0`, each pass dropping the old result and calling
+   `tryop` again; on success drop the result.
