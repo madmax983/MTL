@@ -1,0 +1,20 @@
+# DETACHED workspace: this `[workspace]` table makes this crate its own
+# workspace root, so it is NOT a member of the repo's root workspace and cannot
+# perturb any production crate. It only uses the production crates as read-only
+# path dependencies (their sources are never modified).
+[workspace]
+
+[package]
+name = "capability-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+mtl-core = { path = "../../../crates/mtl-core" }
+mtl-syntax = { path = "../../../crates/mtl-syntax" }
+mtl-host = { path = "../../../crates/mtl-host" }
+
+[[bin]]
+name = "spike"
+path = "src/main.rs"
