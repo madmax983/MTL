@@ -20,36 +20,41 @@
 //! `PushString`), so neither does this AST — string literals are a spec-level
 //! surface form the core cannot represent (see [`crate::parse`]).
 
-/// A primitive operation. Mirrors `SpecPrim` in the mtl-core ghost/exec model.
-///
-/// Each primitive has a canonical single-character glyph; see
-/// [`glyph_to_prim`] / [`prim_to_glyph`] and [`GLYPHS`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Prim {
-    Dup,
-    Drop,
-    Swap,
-    Rot,
-    Over,
-    Apply,
-    Cat,
-    Cons,
-    Dip,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Mod,
-    Eq,
-    Lt,
-    If,
-    PrimRec,
-    Times,
-    LinRec,
-    Uncons,
-    Fold,
-    Xor,
+/// Generate the parser/printer primitive mirror — the [`Prim`] enum and the
+/// canonical [`GLYPHS`] table — from the checked manifest's canonical rows
+/// (`crate::manifest::for_each_primitive!`). This is the codegen from issue #46:
+/// the enum variants and the glyph table are no longer hand-written, so they
+/// cannot drift from the manifest.
+macro_rules! define_syntax_prim {
+    ( $( ($idx:expr, $name:ident, $glyph:literal, $arity:literal, $eff:literal) ),* $(,)? ) => {
+        /// A primitive operation. Mirrors `SpecPrim` in the mtl-core ghost/exec model.
+        ///
+        /// Each primitive has a canonical single-character glyph; see
+        /// [`glyph_to_prim`] / [`prim_to_glyph`] and [`GLYPHS`].
+        ///
+        /// Generated from `crate::manifest::for_each_primitive!` — the single
+        /// source of truth — so it cannot drift from the manifest.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum Prim {
+            $( $name ),*
+        }
+
+        /// The canonical glyph ↔ [`Prim`] table.
+        ///
+        /// This is the shared print/parse mirror used by both the lexer
+        /// ([`crate::parse`]) and the pretty-printer ([`crate::print`]). Brackets
+        /// `[` and `]` are quotation delimiters, not primitives, so they do not
+        /// appear here.
+        ///
+        /// Generated from `crate::manifest::for_each_primitive!` — the single
+        /// source of truth — so it cannot drift from the manifest.
+        pub const GLYPHS: &[(char, Prim)] = &[
+            $( ($glyph, Prim::$name) ),*
+        ];
+    };
 }
+
+crate::for_each_primitive!(define_syntax_prim);
 
 /// A single MTL word. Mirrors the exec `Word` in mtl-core.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -66,38 +71,6 @@ pub enum Word {
 
 /// A whole MTL program: a flat sequence of words.
 pub type Program = Vec<Word>;
-
-/// The canonical glyph ↔ [`Prim`] table.
-///
-/// This is the **single source of truth** shared by both the lexer
-/// ([`crate::parse`]) and the pretty-printer ([`crate::print`]). Brackets
-/// `[` and `]` are quotation delimiters, not primitives, so they do not appear
-/// here.
-pub const GLYPHS: &[(char, Prim)] = &[
-    (':', Prim::Dup),
-    ('_', Prim::Drop),
-    ('~', Prim::Swap),
-    ('@', Prim::Rot),
-    ('^', Prim::Over),
-    ('!', Prim::Apply),
-    (',', Prim::Cat),
-    (';', Prim::Cons),
-    ('\'', Prim::Dip),
-    ('+', Prim::Add),
-    ('-', Prim::Sub),
-    ('*', Prim::Mul),
-    ('/', Prim::Div),
-    ('%', Prim::Mod),
-    ('=', Prim::Eq),
-    ('<', Prim::Lt),
-    ('?', Prim::If),
-    ('&', Prim::PrimRec),
-    ('.', Prim::Times),
-    ('|', Prim::LinRec),
-    ('>', Prim::Uncons),
-    ('(', Prim::Fold),
-    ('$', Prim::Xor),
-];
 
 /// Map a glyph character to its primitive, if any.
 pub fn glyph_to_prim(c: char) -> Option<Prim> {

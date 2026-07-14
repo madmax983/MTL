@@ -6,6 +6,19 @@
 //! (`mtl_syntax::manifest`), the single source of truth. Every assertion fails
 //! LOUDLY, naming the mirror, the primitive, and expected-vs-actual, so a drift
 //! is diagnosable from the panic message alone.
+//!
+//! ## Generated vs hand-written (issue #46)
+//!
+//! Four of the six mirrors are now **generated** from the manifest's single
+//! canonical table `mtl_syntax::for_each_primitive!` and cannot drift by
+//! construction: the parser `Prim` enum + `GLYPHS` (`mtl-syntax`), and both
+//! `conv` opcode maps (`mtl-bench-validate`, `mtl-host`). The tests below act as
+//! **smoke assertions** over the emitted artifacts (a codegen bug is caught, not
+//! assumed away). Two mirrors stay hand-written and comparison-policed: the Verus
+//! `SpecPrim` (`verus_specprim_matches_manifest`) and the interp `Prim`
+//! (`interp_prim_names_match_manifest`, `interp_prim_exhaustive`). See
+//! `mirror_generation_propagates` (test #9) for the propagation backstop rooted
+//! directly at the canonical table.
 
 use mtl_syntax::ast::{glyph_to_prim, prim_to_glyph, GLYPHS};
 use mtl_syntax::manifest::{meta_of, ALL_PRIMS, PRIMITIVES};
@@ -419,4 +432,96 @@ fn arity_matches_interp_underflow() {
 
 fn run(stack: Vec<Value>, prog: Vec<IWord>, fuel: u64) -> Outcome {
     mtl_core::interp::run(Vm::with_stack(stack, prog), fuel)
+}
+
+// ============================================================
+// 9. mirror_generation_propagates  (issue #46 codegen backstop)
+// ============================================================
+
+/// Build an independent `(index, name, glyph, arity)` reference vector by
+/// expanding the canonical table `mtl_syntax::for_each_primitive!` DIRECTLY —
+/// i.e. rooted at the single source of truth, not at the derived `PRIMITIVES`
+/// table. This is what the propagation test checks every generated mirror
+/// against, so it proves each mirror really is a function of the one table.
+macro_rules! collect_rows {
+    ( $( ($idx:expr, $name:ident, $glyph:literal, $arity:literal, $eff:literal) ),* $(,)? ) => {
+        vec![ $( ($idx as usize, stringify!($name), $glyph, $arity as u8) ),* ]
+    };
+}
+
+fn canonical_rows() -> Vec<(usize, &'static str, char, u8)> {
+    mtl_syntax::for_each_primitive!(collect_rows)
+}
+
+/// Propagation test (issue #46 acceptance criterion): a single edit to the
+/// canonical table `mtl_syntax::for_each_primitive!` must ripple into EVERY
+/// generated mirror with no hand-edit to those mirrors. We assert that here by
+/// re-deriving the rows straight from the macro and checking that all four
+/// generated mirrors — the parser `Prim` enum, `GLYPHS`/`prim_to_glyph`/
+/// `glyph_to_prim`, and both `conv` opcode maps — reflect them exactly. Editing
+/// a row (rename a prim, swap two glyphs, add a 24th) therefore cannot leave any
+/// generated mirror behind; if it could, this test (and the per-mirror smoke
+/// tests above) would fail loudly.
+#[test]
+fn mirror_generation_propagates() {
+    let rows = canonical_rows();
+    assert_eq!(
+        rows.len(),
+        23,
+        "propagation: canonical table has {} rows, expected 23",
+        rows.len()
+    );
+
+    for (i, name, glyph, _arity) in rows.iter().copied() {
+        // --- GENERATED mirror 1: parser `Prim` enum (Debug name + order) ---
+        let sp = ALL_PRIMS[i];
+        assert_eq!(
+            format!("{:?}", sp),
+            name,
+            "propagation: syntax::Prim at index {} is {:?} but canonical table says {:?}",
+            i,
+            format!("{:?}", sp),
+            name
+        );
+
+        // --- GENERATED mirror 2: GLYPHS / prim_to_glyph / glyph_to_prim ---
+        assert_eq!(
+            prim_to_glyph(sp),
+            glyph,
+            "propagation: GLYPHS drift — prim_to_glyph({:?}) = {:?}, canonical table says {:?}",
+            sp,
+            prim_to_glyph(sp),
+            glyph
+        );
+        assert_eq!(
+            glyph_to_prim(glyph),
+            Some(sp),
+            "propagation: GLYPHS drift — glyph_to_prim({:?}) = {:?}, expected Some({:?})",
+            glyph,
+            glyph_to_prim(glyph),
+            sp
+        );
+
+        // --- GENERATED mirror 3: bench/validate conv opcode map ---
+        let b = bench_iprim(sp);
+        assert_eq!(
+            format!("{:?}", b),
+            name,
+            "propagation: bench conv drift — conv({:?}) = interp {:?}, canonical table says {:?}",
+            sp,
+            format!("{:?}", b),
+            name
+        );
+
+        // --- GENERATED mirror 4: mtl-host conv opcode map ---
+        let h = host_iprim(sp);
+        assert_eq!(
+            format!("{:?}", h),
+            name,
+            "propagation: host conv drift — conv({:?}) = interp {:?}, canonical table says {:?}",
+            sp,
+            format!("{:?}", h),
+            name
+        );
+    }
 }

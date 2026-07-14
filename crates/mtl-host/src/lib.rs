@@ -31,44 +31,38 @@ pub mod meter;
 use std::path::Path;
 
 use mtl_core::interp::Word as IWord;
-use mtl_syntax::{parse, ParseError, Prim, Word};
+use mtl_syntax::{parse, ParseError, Word};
+
+/// Generate the syntax-`Prim` → interp-`Prim` opcode map from the checked
+/// manifest's canonical rows (`mtl_syntax::for_each_primitive!`). This is the
+/// codegen from issue #46: the 23-arm match is no longer hand-written here, so
+/// the `conv` opcode map cannot drift from the manifest. Mirrors
+/// `bench/validate`'s generated map.
+macro_rules! define_prim_opcode_map {
+    ( $( ($idx:expr, $name:ident, $glyph:literal, $arity:literal, $eff:literal) ),* $(,)? ) => {
+        /// Map a syntax primitive to its interp opcode. Generated from the manifest.
+        #[inline]
+        fn prim_to_iprim(p: mtl_syntax::Prim) -> mtl_core::interp::Prim {
+            match p {
+                $( mtl_syntax::Prim::$name => mtl_core::interp::Prim::$name ),*
+            }
+        }
+    };
+}
+
+mtl_syntax::for_each_primitive!(define_prim_opcode_map);
 
 /// Convert one parsed `mtl-syntax` word into an executable `mtl-core` word.
 ///
 /// `PushInt` maps straight across, `PushQuote` recurses, `Call(Vec<char>)`
-/// becomes `Call(String)`, and the 23 primitives map by name (both enums list
-/// them in the same order). Mirrors `bench/validate`'s `conv`.
+/// becomes `Call(String)`, and the 23 primitives map by name via the
+/// manifest-generated [`prim_to_iprim`] opcode map. Mirrors `bench/validate`'s `conv`.
 pub fn conv(w: &Word) -> IWord {
-    use mtl_core::interp::Prim as IPrim;
     match w {
         Word::PushInt(n) => IWord::PushInt(*n),
         Word::PushQuote(body) => IWord::PushQuote(body.iter().map(conv).collect()),
         Word::Call(chars) => IWord::Call(chars.iter().collect::<String>()),
-        Word::Prim(p) => IWord::Prim(match p {
-            Prim::Dup => IPrim::Dup,
-            Prim::Drop => IPrim::Drop,
-            Prim::Swap => IPrim::Swap,
-            Prim::Rot => IPrim::Rot,
-            Prim::Over => IPrim::Over,
-            Prim::Apply => IPrim::Apply,
-            Prim::Cat => IPrim::Cat,
-            Prim::Cons => IPrim::Cons,
-            Prim::Dip => IPrim::Dip,
-            Prim::Add => IPrim::Add,
-            Prim::Sub => IPrim::Sub,
-            Prim::Mul => IPrim::Mul,
-            Prim::Div => IPrim::Div,
-            Prim::Mod => IPrim::Mod,
-            Prim::Eq => IPrim::Eq,
-            Prim::Lt => IPrim::Lt,
-            Prim::If => IPrim::If,
-            Prim::PrimRec => IPrim::PrimRec,
-            Prim::Times => IPrim::Times,
-            Prim::LinRec => IPrim::LinRec,
-            Prim::Uncons => IPrim::Uncons,
-            Prim::Fold => IPrim::Fold,
-            Prim::Xor => IPrim::Xor,
-        }),
+        Word::Prim(p) => IWord::Prim(prim_to_iprim(*p)),
     }
 }
 
