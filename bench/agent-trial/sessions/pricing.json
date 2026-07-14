@@ -1,0 +1,55 @@
+{
+  "_comment": "Price configs for the session-economics harness (issue #45). All prices are USD per 1,000,000 tokens. Cache multipliers are relative to p_in (standard Anthropic prompt-caching multipliers: 5-minute cache write = 1.25x input, cache read = 0.10x input). Derived: pw = cache_write_mult * p_in, pr = cache_read_mult * p_in. N* (the crossover) depends only on the p_out:p_in ratio and the cache multipliers, NOT on the absolute scale of p_in, so a uniform rescaling of (p_in, p_out) leaves N* unchanged.",
+  "configs": {
+    "default": {
+      "label": "Anthropic published Opus-tier rates (spec-mandated default)",
+      "model": "claude-opus-4-8",
+      "source": "https://platform.claude.com/docs/en/pricing (Anthropic pricing page), as of 2026-07-14",
+      "note": "Spec-mandated default for the pinned model claude-opus-4-8: p_in=$15/M, p_out=$75/M, cache_write=1.25x, cache_read=0.10x. NOTE: the Anthropic claude-api reference (cached 2026-06-24) lists the current claude-opus-4-8 sticker as $5/M input / $25/M output; because N* is invariant to a uniform rescale of (p_in,p_out) at fixed ratio and cache multipliers, using $15/$75 vs $5/$25 yields an IDENTICAL N*. The $5/$25 variant is included below as 'opus48_published' for a sanity check.",
+      "p_in": 15.0,
+      "p_out": 75.0,
+      "cache_write_mult": 1.25,
+      "cache_read_mult": 0.10
+    },
+    "opus48_published": {
+      "label": "Current published claude-opus-4-8 sticker ($5/$25) - scale sanity check",
+      "model": "claude-opus-4-8",
+      "source": "Anthropic claude-api reference table (cached 2026-06-24): claude-opus-4-8 $5/M in, $25/M out",
+      "note": "Same p_out:p_in ratio (5:1) and same cache multipliers as default, uniformly scaled by 1/3. Should reproduce the default N* exactly (scale-invariance check).",
+      "p_in": 5.0,
+      "p_out": 25.0,
+      "cache_write_mult": 1.25,
+      "cache_read_mult": 0.10
+    },
+    "alt1_1h_cache": {
+      "label": "1-hour cache TTL (cache_write=2.0x)",
+      "model": "claude-opus-4-8",
+      "source": "Anthropic prompt-caching multipliers: 1-hour cache write = 2.0x input, cache read = 0.10x input",
+      "note": "Tests whether a more expensive cache write (1h TTL) pushes N* out. Same p_out:p_in ratio as default.",
+      "p_in": 15.0,
+      "p_out": 75.0,
+      "cache_write_mult": 2.0,
+      "cache_read_mult": 0.10
+    },
+    "alt2_lower_out_ratio": {
+      "label": "Cheaper output ratio (p_out = 4x p_in instead of 5x)",
+      "model": "hypothetical",
+      "source": "Sensitivity lever: reduce the output:input price ratio from 5:1 to 4:1",
+      "note": "Lower output premium shrinks the MTL output-token advantage per task, so the fixed quickref tax takes longer to amortize -> N* should move UP (or stay). Isolates the output:input ratio lever.",
+      "p_in": 15.0,
+      "p_out": 60.0,
+      "cache_write_mult": 1.25,
+      "cache_read_mult": 0.10
+    },
+    "alt3_dearer_cache_read": {
+      "label": "More expensive cache read (cache_read=0.25x)",
+      "model": "claude-opus-4-8",
+      "source": "Sensitivity lever: cache_read_mult 0.10x -> 0.25x",
+      "note": "A dearer cache read raises the per-task cost of the cached quickref on tasks 2..N, pushing N* out. Isolates the cache-read multiplier lever.",
+      "p_in": 15.0,
+      "p_out": 75.0,
+      "cache_write_mult": 1.25,
+      "cache_read_mult": 0.25
+    }
+  }
+}

@@ -1,0 +1,150 @@
+{
+  "quickref_tokens_o200k": 4051,
+  "default_nstar_cached": null,
+  "default_nstar_cold": null,
+  "break_even": {
+    "mean_P_py": 88.6111,
+    "mean_P_mtl": 97.0,
+    "mean_O_py": 20.0648,
+    "mean_O_mtl": 13.1019,
+    "measured_output_savings_per_task": 6.963,
+    "measured_input_penalty_per_task": 8.3889,
+    "quickref_tokens": 4051,
+    "per_config": {
+      "default": {
+        "label": "Anthropic published Opus-tier rates (spec-mandated default)",
+        "p_out_over_p_in": 5.0,
+        "cache_read_mult": 0.1,
+        "dO_breakeven_tax_only": 81.02,
+        "dO_breakeven_incl_input_penalty": 82.6978,
+        "shortfall_factor_vs_measured": 11.88,
+        "crossover_reachable_at_measured_savings": false
+      },
+      "opus48_published": {
+        "label": "Current published claude-opus-4-8 sticker ($5/$25) - scale sanity check",
+        "p_out_over_p_in": 5.0,
+        "cache_read_mult": 0.1,
+        "dO_breakeven_tax_only": 81.02,
+        "dO_breakeven_incl_input_penalty": 82.6978,
+        "shortfall_factor_vs_measured": 11.88,
+        "crossover_reachable_at_measured_savings": false
+      },
+      "alt1_1h_cache": {
+        "label": "1-hour cache TTL (cache_write=2.0x)",
+        "p_out_over_p_in": 5.0,
+        "cache_read_mult": 0.1,
+        "dO_breakeven_tax_only": 81.02,
+        "dO_breakeven_incl_input_penalty": 82.6978,
+        "shortfall_factor_vs_measured": 11.88,
+        "crossover_reachable_at_measured_savings": false
+      },
+      "alt2_lower_out_ratio": {
+        "label": "Cheaper output ratio (p_out = 4x p_in instead of 5x)",
+        "p_out_over_p_in": 4.0,
+        "cache_read_mult": 0.1,
+        "dO_breakeven_tax_only": 101.275,
+        "dO_breakeven_incl_input_penalty": 103.3722,
+        "shortfall_factor_vs_measured": 14.85,
+        "crossover_reachable_at_measured_savings": false
+      },
+      "alt3_dearer_cache_read": {
+        "label": "More expensive cache read (cache_read=0.25x)",
+        "p_out_over_p_in": 5.0,
+        "cache_read_mult": 0.25,
+        "dO_breakeven_tax_only": 202.55,
+        "dO_breakeven_incl_input_penalty": 204.2278,
+        "shortfall_factor_vs_measured": 29.33,
+        "crossover_reachable_at_measured_savings": false
+      }
+    }
+  },
+  "sensitivity": {
+    "default": {
+      "label": "Anthropic published Opus-tier rates (spec-mandated default)",
+      "nstar_cached": null,
+      "nstar_cold": null
+    },
+    "opus48_published": {
+      "label": "Current published claude-opus-4-8 sticker ($5/$25) - scale sanity check",
+      "nstar_cached": null,
+      "nstar_cold": null
+    },
+    "alt1_1h_cache": {
+      "label": "1-hour cache TTL (cache_write=2.0x)",
+      "nstar_cached": null,
+      "nstar_cold": null
+    },
+    "alt2_lower_out_ratio": {
+      "label": "Cheaper output ratio (p_out = 4x p_in instead of 5x)",
+      "nstar_cached": null,
+      "nstar_cold": null
+    },
+    "alt3_dearer_cache_read": {
+      "label": "More expensive cache read (cache_read=0.25x)",
+      "nstar_cached": null,
+      "nstar_cold": null
+    }
+  },
+  "per_N_default": {
+    "1": {
+      "python_cpc_mean": 0.0028157151599999997,
+      "mtl_cold_cpc_mean": 0.063217494915,
+      "mtl_cached_cpc_mean": 0.07840874491499998,
+      "frac_C_beats_A": 0.0,
+      "frac_B_beats_A": 0.0,
+      "mtl_success_mean": 1.0,
+      "py_success_mean": 1.0,
+      "mtl_success_deficit_flag": false
+    },
+    "2": {
+      "python_cpc_mean": 0.0028115551274999996,
+      "mtl_cold_cpc_mean": 0.06318763983,
+      "mtl_cached_cpc_mean": 0.04343901482999999,
+      "frac_C_beats_A": 0.0,
+      "frac_B_beats_A": 0.0,
+      "mtl_success_mean": 1.0,
+      "py_success_mean": 1.0,
+      "mtl_success_deficit_flag": false
+    },
+    "3": {
+      "python_cpc_mean": 0.00283996346,
+      "mtl_cold_cpc_mean": 0.06320133988,
+      "mtl_cached_cpc_mean": 0.03180608987999999,
+      "frac_C_beats_A": 0.0,
+      "frac_B_beats_A": 0.0,
+      "mtl_success_mean": 1.0,
+      "py_success_mean": 1.0,
+      "mtl_success_deficit_flag": false
+    },
+    "5": {
+      "python_cpc_mean": 0.002840679135,
+      "mtl_cold_cpc_mean": 0.063197096856,
+      "mtl_cached_cpc_mean": 0.022484546855999998,
+      "frac_C_beats_A": 0.0,
+      "frac_B_beats_A": 0.0,
+      "mtl_success_mean": 1.0,
+      "py_success_mean": 1.0,
+      "mtl_success_deficit_flag": false
+    },
+    "8": {
+      "python_cpc_mean": 0.0028291588874999997,
+      "mtl_cold_cpc_mean": 0.063210114225,
+      "mtl_cached_cpc_mean": 0.017256582975,
+      "frac_C_beats_A": 0.0,
+      "frac_B_beats_A": 0.0,
+      "mtl_success_mean": 1.0,
+      "py_success_mean": 1.0,
+      "mtl_success_deficit_flag": false
+    },
+    "16": {
+      "python_cpc_mean": 0.0028363035740625,
+      "mtl_cold_cpc_mean": 0.0632043623596875,
+      "mtl_cached_cpc_mean": 0.0128833467346875,
+      "frac_C_beats_A": 0.0,
+      "frac_B_beats_A": 0.0,
+      "mtl_success_mean": 1.0,
+      "py_success_mean": 1.0,
+      "mtl_success_deficit_flag": false
+    }
+  }
+}
