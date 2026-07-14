@@ -923,6 +923,186 @@ proof fn lemma_abs_step_prim_sl(astk: Seq<AbsVal>, p: SpecPrim)
     }
 }
 
+/// **Bottom-frame invariance of `abs_step_prim`.** Every straight-line primitive acts
+/// only on the TOP of the stack (`astk[n-1]`, `subrange(0, n-k)`, `push`), so
+/// prepending a frame `fr` at the BOTTOM shifts all indices uniformly and commutes:
+/// `abs_step_prim(fr + astk, p) == fr + abs_step_prim(astk, p)`. The workhorse for the
+/// recursion combinators, whose runtime counters/tail pile up below the accumulator.
+proof fn lemma_abs_step_prim_frame(fr: Seq<AbsVal>, astk: Seq<AbsVal>, p: SpecPrim)
+    requires
+        abs_step_prim(astk, p) is Some,
+    ensures
+        abs_step_prim(fr + astk, p)
+            == Some(fr + abs_step_prim(astk, p)->Some_0),
+{
+    let m = astk.len() as int;
+    let a2 = astk.len() as int + fr.len() as int;
+    let big = fr + astk;
+    assert(big.len() == fr.len() + astk.len());
+    // Top-relative index correspondence: big[fr.len() + j] == astk[j].
+    assert forall|j: int| 0 <= j < m implies big[fr.len() + j] == astk[j] by {}
+    lemma_abs_step_prim_sl(astk, p);
+    match p {
+        SpecPrim::Dup => {
+            assert(m >= 1);
+            assert(big[a2 - 1] == astk[m - 1]);
+            assert(big.push(big[a2 - 1]) =~= fr + astk.push(astk[m - 1]));
+        }
+        SpecPrim::Drop => {
+            assert(m >= 1);
+            assert(big.subrange(0, a2 - 1) =~= fr + astk.subrange(0, m - 1));
+        }
+        SpecPrim::Swap => {
+            assert(m >= 2);
+            assert(big[a2 - 1] == astk[m - 1]);
+            assert(big[a2 - 2] == astk[m - 2]);
+            assert(big.subrange(0, a2 - 2).push(big[a2 - 1]).push(big[a2 - 2])
+                =~= fr + astk.subrange(0, m - 2).push(astk[m - 1]).push(astk[m - 2]));
+        }
+        SpecPrim::Rot => {
+            assert(m >= 3);
+            assert(big[a2 - 1] == astk[m - 1]);
+            assert(big[a2 - 2] == astk[m - 2]);
+            assert(big[a2 - 3] == astk[m - 3]);
+            assert(big.subrange(0, a2 - 3).push(big[a2 - 2]).push(big[a2 - 1]).push(big[a2 - 3])
+                =~= fr + astk.subrange(0, m - 3).push(astk[m - 2]).push(astk[m - 1]).push(astk[m - 3]));
+        }
+        SpecPrim::Over => {
+            assert(m >= 2);
+            assert(big[a2 - 2] == astk[m - 2]);
+            assert(big.push(big[a2 - 2]) =~= fr + astk.push(astk[m - 2]));
+        }
+        SpecPrim::Add | SpecPrim::Sub | SpecPrim::Mul | SpecPrim::Div | SpecPrim::Mod
+        | SpecPrim::Xor | SpecPrim::Eq | SpecPrim::Lt => {
+            assert(m >= 2);
+            assert(absv_is_int(astk[m - 1]) && absv_is_int(astk[m - 2]));
+            assert(big[a2 - 1] == astk[m - 1]);
+            assert(big[a2 - 2] == astk[m - 2]);
+            assert(absv_is_int(big[a2 - 1]) && absv_is_int(big[a2 - 2]));
+            assert(big.subrange(0, a2 - 2).push(AbsVal::AInt)
+                =~= fr + astk.subrange(0, m - 2).push(AbsVal::AInt));
+        }
+        _ => { assert(false); }
+    }
+}
+
+/// `join_cell(x, x)` is always `Some` (reflexivity): equal cells join to themselves.
+proof fn lemma_join_cell_refl(x: AbsVal)
+    ensures
+        join_cell(x, x) is Some,
+        join_cell(x, x)->Some_0 == x,
+{
+    match x {
+        AbsVal::AInt => {}
+        AbsVal::ALit(_) => {}
+    }
+}
+
+/// **Bottom-frame invariance of `check_m1`.** Lifts `lemma_abs_step_prim_frame` (and
+/// the analogous top-relative reasoning for `If`/`Times`) through the whole checker:
+/// running the checker under an extra bottom frame `fr` appends `fr` to the post.
+/// This is what makes the recursion-combinator bodies analyzable on a MINIMAL stack
+/// (empty for the primrec initializer, `[counter]++acc` for the combine) and then
+/// re-instated on the real running stack.
+pub proof fn lemma_check_frame(fr: Seq<AbsVal>, astk: Seq<AbsVal>, p: Seq<SpecWord>, depth: nat)
+    requires
+        check_m1(astk, p, depth) is Some,
+    ensures
+        check_m1(fr + astk, p, depth)
+            == Some(fr + check_m1(astk, p, depth)->Some_0),
+    decreases depth, p.len(),
+{
+    let big = fr + astk;
+    if p.len() == 0 {
+        assert(check_m1(astk, p, depth) == Some(astk));
+        assert(check_m1(big, p, depth) == Some(big));
+    } else {
+        let w = p[0];
+        let rest = p.subrange(1, p.len() as int);
+        match w {
+            SpecWord::PushInt(_) => {
+                assert(big.push(AbsVal::AInt) =~= fr + astk.push(AbsVal::AInt));
+                lemma_check_frame(fr, astk.push(AbsVal::AInt), rest, depth);
+            }
+            SpecWord::PushQuote(q) => {
+                assert(big.push(AbsVal::ALit(q)) =~= fr + astk.push(AbsVal::ALit(q)));
+                lemma_check_frame(fr, astk.push(AbsVal::ALit(q)), rest, depth);
+            }
+            SpecWord::Prim(SpecPrim::If) => {
+                let m = astk.len() as int;
+                let mb = big.len() as int;
+                assert(m >= 3);
+                assert(depth >= 1);
+                assert(big[mb - 3] == astk[m - 3]);
+                assert(big[mb - 2] == astk[m - 2]);
+                assert(big[mb - 1] == astk[m - 1]);
+                match (astk[m - 3], astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(t), AbsVal::ALit(f)) => {
+                        let base = astk.subrange(0, m - 3);
+                        assert(big.subrange(0, mb - 3) =~= fr + base);
+                        let pt = check_m1(base, t, (depth - 1) as nat)->Some_0;
+                        let pf = check_m1(base, f, (depth - 1) as nat)->Some_0;
+                        assert(joinable(pt, pf));
+                        lemma_joinable_eq(pt, pf);
+                        lemma_check_frame(fr, base, t, (depth - 1) as nat);
+                        lemma_check_frame(fr, base, f, (depth - 1) as nat);
+                        // framed branch posts are fr+pt and fr+pf, and pt == pf.
+                        assert(check_m1(fr + base, t, (depth - 1) as nat) == Some(fr + pt));
+                        assert(check_m1(fr + base, f, (depth - 1) as nat) == Some(fr + pf));
+                        assert(fr + pt =~= fr + pf);
+                        assert(joinable(fr + pt, fr + pf)) by {
+                            assert forall|j: int| 0 <= j < (fr + pt).len() implies
+                                (#[trigger] join_cell((fr + pt)[j], (fr + pf)[j])) is Some by {
+                                assert((fr + pt)[j] == (fr + pf)[j]);
+                                lemma_join_cell_refl((fr + pt)[j]);
+                            }
+                        }
+                        assert(join_stacks(fr + pt, fr + pf) =~= fr + join_stacks(pt, pf)) by {
+                            assert forall|i: int| 0 <= i < (fr + pt).len() implies
+                                join_stacks(fr + pt, fr + pf)[i] == (fr + join_stacks(pt, pf))[i] by {
+                                lemma_join_cell_refl((fr + pt)[i]);
+                                lemma_joinable_eq(pt, pf);
+                            }
+                        }
+                        lemma_check_frame(fr, join_stacks(pt, pf), rest, depth);
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(SpecPrim::Times) => {
+                let m = astk.len() as int;
+                let mb = big.len() as int;
+                assert(m >= 2);
+                assert(depth >= 1);
+                assert(big[mb - 2] == astk[m - 2]);
+                assert(big[mb - 1] == astk[m - 1]);
+                match (astk[m - 2], astk[m - 1]) {
+                    (AbsVal::AInt, AbsVal::ALit(q)) => {
+                        let base = astk.subrange(0, m - 2);
+                        assert(big.subrange(0, mb - 2) =~= fr + base);
+                        assert(check_m1(base, q, (depth - 1) as nat) == Some(base));
+                        lemma_check_frame(fr, base, q, (depth - 1) as nat);
+                        assert(check_m1(fr + base, q, (depth - 1) as nat) == Some(fr + base));
+                        lemma_check_frame(fr, base, rest, depth);
+                    }
+                    _ => { assert(false); }
+                }
+            }
+            SpecWord::Prim(p2) => {
+                match abs_step_prim(astk, p2) {
+                    Some(astk2) => {
+                        lemma_abs_step_prim_frame(fr, astk, p2);
+                        assert(abs_step_prim(big, p2) == Some(fr + astk2));
+                        lemma_check_frame(fr, astk2, rest, depth);
+                    }
+                    None => { assert(false); }
+                }
+            }
+            SpecWord::Call(_) => { assert(false); }
+        }
+    }
+}
+
 /// In the milestone-1 lattice, `join_cell` is `Some` ONLY on equal cells
 /// (`AInt/AInt` or `ALit(x)/ALit(x)`), so `joinable(pt, pf)` forces `pt == pf`, and
 /// the join is that common stack. This is what collapses the two-branch/one-join
