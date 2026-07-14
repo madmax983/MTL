@@ -1,0 +1,19 @@
+[package]
+name = "mtl-check"
+version = "0.1.0"
+edition = "2021"
+description = "Prototype static stack-effect checker for MTL (Layer C: static stack typing over literal quotations)."
+license = "MIT"
+repository = "https://github.com/madmax983/MTL"
+
+[lib]
+name = "mtl_check"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mtl-check"
+path = "src/main.rs"
+
+[dependencies]
+mtl-syntax = { path = "../mtl-syntax" }
+mtl-core = { path = "../mtl-core" }
