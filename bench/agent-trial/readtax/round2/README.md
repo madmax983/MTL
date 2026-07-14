@@ -173,10 +173,15 @@ are worth a sentence in the MTL quick reference.
    truncated, vs `2` in Python, floored). This is a real MTL↔Python porting /
    twin-fidelity trap and deserves an explicit quickref note.
 
-Both flags are now folded into `docs/mtl-quickref.md` in this PR; adding the two
-sentences moved the quickref's own `o200k_base` token count from 2244 to 2369.
-(The static v0.3 snapshot embedded in the round-2 prompts, `quickref_tokens=2244`
-in `manifest.json`, is frozen and unchanged.)
+Both flags are now folded into `docs/mtl-quickref.md` in this PR. The eval's
+frozen embedded snapshot is the static v0.3 quickref at **2244** `o200k_base`
+tokens (`quickref_tokens=2244` in `manifest.json`) and is **unchanged** — it is
+the exact text the model saw during the recorded trials. Separately, the
+**canonical** `docs/mtl-quickref.md` has grown to **3926** tokens post-#39 (the
+new host-capabilities section); adding the two sentences here takes it to
+**4051**. Because the input-token read-tax figures below (11–16×) were measured
+against the frozen 2244-token embed, against the current larger canonical
+quickref they are a conservative **lower** bound.
 
 ## Reproduce
 
