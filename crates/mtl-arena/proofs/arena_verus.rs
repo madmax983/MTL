@@ -867,6 +867,739 @@ pub proof fn lemma_alpha_cont_prepend(vm: ModelVm, pos: ModelVmState, id: ModelQ
         =~= alpha_quote(vm, id) + alpha_cont(vm, pos.cont, pos.cursor));
 }
 
+// ============================================================
+// 5. M3a — the MODEL arena step + refinement theorem SCAFFOLD.
+//    (blueprint §4.0/§4.a; production sources: run.rs::arena_step,
+//     vm.rs::next_word/exec_word/exec_prim, prim.rs Dup..Over.)
+//
+// This layer defines a FAITHFUL twin of production `arena_step`
+// (read next word from the model cont with cursor-bump / segment-pop, then
+// dispatch PushInt/PushQuote/Call/Prim) and proves the one-step refinement
+// theorem for the SCAFFOLD group: the non-primitive cases (PushInt, PushQuote,
+// Call->Invoke, Halt) and the pure stack prims Dup/Drop/Swap/Rot/Over.
+//
+// The 18 non-scaffold prims are deliberately LEFT UNINTERPRETED in
+// `model_exec_prim` (via `arbitrary()`); the theorem is GATED by
+// `is_scaffold_step`, so it NEVER evaluates them and asserts NOTHING about their
+// behavior. M3b/M3c must REPLACE those arms with faithful models + lemmas.
+//
+// Fault parity (the arena's Underflow/TypeMismatch/Overflow vs. spec faults) is
+// M4: for M3a the theorem carries a `!(spec_step(...) is Fault)` precondition,
+// so only the happy-path (non-underflow) arms are proven. This is stated
+// explicitly, not hidden.
+//
+// NO admit/assume/external cheats; consumes only the M2 lemmas above.
+// ============================================================
+
+/// Model Step outcome — the tag mirror of run.rs `Step`. The model is pure-spec,
+/// so the resulting `(vm, pos)` is threaded functionally alongside this tag
+/// (production threads it via `&mut`).
+pub enum ModelStep {
+    Next,
+    Halt,
+    Fault(Error),
+    Invoke(Seq<char>),
+}
+
+/// α on a model word VALUE (not by tape index). Coincides with `alpha_word(vm, i)`
+/// whenever `w == vm.tape[i]` and `wf_tape_word(vm, i)` (see `lemma_alpha_word_val`):
+/// the `PushQuote` guard in `alpha_word` is exactly the wf fact, so on a well-formed
+/// tape the two agree. `model_next_word` yields a word value, so the engine lemma is
+/// stated in terms of this.
+pub open spec fn alpha_word_val(vm: ModelVm, w: ModelWord) -> SpecWord {
+    match w {
+        ModelWord::PushInt(n) => SpecWord::PushInt(n),
+        ModelWord::Prim(p) => SpecWord::Prim(p),
+        ModelWord::Call(k) => SpecWord::Call(vm.calls[k as int]),
+        ModelWord::PushQuote(id) => SpecWord::PushQuote(alpha_quote(vm, id)),
+    }
+}
+
+/// The value-form and index-form of α on a tape word agree under `wf_tape`.
+pub proof fn lemma_alpha_word_val(vm: ModelVm, i: nat)
+    requires
+        wf_tape(vm),
+        i < vm.tape.len(),
+    ensures
+        alpha_word(vm, i) == alpha_word_val(vm, vm.tape[i as int]),
+{
+    assert(wf_tape_word(vm, i as int));
+    match vm.tape[i as int] {
+        ModelWord::PushQuote(id) => {
+            assert(id.start + id.len <= i);
+        },
+        _ => {},
+    }
+}
+
+// ------------------------------------------------------------
+// §4.-1  model_next_word — spec twin of Vm::next_word (vm.rs 148-183).
+// Read + consume the next word, popping exhausted segments; None at NIL (halt).
+// The `parent < pos.cont` guard (wf_cont) discharges the `decreases` without a
+// `requires`; the else-branch is unreachable under wf.
+// ------------------------------------------------------------
+
+pub open spec fn model_next_word(vm: ModelVm, pos: ModelVmState)
+    -> Option<(ModelWord, ModelVmState)>
+    decreases pos.cont,
+{
+    if pos.cont == 0 {
+        None
+    } else {
+        let nd = vm.cnodes[pos.cont as int];
+        let seg_len = nd.qend - nd.qstart;
+        if (pos.cursor as int) < seg_len {
+            let idx = nd.qstart + pos.cursor;
+            Some((vm.tape[idx as int], ModelVmState { cursor: pos.cursor + 1, ..pos }))
+        } else if nd.parent == 0 {
+            None
+        } else if nd.parent < pos.cont {
+            let parent = vm.cnodes[nd.parent as int];
+            model_next_word(vm, ModelVmState { cont: nd.parent, cursor: parent.off, ..pos })
+        } else {
+            // Unreachable under wf_cont (parent < ptr). Guard discharges `decreases`.
+            None
+        }
+    }
+}
+
+/// The reusable engine: `model_next_word` refines the head/tail split of the
+/// flattened continuation (blueprint §3.4). Consumes `lemma_alpha_cont_next_word`
+/// (in-segment head-peel) and `lemma_alpha_cont_segpop` (segment-pop).
+pub proof fn lemma_model_next_word(vm: ModelVm, pos: ModelVmState)
+    requires
+        wf(vm),
+        wf_pos(vm, pos),
+    ensures
+        match model_next_word(vm, pos) {
+            None => alpha_cont(vm, pos.cont, pos.cursor).len() == 0,
+            Some((w, pos2)) => {
+                let ac = alpha_cont(vm, pos.cont, pos.cursor);
+                &&& wf_pos(vm, pos2)
+                &&& pos2.stack == pos.stack
+                &&& ac.len() > 0
+                &&& alpha_word_val(vm, w) == ac[0]
+                &&& alpha_cont(vm, pos2.cont, pos2.cursor) == ac.subrange(1, ac.len() as int)
+            },
+        },
+    decreases pos.cont,
+{
+    let ac = alpha_cont(vm, pos.cont, pos.cursor);
+    if pos.cont == 0 {
+        assert(ac =~= Seq::<SpecWord>::empty());
+    } else {
+        assert(wf_cont_node(vm, pos.cont as int));
+        let nd = vm.cnodes[pos.cont as int];
+        let seg_len = nd.qend - nd.qstart;
+        if (pos.cursor as int) < seg_len {
+            // In-segment: head-peel.
+            lemma_alpha_cont_next_word(vm, pos);
+            let idx = nd.qstart + pos.cursor;
+            let pos2 = ModelVmState { cursor: pos.cursor + 1, ..pos };
+            assert(idx < vm.tape.len());
+            lemma_alpha_word_val(vm, idx);
+            let tail = alpha_cont(vm, pos.cont, pos.cursor + 1);
+            assert(ac =~= seq![alpha_word(vm, idx)] + tail);
+            assert(ac[0] == alpha_word(vm, idx));
+            assert(alpha_cont(vm, pos2.cont, pos2.cursor) == tail);
+            assert(ac.subrange(1, ac.len() as int) =~= tail);
+            assert(wf_pos(vm, pos2));
+        } else if nd.parent == 0 {
+            lemma_alpha_cont_segpop(vm, pos);
+            assert(ac == alpha_cont(vm, nd.parent, vm.cnodes[nd.parent as int].off));
+            assert(ac =~= Seq::<SpecWord>::empty());
+        } else {
+            assert(nd.parent < pos.cont);
+            let parent = vm.cnodes[nd.parent as int];
+            let posp = ModelVmState { cont: nd.parent, cursor: parent.off, ..pos };
+            lemma_alpha_cont_segpop(vm, pos);
+            assert(ac == alpha_cont(vm, posp.cont, posp.cursor));
+            assert(wf_cont_node(vm, nd.parent as int));
+            assert(wf_pos(vm, posp));
+            lemma_model_next_word(vm, posp);
+            assert(model_next_word(vm, pos) == model_next_word(vm, posp));
+        }
+    }
+}
+
+// ------------------------------------------------------------
+// §4.a  model_push_node — spec twin of StackArena::push(parent, value)
+// (arena.rs 114-119): append node {value, parent}, return the new index.
+// ------------------------------------------------------------
+
+pub open spec fn model_push_node(vm: ModelVm, ptr: nat, v: ModelValue) -> (ModelVm, nat) {
+    (
+        ModelVm { snodes: vm.snodes.push(ModelStackNode { value: v, parent: ptr }), ..vm },
+        vm.snodes.len(),
+    )
+}
+
+/// One stack push: preserves `wf`, appends `alpha_value(v)` at the top, and frames
+/// α of every pre-existing stack ptr and cont ptr (the tape/calls/cnodes are
+/// untouched). Consumes `lemma_alpha_stack_push` + `lemma_alpha_cont_frame`.
+pub proof fn lemma_push_node(vm: ModelVm, ptr: nat, v: ModelValue)
+    requires
+        wf(vm),
+        ptr < vm.snodes.len(),
+    ensures
+        ({
+            let (vm2, np) = model_push_node(vm, ptr, v);
+            &&& wf(vm2)
+            &&& vm2.tape == vm.tape
+            &&& vm2.calls == vm.calls
+            &&& vm2.cnodes == vm.cnodes
+            &&& np == vm.snodes.len()
+            &&& vm2.snodes.len() == vm.snodes.len() + 1
+            &&& alpha_stack(vm2, np) == alpha_stack(vm, ptr).push(alpha_value(vm, v))
+            &&& (forall|q: nat| q < vm.snodes.len() ==> alpha_stack(vm2, q) == alpha_stack(vm, q))
+            &&& (forall|cp: nat, off: nat|
+                cp < vm.cnodes.len() ==> #[trigger] alpha_cont(vm2, cp, off) == alpha_cont(vm, cp, off))
+        }),
+{
+    let (vm2, np) = model_push_node(vm, ptr, v);
+    lemma_alpha_stack_push(vm, ptr, v);
+    assert(wf_tape(vm2)) by {
+        assert forall|i: int| 0 <= i < vm2.tape.len() implies #[trigger] wf_tape_word(vm2, i) by {
+            assert(wf_tape_word(vm, i));
+        }
+    }
+    assert(wf_cont(vm2)) by {
+        assert forall|i: int| 1 <= i < vm2.cnodes.len() implies #[trigger] wf_cont_node(vm2, i) by {
+            assert(wf_cont_node(vm, i));
+        }
+    }
+    assert forall|cp: nat, off: nat| cp < vm.cnodes.len() implies
+        #[trigger] alpha_cont(vm2, cp, off) == alpha_cont(vm, cp, off) by {
+        lemma_alpha_cont_frame(vm, vm2, cp, off);
+    }
+}
+
+// ------------------------------------------------------------
+// §4.a  model_exec_prim — the 23 primitive dispatch. Dup/Drop/Swap/Rot/Over are
+// modeled faithfully (prim.rs 37-76); the other 18 are UNINTERPRETED (`arbitrary`)
+// and gated out of the refinement theorem (see `is_scaffold_prim`). M3b/M3c must
+// replace the `_` arm with faithful models + per-prim refinement lemmas.
+// ------------------------------------------------------------
+
+pub open spec fn model_exec_prim(vm: ModelVm, pos: ModelVmState, p: SpecPrim)
+    -> (ModelStep, ModelVm, ModelVmState) {
+    match p {
+        SpecPrim::Dup => {
+            if pos.stack == 0 {
+                (ModelStep::Fault(Error::Underflow), vm, pos)
+            } else {
+                let top = vm.snodes[pos.stack as int].value;
+                let (vm2, np) = model_push_node(vm, pos.stack, top);
+                (ModelStep::Next, vm2, ModelVmState { stack: np, ..pos })
+            }
+        },
+        SpecPrim::Drop => {
+            if pos.stack == 0 {
+                (ModelStep::Fault(Error::Underflow), vm, pos)
+            } else {
+                let rest = vm.snodes[pos.stack as int].parent;
+                (ModelStep::Next, vm, ModelVmState { stack: rest, ..pos })
+            }
+        },
+        SpecPrim::Swap => {
+            if pos.stack == 0 {
+                (ModelStep::Fault(Error::Underflow), vm, pos)
+            } else {
+                let p1 = vm.snodes[pos.stack as int].parent;
+                if p1 == 0 {
+                    (ModelStep::Fault(Error::Underflow), vm, pos)
+                } else {
+                    let b = vm.snodes[pos.stack as int].value; // top
+                    let a = vm.snodes[p1 as int].value;         // second
+                    let rest = vm.snodes[p1 as int].parent;
+                    let (vm1, s1) = model_push_node(vm, rest, b);
+                    let (vm2, s2) = model_push_node(vm1, s1, a);
+                    (ModelStep::Next, vm2, ModelVmState { stack: s2, ..pos })
+                }
+            }
+        },
+        SpecPrim::Rot => {
+            // ( a b c -- b c a )
+            if pos.stack == 0 {
+                (ModelStep::Fault(Error::Underflow), vm, pos)
+            } else {
+                let p1 = vm.snodes[pos.stack as int].parent;
+                if p1 == 0 {
+                    (ModelStep::Fault(Error::Underflow), vm, pos)
+                } else {
+                    let p2 = vm.snodes[p1 as int].parent;
+                    if p2 == 0 {
+                        (ModelStep::Fault(Error::Underflow), vm, pos)
+                    } else {
+                        let c = vm.snodes[pos.stack as int].value; // top
+                        let b = vm.snodes[p1 as int].value;         // second
+                        let a = vm.snodes[p2 as int].value;         // third
+                        let rest = vm.snodes[p2 as int].parent;
+                        let (vm1, s1) = model_push_node(vm, rest, b);
+                        let (vm2, s2) = model_push_node(vm1, s1, c);
+                        let (vm3, s3) = model_push_node(vm2, s2, a);
+                        (ModelStep::Next, vm3, ModelVmState { stack: s3, ..pos })
+                    }
+                }
+            }
+        },
+        SpecPrim::Over => {
+            // ( a b -- a b a )
+            if pos.stack == 0 {
+                (ModelStep::Fault(Error::Underflow), vm, pos)
+            } else {
+                let p1 = vm.snodes[pos.stack as int].parent;
+                if p1 == 0 {
+                    (ModelStep::Fault(Error::Underflow), vm, pos)
+                } else {
+                    let a = vm.snodes[p1 as int].value; // second
+                    let (vm2, np) = model_push_node(vm, pos.stack, a);
+                    (ModelStep::Next, vm2, ModelVmState { stack: np, ..pos })
+                }
+            }
+        },
+        // M3b / M3c — NOT YET MODELED. Uninterpreted so nothing can be derived
+        // about these arms; the refinement theorem gates them out via
+        // `is_scaffold_prim`. (Cons/Uncons/Cat/Xor + arithmetic = M3b;
+        // Apply/Dip/If/PrimRec/Times/LinRec/Fold = M3c.)
+        _ => arbitrary(),
+    }
+}
+
+/// Spec twin of `Vm::exec_word` (vm.rs 255-274).
+pub open spec fn model_exec_word(vm: ModelVm, pos: ModelVmState, w: ModelWord)
+    -> (ModelStep, ModelVm, ModelVmState) {
+    match w {
+        ModelWord::PushInt(n) => {
+            let (vm2, np) = model_push_node(vm, pos.stack, ModelValue::Int(n));
+            (ModelStep::Next, vm2, ModelVmState { stack: np, ..pos })
+        },
+        ModelWord::PushQuote(id) => {
+            let (vm2, np) = model_push_node(vm, pos.stack, ModelValue::Quote(id));
+            (ModelStep::Next, vm2, ModelVmState { stack: np, ..pos })
+        },
+        ModelWord::Call(k) => (ModelStep::Invoke(vm.calls[k as int]), vm, pos),
+        ModelWord::Prim(p) => model_exec_prim(vm, pos, p),
+    }
+}
+
+/// Spec twin of `run.rs::arena_step` (run.rs 92-108): read the next word
+/// (`model_next_word`); on None -> Halt; else `model_exec_word`, and on a Fault
+/// RESTORE the pre-step position (run.rs 100-105) while keeping the (append-only)
+/// vm.
+pub open spec fn model_arena_step(vm: ModelVm, pos: ModelVmState)
+    -> (ModelStep, ModelVm, ModelVmState) {
+    match model_next_word(vm, pos) {
+        None => (ModelStep::Halt, vm, pos),
+        Some((w, pos1)) => {
+            let (r, vm2, pos2) = model_exec_word(vm, pos1, w);
+            match r {
+                ModelStep::Fault(f) => (ModelStep::Fault(f), vm2, pos),
+                _ => (r, vm2, pos2),
+            }
+        },
+    }
+}
+
+// ------------------------------------------------------------
+// Scaffold gate — the refinement theorem quantifies only over the M3a step set:
+// Halt, PushInt, PushQuote, Call, and the prims Dup/Drop/Swap/Rot/Over.
+// ------------------------------------------------------------
+
+pub open spec fn is_scaffold_prim(p: SpecPrim) -> bool {
+    match p {
+        SpecPrim::Dup => true,
+        SpecPrim::Drop => true,
+        SpecPrim::Swap => true,
+        SpecPrim::Rot => true,
+        SpecPrim::Over => true,
+        _ => false,
+    }
+}
+
+pub open spec fn is_scaffold_word(w: ModelWord) -> bool {
+    match w {
+        ModelWord::Prim(p) => is_scaffold_prim(p),
+        _ => true,
+    }
+}
+
+pub open spec fn is_scaffold_step(vm: ModelVm, pos: ModelVmState) -> bool {
+    match model_next_word(vm, pos) {
+        None => true,
+        Some((w, _)) => is_scaffold_word(w),
+    }
+}
+
+// ------------------------------------------------------------
+// §4.0/§4.a  The refinement theorem — SCAFFOLD group.
+//
+// For a wf model state, `model_arena_step` refines `spec_step ∘ alpha_state`
+// (the α∘step == step∘α square), restricted to the scaffold step set and the
+// non-fault (happy) path. Mirrors `mtl_core::exec_step`'s ensures (mtl_core
+// 866-876). M3b/M3c extend by dropping the `is_scaffold_step` gate one prim
+// group at a time; M4 drops the `!Fault` precondition (fault parity).
+// ------------------------------------------------------------
+
+pub proof fn thm_arena_refines_spec_scaffold(vm: ModelVm, pos: ModelVmState)
+    requires
+        wf(vm),
+        wf_pos(vm, pos),
+        is_scaffold_step(vm, pos),
+        !(spec_step(alpha_state(vm, pos)) is Fault),
+    ensures
+        ({
+            let (r, vm2, pos2) = model_arena_step(vm, pos);
+            match spec_step(alpha_state(vm, pos)) {
+                SpecStep::Next(s2) => r is Next && wf(vm2) && wf_pos(vm2, pos2)
+                    && alpha_state(vm2, pos2) == s2,
+                SpecStep::Halt(_) => r is Halt,
+                SpecStep::Fault(_) => true, // excluded by the requires (M4 fault parity)
+                SpecStep::Invoke(nm, stk, ct) => r is Invoke && r->Invoke_0 == nm
+                    && alpha_state(vm2, pos2) == (SpecState { stack: stk, cont: ct }),
+            }
+        }),
+{
+    lemma_model_next_word(vm, pos);
+    let astk = alpha_stack(vm, pos.stack);
+    let ac = alpha_cont(vm, pos.cont, pos.cursor);
+    let sstate = alpha_state(vm, pos);
+    assert(sstate.stack == astk);
+    assert(sstate.cont == ac);
+
+    match model_next_word(vm, pos) {
+        None => {
+            // Halt: ac empty => spec_step is Halt; model_arena_step returns Halt.
+            assert(ac.len() == 0);
+            assert(model_arena_step(vm, pos) == (ModelStep::Halt, vm, pos));
+            assert(spec_step(sstate) is Halt);
+        },
+        Some((w, pos1)) => {
+            assert(ac.len() > 0);
+            let rest = ac.subrange(1, ac.len() as int);
+            assert(alpha_word_val(vm, w) == ac[0]);
+            assert(alpha_cont(vm, pos1.cont, pos1.cursor) == rest);
+            assert(pos1.stack == pos.stack);
+            assert(pos1.stack < vm.snodes.len());
+
+            match w {
+                ModelWord::PushInt(n) => {
+                    assert(ac[0] == SpecWord::PushInt(n));
+                    let (vm2, np) = model_push_node(vm, pos1.stack, ModelValue::Int(n));
+                    lemma_push_node(vm, pos1.stack, ModelValue::Int(n));
+                    assert(alpha_value(vm, ModelValue::Int(n)) == SpecValue::Int(n));
+                    assert(alpha_stack(vm2, np) == astk.push(SpecValue::Int(n)));
+                    assert(alpha_cont(vm2, pos1.cont, pos1.cursor) == rest);
+                    let pos2 = ModelVmState { stack: np, ..pos1 };
+                    assert(model_exec_word(vm, pos1, w) == (ModelStep::Next, vm2, pos2));
+                    assert(model_arena_step(vm, pos) == (ModelStep::Next, vm2, pos2));
+                    assert(wf_pos(vm2, pos2));
+                    assert(spec_step(sstate)
+                        == SpecStep::Next(SpecState { stack: astk.push(SpecValue::Int(n)), cont: rest }));
+                    assert(alpha_state(vm2, pos2)
+                        == (SpecState { stack: astk.push(SpecValue::Int(n)), cont: rest }));
+                },
+                ModelWord::PushQuote(id) => {
+                    assert(ac[0] == SpecWord::PushQuote(alpha_quote(vm, id)));
+                    let (vm2, np) = model_push_node(vm, pos1.stack, ModelValue::Quote(id));
+                    lemma_push_node(vm, pos1.stack, ModelValue::Quote(id));
+                    assert(alpha_value(vm, ModelValue::Quote(id))
+                        == SpecValue::Quote(alpha_quote(vm, id)));
+                    assert(alpha_stack(vm2, np) == astk.push(SpecValue::Quote(alpha_quote(vm, id))));
+                    assert(alpha_cont(vm2, pos1.cont, pos1.cursor) == rest);
+                    let pos2 = ModelVmState { stack: np, ..pos1 };
+                    assert(model_exec_word(vm, pos1, w) == (ModelStep::Next, vm2, pos2));
+                    assert(model_arena_step(vm, pos) == (ModelStep::Next, vm2, pos2));
+                    assert(wf_pos(vm2, pos2));
+                    assert(spec_step(sstate)
+                        == SpecStep::Next(SpecState {
+                            stack: astk.push(SpecValue::Quote(alpha_quote(vm, id))), cont: rest }));
+                    assert(alpha_state(vm2, pos2)
+                        == (SpecState {
+                            stack: astk.push(SpecValue::Quote(alpha_quote(vm, id))), cont: rest }));
+                },
+                ModelWord::Call(k) => {
+                    assert(ac[0] == SpecWord::Call(vm.calls[k as int]));
+                    // model: (Invoke(calls[k]), vm, pos1); spec: Invoke(calls[k], astk, rest).
+                    assert(model_exec_word(vm, pos1, w)
+                        == (ModelStep::Invoke(vm.calls[k as int]), vm, pos1));
+                    assert(model_arena_step(vm, pos)
+                        == (ModelStep::Invoke(vm.calls[k as int]), vm, pos1));
+                    assert(spec_step(sstate) == SpecStep::Invoke(vm.calls[k as int], astk, rest));
+                    assert(alpha_state(vm, pos1) == (SpecState { stack: astk, cont: rest }));
+                },
+                ModelWord::Prim(p) => {
+                    assert(ac[0] == SpecWord::Prim(p));
+                    assert(is_scaffold_prim(p));
+                    let n = astk.len() as int;
+                    assert(model_next_word(vm, pos)
+                        == Some::<(ModelWord, ModelVmState)>((ModelWord::Prim(p), pos1)));
+                    assert(spec_step(sstate) == spec_step_prim(astk, p, rest));
+                    thm_prim_scaffold(vm, pos, pos1, p, astk, ac, rest, n);
+                },
+            }
+        },
+    }
+}
+
+/// The Prim(p) dispatch of the scaffold theorem, split out to keep the top
+/// theorem readable. Proves Dup/Drop/Swap/Rot/Over; the non-scaffold `_` arm is
+/// unreachable (`is_scaffold_prim(p)`).
+pub proof fn thm_prim_scaffold(
+    vm: ModelVm,
+    pos: ModelVmState,
+    pos1: ModelVmState,
+    p: SpecPrim,
+    astk: Seq<SpecValue>,
+    ac: Seq<SpecWord>,
+    rest: Seq<SpecWord>,
+    n: int,
+)
+    requires
+        wf(vm),
+        wf_pos(vm, pos),
+        wf_pos(vm, pos1),
+        is_scaffold_prim(p),
+        astk == alpha_stack(vm, pos.stack),
+        ac == alpha_cont(vm, pos.cont, pos.cursor),
+        pos1.stack == pos.stack,
+        pos1.stack < vm.snodes.len(),
+        alpha_cont(vm, pos1.cont, pos1.cursor) == rest,
+        rest == ac.subrange(1, ac.len() as int),
+        n == astk.len(),
+        model_next_word(vm, pos) == Some::<(ModelWord, ModelVmState)>((ModelWord::Prim(p), pos1)),
+        !(spec_step_prim(astk, p, rest) is Fault),
+    ensures
+        ({
+            let (r, vm2, pos2) = model_arena_step(vm, pos);
+            &&& r is Next
+            &&& wf(vm2)
+            &&& wf_pos(vm2, pos2)
+            &&& spec_step_prim(astk, p, rest) == SpecStep::Next(alpha_state(vm2, pos2))
+        }),
+{
+    // model_arena_step == the (non-fault) result of model_exec_prim(vm, pos1, p).
+    // Establish n>=k underflow-freedom per prim from `!(... is Fault)`.
+    match p {
+        SpecPrim::Dup => {
+            assert(n >= 1);
+            let s = pos1.stack;
+            assert(s != 0) by {
+                if s == 0 {
+                    assert(alpha_stack(vm, s) =~= Seq::<SpecValue>::empty());
+                }
+            }
+            let top = vm.snodes[s as int].value;
+            lemma_alpha_stack_pop1(vm, s);
+            assert(astk.last() == alpha_value(vm, top));
+            assert(astk.last() == astk[n - 1]);
+            let (vm2, np) = model_push_node(vm, s, top);
+            lemma_push_node(vm, s, top);
+            assert(alpha_stack(vm2, np) == astk.push(astk[n - 1]));
+            assert(alpha_cont(vm2, pos1.cont, pos1.cursor) == rest);
+            let pos2 = ModelVmState { stack: np, ..pos1 };
+            assert(model_exec_word(vm, pos1, ModelWord::Prim(p)) == (ModelStep::Next, vm2, pos2));
+            assert(model_arena_step(vm, pos) == (ModelStep::Next, vm2, pos2));
+            assert(wf_pos(vm2, pos2));
+            assert(alpha_state(vm2, pos2)
+                == (SpecState { stack: astk.push(astk[n - 1]), cont: rest }));
+        },
+        SpecPrim::Drop => {
+            assert(n >= 1);
+            let s = pos1.stack;
+            assert(s != 0) by {
+                if s == 0 {
+                    assert(alpha_stack(vm, s) =~= Seq::<SpecValue>::empty());
+                }
+            }
+            lemma_alpha_stack_pop1(vm, s);
+            let rest_ptr = vm.snodes[s as int].parent;
+            assert(alpha_stack(vm, rest_ptr) == astk.subrange(0, n - 1));
+            assert(rest_ptr < vm.snodes.len());
+            let pos2 = ModelVmState { stack: rest_ptr, ..pos1 };
+            assert(model_exec_word(vm, pos1, ModelWord::Prim(p)) == (ModelStep::Next, vm, pos2));
+            assert(model_arena_step(vm, pos) == (ModelStep::Next, vm, pos2));
+            assert(wf_pos(vm, pos2));
+            assert(alpha_state(vm, pos2)
+                == (SpecState { stack: astk.subrange(0, n - 1), cont: rest }));
+        },
+        SpecPrim::Swap => {
+            assert(n >= 2);
+            let s = pos1.stack;
+            assert(s != 0) by {
+                if s == 0 {
+                    assert(alpha_stack(vm, s) =~= Seq::<SpecValue>::empty());
+                }
+            }
+            let p1 = vm.snodes[s as int].parent;
+            lemma_alpha_stack_pop1(vm, s);
+            assert(alpha_stack(vm, p1) == astk.subrange(0, n - 1));
+            assert(alpha_stack(vm, p1).len() == n - 1);
+            assert(p1 != 0) by {
+                if p1 == 0 {
+                    assert(alpha_stack(vm, p1) =~= Seq::<SpecValue>::empty());
+                }
+            }
+            let b = vm.snodes[s as int].value; // top
+            let a = vm.snodes[p1 as int].value; // second
+            let rest_ptr = vm.snodes[p1 as int].parent;
+            assert(astk.last() == alpha_value(vm, b));
+            assert(astk.last() == astk[n - 1]);
+            lemma_alpha_stack_pop1(vm, p1);
+            assert(alpha_stack(vm, rest_ptr) == alpha_stack(vm, p1).subrange(0, (n - 1) - 1));
+            assert(alpha_stack(vm, p1).subrange(0, n - 2) =~= astk.subrange(0, n - 2));
+            assert(alpha_stack(vm, rest_ptr) == astk.subrange(0, n - 2));
+            assert(alpha_stack(vm, p1).last() == alpha_value(vm, a));
+            assert(alpha_stack(vm, p1).last() == astk.subrange(0, n - 1)[n - 2]);
+            assert(astk.subrange(0, n - 1)[n - 2] == astk[n - 2]);
+            assert(alpha_value(vm, a) == astk[n - 2]);
+            assert(rest_ptr < vm.snodes.len());
+
+            let (vm1, s1) = model_push_node(vm, rest_ptr, b);
+            lemma_push_node(vm, rest_ptr, b);
+            assert(alpha_stack(vm1, s1) == astk.subrange(0, n - 2).push(astk[n - 1]));
+            let (vm2, s2) = model_push_node(vm1, s1, a);
+            assert(s1 < vm1.snodes.len());
+            lemma_push_node(vm1, s1, a);
+            lemma_alpha_value_tape_eq(vm, vm1, a);
+            assert(alpha_value(vm1, a) == astk[n - 2]);
+            assert(alpha_stack(vm2, s2)
+                == astk.subrange(0, n - 2).push(astk[n - 1]).push(astk[n - 2]));
+            // cont frame chain vm2 <- vm1 <- vm.
+            assert(alpha_cont(vm1, pos1.cont, pos1.cursor) == rest);
+            assert(alpha_cont(vm2, pos1.cont, pos1.cursor) == rest);
+            let pos2 = ModelVmState { stack: s2, ..pos1 };
+            assert(model_exec_word(vm, pos1, ModelWord::Prim(p)) == (ModelStep::Next, vm2, pos2));
+            assert(model_arena_step(vm, pos) == (ModelStep::Next, vm2, pos2));
+            assert(vm2.cnodes == vm.cnodes);
+            assert(wf_pos(vm2, pos2));
+            assert(alpha_state(vm2, pos2)
+                == (SpecState {
+                    stack: astk.subrange(0, n - 2).push(astk[n - 1]).push(astk[n - 2]),
+                    cont: rest }));
+        },
+        SpecPrim::Rot => {
+            assert(n >= 3);
+            let s = pos1.stack;
+            assert(s != 0) by {
+                if s == 0 {
+                    assert(alpha_stack(vm, s) =~= Seq::<SpecValue>::empty());
+                }
+            }
+            let p1 = vm.snodes[s as int].parent;
+            lemma_alpha_stack_pop1(vm, s);
+            assert(alpha_stack(vm, p1) == astk.subrange(0, n - 1));
+            assert(alpha_stack(vm, p1).len() == n - 1);
+            assert(p1 != 0) by {
+                if p1 == 0 {
+                    assert(alpha_stack(vm, p1) =~= Seq::<SpecValue>::empty());
+                }
+            }
+            let p2 = vm.snodes[p1 as int].parent;
+            lemma_alpha_stack_pop1(vm, p1);
+            assert(alpha_stack(vm, p2) == alpha_stack(vm, p1).subrange(0, (n - 1) - 1));
+            assert(alpha_stack(vm, p1).subrange(0, n - 2) =~= astk.subrange(0, n - 2));
+            assert(alpha_stack(vm, p2) == astk.subrange(0, n - 2));
+            assert(alpha_stack(vm, p2).len() == n - 2);
+            assert(p2 != 0) by {
+                if p2 == 0 {
+                    assert(alpha_stack(vm, p2) =~= Seq::<SpecValue>::empty());
+                }
+            }
+            let c = vm.snodes[s as int].value; // top
+            let b = vm.snodes[p1 as int].value; // second
+            let a = vm.snodes[p2 as int].value; // third
+            let rest_ptr = vm.snodes[p2 as int].parent;
+            // c == astk[n-1]
+            assert(astk.last() == alpha_value(vm, c));
+            assert(astk.last() == astk[n - 1]);
+            // b == astk[n-2]
+            assert(alpha_stack(vm, p1).last() == alpha_value(vm, b));
+            assert(alpha_stack(vm, p1).last() == astk.subrange(0, n - 1)[n - 2]);
+            assert(astk.subrange(0, n - 1)[n - 2] == astk[n - 2]);
+            assert(alpha_value(vm, b) == astk[n - 2]);
+            // a == astk[n-3]
+            lemma_alpha_stack_pop1(vm, p2);
+            assert(alpha_stack(vm, rest_ptr) == alpha_stack(vm, p2).subrange(0, (n - 2) - 1));
+            assert(alpha_stack(vm, p2).subrange(0, n - 3) =~= astk.subrange(0, n - 3));
+            assert(alpha_stack(vm, rest_ptr) == astk.subrange(0, n - 3));
+            assert(alpha_stack(vm, p2).last() == alpha_value(vm, a));
+            assert(alpha_stack(vm, p2).last() == astk.subrange(0, n - 2)[n - 3]);
+            assert(astk.subrange(0, n - 2)[n - 3] == astk[n - 3]);
+            assert(alpha_value(vm, a) == astk[n - 3]);
+            assert(rest_ptr < vm.snodes.len());
+
+            let (vm1, s1) = model_push_node(vm, rest_ptr, b);
+            lemma_push_node(vm, rest_ptr, b);
+            assert(alpha_stack(vm1, s1) == astk.subrange(0, n - 3).push(astk[n - 2]));
+            let (vm2, s2) = model_push_node(vm1, s1, c);
+            assert(s1 < vm1.snodes.len());
+            lemma_push_node(vm1, s1, c);
+            lemma_alpha_value_tape_eq(vm, vm1, c);
+            assert(alpha_value(vm1, c) == astk[n - 1]);
+            assert(alpha_stack(vm2, s2)
+                == astk.subrange(0, n - 3).push(astk[n - 2]).push(astk[n - 1]));
+            let (vm3, s3) = model_push_node(vm2, s2, a);
+            assert(s2 < vm2.snodes.len());
+            lemma_push_node(vm2, s2, a);
+            lemma_alpha_value_tape_eq(vm, vm2, a);
+            assert(alpha_value(vm2, a) == astk[n - 3]);
+            assert(alpha_stack(vm3, s3)
+                == astk.subrange(0, n - 3).push(astk[n - 2]).push(astk[n - 1]).push(astk[n - 3]));
+            // cont frame chain vm3 <- vm2 <- vm1 <- vm.
+            assert(alpha_cont(vm1, pos1.cont, pos1.cursor) == rest);
+            assert(alpha_cont(vm2, pos1.cont, pos1.cursor) == rest);
+            assert(alpha_cont(vm3, pos1.cont, pos1.cursor) == rest);
+            let pos2 = ModelVmState { stack: s3, ..pos1 };
+            assert(model_exec_word(vm, pos1, ModelWord::Prim(p)) == (ModelStep::Next, vm3, pos2));
+            assert(model_arena_step(vm, pos) == (ModelStep::Next, vm3, pos2));
+            assert(vm3.cnodes == vm.cnodes);
+            assert(wf_pos(vm3, pos2));
+            assert(alpha_state(vm3, pos2)
+                == (SpecState {
+                    stack: astk.subrange(0, n - 3).push(astk[n - 2]).push(astk[n - 1]).push(astk[n - 3]),
+                    cont: rest }));
+        },
+        SpecPrim::Over => {
+            assert(n >= 2);
+            let s = pos1.stack;
+            assert(s != 0) by {
+                if s == 0 {
+                    assert(alpha_stack(vm, s) =~= Seq::<SpecValue>::empty());
+                }
+            }
+            let p1 = vm.snodes[s as int].parent;
+            lemma_alpha_stack_pop1(vm, s);
+            assert(alpha_stack(vm, p1) == astk.subrange(0, n - 1));
+            assert(alpha_stack(vm, p1).len() == n - 1);
+            assert(p1 != 0) by {
+                if p1 == 0 {
+                    assert(alpha_stack(vm, p1) =~= Seq::<SpecValue>::empty());
+                }
+            }
+            let a = vm.snodes[p1 as int].value; // second
+            lemma_alpha_stack_pop1(vm, p1);
+            assert(alpha_stack(vm, p1).last() == alpha_value(vm, a));
+            assert(alpha_stack(vm, p1).last() == astk.subrange(0, n - 1)[n - 2]);
+            assert(astk.subrange(0, n - 1)[n - 2] == astk[n - 2]);
+            assert(alpha_value(vm, a) == astk[n - 2]);
+            let (vm2, np) = model_push_node(vm, s, a);
+            lemma_push_node(vm, s, a);
+            assert(alpha_stack(vm2, np) == astk.push(astk[n - 2]));
+            assert(alpha_cont(vm2, pos1.cont, pos1.cursor) == rest);
+            let pos2 = ModelVmState { stack: np, ..pos1 };
+            assert(model_exec_word(vm, pos1, ModelWord::Prim(p)) == (ModelStep::Next, vm2, pos2));
+            assert(model_arena_step(vm, pos) == (ModelStep::Next, vm2, pos2));
+            assert(wf_pos(vm2, pos2));
+            assert(alpha_state(vm2, pos2)
+                == (SpecState { stack: astk.push(astk[n - 2]), cont: rest }));
+        },
+        _ => {
+            assert(false);
+        },
+    }
+}
+
 } // verus!
 
 fn main() {}
