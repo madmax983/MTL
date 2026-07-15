@@ -227,3 +227,111 @@ fn differential_oracle() {
     assert_eq!(passed, total);
     assert_eq!(total, 148, "corpus size drifted from the documented 148 cases");
 }
+
+// ---------------------------------------------------------------------------
+// AC#5 — forced-compaction oracle arm (issue #51).
+//
+// Re-run the SAME 148-case corpus through `run_arena_compacting` with compaction
+// forced at EVERY generation-safe point (`CompactPolicy::Always` → threshold 0),
+// so a stop-the-world copying compaction fires between essentially every atomic
+// step. The reified terminal (Halt stack / Fault kind+stack) must still equal the
+// reference interpreter's — the differential oracle taken ACROSS a compaction
+// point at every step is the correctness test for the compactor's whole-frontier
+// handle remap. It must also equal the non-compacting arena run (compaction is
+// observationally invisible).
+// ---------------------------------------------------------------------------
+
+use arena::CompactPolicy;
+
+fn check_forced(case: &Case) -> Result<(), String> {
+    let mut full: Vec<itp::Word> = case.init.iter().map(value_to_word).collect();
+    full.extend(case.prog.iter().cloned());
+
+    let itp_out = itp::run(itp::Vm::new(full.clone()), FUEL);
+
+    let prog_arena: Vec<arena::ProgWord> = full.iter().map(conv_word).collect();
+
+    // Baseline arena run (no compaction) and the forced-compaction run.
+    let base = arena::run_arena(&prog_arena, FUEL);
+    let comp = arena::run_arena_compacting(&prog_arena, FUEL, CompactPolicy::Always);
+
+    let reify = |run: &arena::ArenaRun| -> Vec<itp::Value> {
+        run.vm
+            .stack_values(run.state.stack)
+            .into_iter()
+            .map(|v| arena_value_to_itp(&run.vm, v))
+            .collect()
+    };
+    let base_stack = reify(&base);
+    let comp_stack = reify(&comp);
+
+    // The forced-compaction run must match the non-compacting run exactly.
+    if base.end != comp.end {
+        return Err(format!(
+            "{}: compaction changed terminal kind\n  no-compact: {:?}\n  compacted:  {:?}",
+            case.name, base.end, comp.end
+        ));
+    }
+    if base_stack != comp_stack {
+        return Err(format!(
+            "{}: compaction changed final stack\n  no-compact: {:?}\n  compacted:  {:?}",
+            case.name, base_stack, comp_stack
+        ));
+    }
+
+    // ...and both must match the reference interpreter (the oracle of truth).
+    match (&itp_out, &comp.end) {
+        (itp::Outcome::Halt(s_itp), arena::ArenaEnd::Halt) => {
+            if *s_itp == comp_stack {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{}: HALT stacks differ under forced compaction\n  interp: {:?}\n  arena:  {:?}",
+                    case.name, s_itp, comp_stack
+                ))
+            }
+        }
+        (itp::Outcome::Fault(fi), arena::ArenaEnd::Fault(f)) => {
+            if fault_eq(fi.fault, *f) && fi.stack == comp_stack {
+                Ok(())
+            } else {
+                Err(format!(
+                    "{}: FAULT differs under forced compaction\n  interp: {:?} stack {:?}\n  arena:  {:?} stack {:?}",
+                    case.name, fi.fault, fi.stack, f, comp_stack
+                ))
+            }
+        }
+        (i, a) => Err(format!(
+            "{}: terminal kind differs under forced compaction\n  interp: {:?}\n  arena:  {:?}",
+            case.name, i, a
+        )),
+    }
+}
+
+#[test]
+fn differential_oracle_forced_compaction() {
+    let cases = corpus();
+    let total = cases.len();
+    let mut passed = 0usize;
+    let mut failures = Vec::new();
+    for c in &cases {
+        match check_forced(c) {
+            Ok(()) => passed += 1,
+            Err(e) => failures.push(e),
+        }
+    }
+    println!(
+        "forced-compaction oracle: {}/{} programs agree across a compaction at every safe point",
+        passed, total
+    );
+    if !failures.is_empty() {
+        panic!(
+            "{} / {} arena programs DIVERGED under forced compaction:\n{}",
+            failures.len(),
+            total,
+            failures.join("\n")
+        );
+    }
+    assert_eq!(passed, total);
+    assert_eq!(total, 148, "corpus size drifted from the documented 148 cases");
+}

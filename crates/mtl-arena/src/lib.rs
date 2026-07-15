@@ -62,6 +62,7 @@
 //! into an [`Outcome`] identical in shape to `interp::Outcome`.
 
 mod arena;
+mod compact;
 mod convert;
 pub mod host;
 mod prim;
@@ -90,5 +91,8 @@ pub use arena::{
 };
 
 // ---- the VM + driver surface ----
-pub use run::{arena_step, run_arena, ArenaEnd, ArenaRun, Outcome, Step};
+pub use run::{arena_step, run_arena, run_arena_compacting, ArenaEnd, ArenaRun, Outcome, Step};
 pub use vm::Vm;
+
+// ---- opt-in reachable-state compaction (issue #51; OFF by default) ----
+pub use compact::{compact, CompactPolicy, CompactStats};
