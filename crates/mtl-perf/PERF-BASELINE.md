@@ -213,3 +213,94 @@ Did the spike's headline numbers (754× flat, 144× PrimRec, 40× Fold, O(1) for
 - **The arena side matches the spike within production-hygiene overhead.** Arena absolute times here vs the spike: flat N=16384 **0.200 ms vs 0.124 ms (+61%)**; PrimRec 10k **2.105 ms vs 1.757 ms (+20%)**; Fold 10k **1.302 ms vs 0.909 ms (+43%)**; fork **~0.9 ns vs ~1.1 ns**. The 20–60% arena slowdown is the cost of promoting the spike to production hygiene — checked arithmetic, `Option`-returning `compile`, and reference-typed reification through `ArenaRun`/`Outcome` — plus this container running a touch slower. **Promotion did not regress the algorithm**: arena ns/step is still flat, and the arena still finishes 100k PrimRec in ~25 ms and 100k Fold in ~36 ms where interp is projected at ~5 min and ~49 s.
 - **The interp side ran ~12–14× slower on this container than the spike's**, and reproducibly so (two samples <1% apart): PrimRec 10k **3036 ms vs the spike's 253 ms** (and vs the interp-only baseline's 223 ms above); flat 16k **1309 ms vs 93.6 ms**; Fold 10k **490 ms vs 36.3 ms**. Tellingly, the interp cases that are *not* memory-bandwidth-bound were **not** inflated — `: !` countdown (27–32 ns/step) and `Vm::clone()` (matches the spike) are clean — so this is specifically this container punishing the interp's O(n) `cont.remove(0)` memmove and Fold spine-clone harder, not general CPU contention.
 - **Net:** because the win is measured as `interp / arena`, a ~13× slower interp inflates every ratio ~13× over the spike (754× → 6550×, 144× → 1442×, 40× → 376× at 10k). **Do not read those as the arena being 8× better than the spike claimed.** The load-bearing, machine-independent results all reproduced: (i) arena ns/step flat vs interp super-linear; (ii) arena absolute times within ~1.2–1.6× of the spike; (iii) O(1) fork. The Fold n=1000 ratio landed at **39.9×**, coincidentally matching the spike's 40× Fold headline. The arena kills all three O(n²) pathologies documented above and leaves the tail-linear `: !` case unregressed — the v0.5 REFACTOR delivers on the spec §12.3 open question.
+
+---
+
+## Post-flip refresh — arena is now the default engine (2026-07-15)
+
+As of the `arena-default` work the **arena is the default engine** behind an explicit
+`--engine {arena,interp}` seam (`mtlrun`, `tier3run`/`mtl-host::driver`, the corpus
+gate, and this perf harness all default to arena). **The reference interpreter remains
+reachable and is still the oracle of truth** — the differential oracle runs BOTH
+engines (148/148) and asserts byte-identical user-visible output; `interp::run` is never
+removed, only demoted from default to differential anchor. **Compaction (issue #51)
+shipped as opt-in, off by default** (`CompactPolicy::Off`); the default `run_arena` /
+`arena_drive` paths are byte-for-byte unchanged (truncate-only).
+
+> These are a **fresh re-run on this container** (`cargo run --release --example
+> arena_vs_interp -p mtl-perf`, `cargo test -p mtl-arena --test compaction --
+> --nocapture`). Per the standing hardware caveat, **trust the flat-vs-growing shape and
+> the ratios, not absolute ns.** Note the interp side ran markedly faster here than in
+> the prior arena section above (e.g. PrimRec 10k **210 ms** now vs **3036 ms** there) —
+> this container was less punishing to the interp's O(n) memmove/clone this run, so the
+> *ratios below are correspondingly smaller than the section above*. This is container
+> variance on the interp side, not an arena regression: the arena absolute times and the
+> flat ns/step are consistent with the numbers above.
+
+### Arena vs interp — the four stress cases (fresh, this container)
+
+| case | size | interp total | arena total | arena ns/step | speedup |
+|---|---:|---:|---:|---:|---:|
+| (a) flat front-pop `1 1 + _` | N=256 | 0.0168 ms | 0.0042 ms | 16.4 | 4.0× |
+| (a) flat front-pop | N=4096 | 4.421 ms | 0.0599 ms | 14.6 | 73.8× |
+| (a) flat front-pop | **N=16384** | **72.98 ms** | **0.242 ms** | **14.8** | **301.7×** |
+| (c) PrimRec `sum_to(n)` | n=1000 | 1.402 ms | 0.103 ms | 17.1 | 13.6× |
+| (c) PrimRec `sum_to(n)` | **n=10000** | **210.0 ms** | **2.643 ms** | **44.0** | **79.5×** |
+| (c) PrimRec `sum_to(n)` | n=100000 | n/a (proj ~21.0 s) | 30.42 ms | 50.7 | proj ~691× |
+| (d) Fold `0 [+] (` over n ints | n=1000 | 0.290 ms | 0.128 ms | 21.4 | 2.3× |
+| (d) Fold over n ints | **n=10000** | **28.98 ms** | **1.453 ms** | **24.2** | **19.9×** |
+| (d) Fold over n ints | n=100000 | n/a (proj ~2.9 s) | 43.37 ms | 72.3 | proj ~67× |
+| (b) `: !` countdown (NON-pathology) | n=1000 | 0.437 ms | 0.203 ms | 15.6 | 2.2× |
+| (b) `: !` countdown | n=10000 | 4.343 ms | 2.285 ms | 17.6 | 1.9× |
+
+**Arena ns/step stays FLAT (O(1))** where interp grows super-linearly: arena flat
+front-pop holds ~15 ns/step across the 256× N sweep (interp 25 → 4454 ns/step); arena
+PrimRec 17 → 51 ns/step across 100× n (interp balloons 233 → 3500 ns/step before the cap);
+arena Fold 21 → 72 ns/step. The `: !` case stays ~2× linear on both — **the arena does
+not regress the already-healthy tail-linear case** now that it is the default.
+
+### Fork — O(1) confirmed (fresh)
+
+| stack depth d | interp `Vm::clone()` ns | arena `VmState` copy ns |
+|---:|---:|---:|
+| 1 | 58.3 | 1.21 |
+| 100 | 286.9 | 1.24 |
+| 1000 | 2440.6 | 1.22 |
+| 10000 | 24522.3 | 1.21 |
+
+Interp `Vm::clone()` rises **~420× (58 → 24,522 ns) linearly in stack depth**; the arena
+`VmState` copy is **flat at ~1.2 ns** — O(1) fork, unchanged by the default flip.
+
+### Compaction overhead (issue #51) — measured HONESTLY, opt-in only
+
+Source: `steady_state_bytes_stay_flat_under_compaction` in
+`crates/mtl-arena/tests/compaction.rs` (a streaming, never-reset `cat`-heavy host;
+`[1] [2] cat drop` per turn; compaction threshold = 256 above-floor cells).
+
+| turns | truncate-only tape high-water | compacting tape high-water | compactions |
+|---:|---:|---:|---:|
+| 20,000 | 40,006 words (640,096 B) | **92 words (1,472 B)** | 465 |
+| 80,000 | 160,006 words (2,560,096 B) | **92 words (1,472 B)** | 1,860 |
+
+- **Pause cost:** 1,860 compactions over the 80,000-turn run took **1.532 ms total ⇒
+  ~0.8 µs/compaction**. Compaction is stop-the-world at generation-safe points (never
+  mid-step); each pause copies only the *live* set (here the frontier is empty between
+  turns, so the pass is dominated by re-seeding the immortal below-floor prefix).
+- **Memory ceiling — flat vs linear:** with compaction the tape high-water is **flat at
+  92 words (~1.5 KB) independent of N** (identical at 20k and 80k turns); the truncate-only
+  baseline grows **linearly, 40,006 → 160,006 words** (640 KB → 2.56 MB, 4× turns ⇒ 4×
+  tape). This is the AC#7 success metric: steady-state arena bytes stay BOUNDED as N grows
+  vs. the monotonically-growing baseline.
+- **Overhead is opt-in and honest:** with `CompactPolicy::Off` (the default) there is
+  **zero** added cost — the default path never calls `compact()` and is byte-for-byte the
+  truncate-only backend. The ~0.8 µs pause is paid ONLY by a host that explicitly enables a
+  threshold/always policy, and buys a flat memory ceiling in exchange.
+
+### Verdict (post-flip)
+
+The default flip is a pure **latency/throughput win with no output change**: every corpus
+solution and every fault case produces byte-identical user-visible output on both engines
+(29/29 in the cross-engine `mtlrun` byte-diff; 148/148 differential oracle; 5/5 fault
+parity), while the arena erases the interp's three O(n²) pathologies and O(d) fork. Interp
+stays the reference oracle. Compaction adds a bounded-memory option for always-on/streaming
+hosts at ~0.8 µs/pause, off by default, with the steady-state ceiling demonstrated flat.
