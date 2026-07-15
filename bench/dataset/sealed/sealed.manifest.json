@@ -1,7 +1,7 @@
 {
   "schema": "mtl-sealed-manifest/v2",
   "salt": "mtl-sealed-v1:issue-53",
-  "freeze_commit": "",
+  "freeze_commit": "456292bb3a0b930f51c49fa50e37c339ae4eaf59",
   "generated_from": "bench/sealed/tasks.json",
   "entries": [
     {
