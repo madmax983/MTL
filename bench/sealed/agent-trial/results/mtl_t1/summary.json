@@ -1,0 +1,9 @@
+{"arm":"mtl","trial":1,"tasks":[
+  {"id":"seal_collatz_steps","solved":true,"attempts_to_first_correct":1,"final_program":"0~[:1=][_][[1+]':2%0=[2/][3*1+]?][]|","final_tokens_o200k":25,"final_tokens_cl100k":25},
+  {"id":"seal_triangular","solved":true,"attempts_to_first_correct":1,"final_program":":1+*2/","final_tokens_o200k":6,"final_tokens_cl100k":6},
+  {"id":"seal_int_sqrt","solved":true,"attempts_to_first_correct":1,"final_program":"0[^^1+:*<][~_][1+][]|","final_tokens_o200k":15,"final_tokens_cl100k":15},
+  {"id":"seal_num_divisors","solved":true,"attempts_to_first_correct":1,"final_program":":0 0@[[1+]'[^^%0=]'+].~_~_","final_tokens_o200k":21,"final_tokens_cl100k":21},
+  {"id":"seal_count_local_maxima","solved":true,"attempts_to_first_correct":1,"final_program":">[~[];0~;0~;[[];,>_>_>_>__^^<[~^^<~_]'[~[*+]']'~[];;;](>__][0]?","final_tokens_o200k":44,"final_tokens_cl100k":41},
+  {"id":"seal_xor_reduce","solved":true,"attempts_to_first_correct":1,"final_program":"0[$](","final_tokens_o200k":3,"final_tokens_cl100k":3},
+  {"id":"seal_digit_sum_base","solved":true,"attempts_to_first_correct":1,"final_program":"0@@[^0=][__][:[^^%[/]'~[+]']'][]|","final_tokens_o200k":19,"final_tokens_cl100k":19}
+]}

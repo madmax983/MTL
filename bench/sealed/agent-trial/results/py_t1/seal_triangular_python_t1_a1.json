@@ -1,0 +1,13 @@
+{
+  "task": "seal_triangular",
+  "arm": "python",
+  "program_tokens_o200k": 17,
+  "program_tokens_cl100k": 17,
+  "program": "def solve(n):\n    return n * (n + 1) // 2\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 1,
+  "attempt": 1
+}

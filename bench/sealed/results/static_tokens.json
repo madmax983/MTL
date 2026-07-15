@@ -1,0 +1,428 @@
+{
+  "measured_at": "2026-07-15",
+  "freeze_commit": "456292bb3a0b930f51c49fa50e37c339ae4eaf59",
+  "tiktoken": "0.8.0",
+  "encodings": [
+    "o200k_base",
+    "cl100k_base"
+  ],
+  "validation": "dev-parity: constructed-stack interpretation (real Value::Int + int_list, negatives included) via mtl-bench-validate tests/sealed.rs, matching how the dev BASELINE-TIER2 numbers are validated. A task is algorithmically_correct iff its committed frozen-glyph solution passes ALL of its python.vectors (incl. negatives) to HALT with the expected stack.",
+  "note": "14/15 sealed tasks are algorithmically correct under constructed-stack validation and have committed corpus artifacts. The remaining task (seal_running_max) is a genuine ALGORITHMIC gap: its authored candidate seeds the running maximum at 0, so all-negative input yields the wrong result; recorded, not patched (issue #53). The gap taxonomy separates text-input-encoding artifacts (negatives the text mtlrun harness cannot lex) from algorithmic gaps. 'text_feedable' = the task has no negative inputs, so it also passes the text harness; that subset (7 tasks) reproduces the earlier 2.09x. The PRIMARY held-out static number is the dev-parity aggregate over the 14 algorithmically-correct tasks.",
+  "tasks": [
+    {
+      "id": "seal_collatz_steps",
+      "tier": "micro",
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 23,
+        "cl100k_base": 24
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 52,
+        "cl100k_base": 52
+      },
+      "ratio": {
+        "o200k_base": 2.26,
+        "cl100k_base": 2.17
+      }
+    },
+    {
+      "id": "seal_digit_product",
+      "tier": "micro",
+      "gap_class": "input_encoding(scalar)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 28,
+        "cl100k_base": 28
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 29,
+        "cl100k_base": 29
+      },
+      "ratio": {
+        "o200k_base": 1.04,
+        "cl100k_base": 1.04
+      }
+    },
+    {
+      "id": "seal_count_set_bits",
+      "tier": "micro",
+      "gap_class": "input_encoding(scalar)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 22,
+        "cl100k_base": 22
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 16,
+        "cl100k_base": 16
+      },
+      "ratio": {
+        "o200k_base": 0.73,
+        "cl100k_base": 0.73
+      }
+    },
+    {
+      "id": "seal_triangular",
+      "tier": "micro",
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 6,
+        "cl100k_base": 6
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 17,
+        "cl100k_base": 17
+      },
+      "ratio": {
+        "o200k_base": 2.83,
+        "cl100k_base": 2.83
+      }
+    },
+    {
+      "id": "seal_int_sqrt",
+      "tier": "micro",
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 15,
+        "cl100k_base": 15
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 39,
+        "cl100k_base": 38
+      },
+      "ratio": {
+        "o200k_base": 2.6,
+        "cl100k_base": 2.53
+      }
+    },
+    {
+      "id": "seal_num_divisors",
+      "tier": "micro",
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 18,
+        "cl100k_base": 18
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 44,
+        "cl100k_base": 43
+      },
+      "ratio": {
+        "o200k_base": 2.44,
+        "cl100k_base": 2.39
+      }
+    },
+    {
+      "id": "seal_alternating_sum",
+      "tier": "tier2",
+      "gap_class": "input_encoding(list)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 9,
+        "cl100k_base": 9
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 39,
+        "cl100k_base": 39
+      },
+      "ratio": {
+        "o200k_base": 4.33,
+        "cl100k_base": 4.33
+      }
+    },
+    {
+      "id": "seal_running_max",
+      "tier": "tier2",
+      "gap_class": "algorithmic",
+      "text_feedable": false,
+      "algorithmically_correct": false,
+      "committed": false,
+      "candidate_mtl": "0~[>0=][_[]][[^^<[~_][_]?]'[:]'][;]|",
+      "gap_reason": "authored candidate seeds the running maximum at 0; all-negative input (e.g. [-5 -2 -8 -1]) yields [0 0 0 0] instead of [-5 -2 -2 -1]. Wrong under full constructed-stack validation. Recorded, not patched."
+    },
+    {
+      "id": "seal_count_local_maxima",
+      "tier": "tier2",
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 43,
+        "cl100k_base": 38
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 60,
+        "cl100k_base": 60
+      },
+      "ratio": {
+        "o200k_base": 1.4,
+        "cl100k_base": 1.58
+      }
+    },
+    {
+      "id": "seal_xor_reduce",
+      "tier": "tier2",
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 3,
+        "cl100k_base": 3
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 25,
+        "cl100k_base": 25
+      },
+      "ratio": {
+        "o200k_base": 8.33,
+        "cl100k_base": 8.33
+      }
+    },
+    {
+      "id": "seal_max_adjacent_diff",
+      "tier": "tier2",
+      "gap_class": "input_encoding(list)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 42,
+        "cl100k_base": 39
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 45,
+        "cl100k_base": 45
+      },
+      "ratio": {
+        "o200k_base": 1.07,
+        "cl100k_base": 1.15
+      }
+    },
+    {
+      "id": "seal_dedup_adjacent",
+      "tier": "tier2",
+      "gap_class": "input_encoding(list)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 20,
+        "cl100k_base": 19
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 37,
+        "cl100k_base": 37
+      },
+      "ratio": {
+        "o200k_base": 1.85,
+        "cl100k_base": 1.95
+      }
+    },
+    {
+      "id": "seal_rle_flatten",
+      "tier": "tier3",
+      "gap_class": "input_encoding(list)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 45,
+        "cl100k_base": 43
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 52,
+        "cl100k_base": 52
+      },
+      "ratio": {
+        "o200k_base": 1.16,
+        "cl100k_base": 1.21
+      }
+    },
+    {
+      "id": "seal_digit_sum_base",
+      "tier": "tier3",
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 23,
+        "cl100k_base": 22
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 37,
+        "cl100k_base": 36
+      },
+      "ratio": {
+        "o200k_base": 1.61,
+        "cl100k_base": 1.64
+      }
+    },
+    {
+      "id": "seal_min_running_balance",
+      "tier": "tier3",
+      "gap_class": "input_encoding(list)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
+        "o200k_base": 22,
+        "cl100k_base": 22
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 41,
+        "cl100k_base": 41
+      },
+      "ratio": {
+        "o200k_base": 1.86,
+        "cl100k_base": 1.86
+      }
+    }
+  ],
+  "dev_parity_aggregate": {
+    "description": "PRIMARY held-out static number. Token-SUM ratio (py_idiomatic/mtl) over the 14 algorithmically-correct sealed tasks, constructed-stack-validated (apples-to-apples with dev BASELINE-TIER2's 3.87x, which is also constructed-stack-validated).",
+    "algorithmically_correct_count": 14,
+    "total_count": 15,
+    "overall": {
+      "count": 14,
+      "o200k_base": {
+        "py_total": 533,
+        "mtl_total": 319,
+        "ratio": 1.67
+      },
+      "cl100k_base": {
+        "py_total": 530,
+        "mtl_total": 308,
+        "ratio": 1.72
+      }
+    },
+    "by_tier": {
+      "micro": {
+        "count": 6,
+        "o200k_base": {
+          "py_total": 197,
+          "mtl_total": 112,
+          "ratio": 1.76
+        },
+        "cl100k_base": {
+          "py_total": 195,
+          "mtl_total": 113,
+          "ratio": 1.73
+        }
+      },
+      "tier2": {
+        "count": 5,
+        "o200k_base": {
+          "py_total": 206,
+          "mtl_total": 117,
+          "ratio": 1.76
+        },
+        "cl100k_base": {
+          "py_total": 206,
+          "mtl_total": 108,
+          "ratio": 1.91
+        }
+      },
+      "tier3": {
+        "count": 3,
+        "o200k_base": {
+          "py_total": 130,
+          "mtl_total": 90,
+          "ratio": 1.44
+        },
+        "cl100k_base": {
+          "py_total": 129,
+          "mtl_total": 87,
+          "ratio": 1.48
+        }
+      }
+    }
+  },
+  "text_feedable_subset": {
+    "description": "SECONDARY: token-SUM ratio over the 7 tasks with no negative inputs (also pass the text mtlrun harness). Reproduces the earlier 2.09x.",
+    "overall": {
+      "count": 7,
+      "o200k_base": {
+        "py_total": 274,
+        "mtl_total": 131,
+        "ratio": 2.09
+      },
+      "cl100k_base": {
+        "py_total": 271,
+        "mtl_total": 126,
+        "ratio": 2.15
+      }
+    },
+    "by_tier": {
+      "micro": {
+        "count": 4,
+        "o200k_base": {
+          "py_total": 152,
+          "mtl_total": 62,
+          "ratio": 2.45
+        },
+        "cl100k_base": {
+          "py_total": 150,
+          "mtl_total": 63,
+          "ratio": 2.38
+        }
+      },
+      "tier2": {
+        "count": 2,
+        "o200k_base": {
+          "py_total": 85,
+          "mtl_total": 46,
+          "ratio": 1.85
+        },
+        "cl100k_base": {
+          "py_total": 85,
+          "mtl_total": 41,
+          "ratio": 2.07
+        }
+      },
+      "tier3": {
+        "count": 1,
+        "o200k_base": {
+          "py_total": 37,
+          "mtl_total": 23,
+          "ratio": 1.61
+        },
+        "cl100k_base": {
+          "py_total": 36,
+          "mtl_total": 22,
+          "ratio": 1.64
+        }
+      }
+    }
+  },
+  "gap_taxonomy": {
+    "algorithmically_correct": 14,
+    "total": 15,
+    "none_text_feedable": 7,
+    "input_encoding_scalar": 2,
+    "input_encoding_list": 5,
+    "algorithmic": 1,
+    "note": "The 8 tasks that fail the TEXT harness split into: 2 input_encoding(scalar) [negative scalar the text lexer can't type; fixable as `0 N -`; NOT a language gap], 5 input_encoding(list) [negative list elements can't be lexed from text; representable as runtime Values, so algorithmically correct under constructed stack], and 1 algorithmic [seal_running_max: authored candidate is wrong]. Nothing was patched in the frozen language."
+  }
+}

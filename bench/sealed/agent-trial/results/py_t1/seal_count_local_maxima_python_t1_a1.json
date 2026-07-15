@@ -1,0 +1,13 @@
+{
+  "task": "seal_count_local_maxima",
+  "arm": "python",
+  "program_tokens_o200k": 57,
+  "program_tokens_cl100k": 57,
+  "program": "def solve(xs):\n    count = 0\n    for i in range(1, len(xs) - 1):\n        if xs[i] > xs[i - 1] and xs[i] > xs[i + 1]:\n            count += 1\n    return count\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 1,
+  "attempt": 1
+}

@@ -1,0 +1,13 @@
+{
+  "task": "seal_count_local_maxima",
+  "arm": "mtl",
+  "program_tokens_o200k": 52,
+  "program_tokens_cl100k": 52,
+  "program": "[0 9223372036854775807 9223372036854775807]'[>[;0][[]1]?][___][>_[[:@~<]'~[:[^]'~<]'*@@[[+]']']'][]|",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 2,
+  "attempt": 1
+}

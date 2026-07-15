@@ -1,0 +1,13 @@
+{
+  "task": "seal_num_divisors",
+  "arm": "mtl",
+  "program_tokens_o200k": 21,
+  "program_tokens_cl100k": 21,
+  "program": ":0 0@[[1+]'[^^%0=]'+].~_~_",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 1,
+  "attempt": 1
+}

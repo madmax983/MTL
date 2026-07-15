@@ -1,0 +1,13 @@
+{
+  "task": "seal_num_divisors",
+  "arm": "python",
+  "program_tokens_o200k": 65,
+  "program_tokens_cl100k": 65,
+  "program": "def solve(n):\n    count = 0\n    i = 1\n    while i * i <= n:\n        if n % i == 0:\n            if i * i == n:\n                count += 1\n            else:\n                count += 2\n        i += 1\n    return count\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 3,
+  "attempt": 1
+}

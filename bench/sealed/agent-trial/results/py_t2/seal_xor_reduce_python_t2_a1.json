@@ -1,0 +1,13 @@
+{
+  "task": "seal_xor_reduce",
+  "arm": "python",
+  "program_tokens_o200k": 24,
+  "program_tokens_cl100k": 24,
+  "program": "def solve(xs):\n    result = 0\n    for x in xs:\n        result ^= x\n    return result\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 2,
+  "attempt": 1
+}
