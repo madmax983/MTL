@@ -15,6 +15,13 @@ For each of 8 tasks, two arms are run head-to-head:
 - **MTL arm** — the model is given `docs/mtl-quickref.md` (now v0.4, including the
   Host-capabilities section) and a task prompt, and must return an MTL program
   that produces the correct host output under the task's grant set and budget.
+  This is a **capability** battery, so it keeps the **full** quickref: the
+  cold-preamble ablation (PR #88) that adopted the 487-token
+  `docs/mtl-quickref-min.md` as the pure-computation default was validated on
+  pure tasks only and explicitly does **not** license dropping the
+  Host-capabilities prose here. Division of labor: min quickref = pure
+  computation; full quickref = pure computation + host capabilities. This arm's
+  prompt composition is unchanged.
 - **Python arm** — the model is given the same task plus the list of host stub
   functions, and must return a `solve()` function that calls those stubs.
 
