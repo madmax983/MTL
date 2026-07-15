@@ -1,0 +1,407 @@
+{
+  "measured_at": "2026-07-15",
+  "freeze_commit": "456292bb3a0b930f51c49fa50e37c339ae4eaf59",
+  "tiktoken": "0.8.0",
+  "encodings": [
+    "o200k_base",
+    "cl100k_base"
+  ],
+  "note": "Expressibility uses the literal mtlrun harness contract (printf '%s' input_prefix+program, first line == 'HALT: '+expected_halt) for EVERY vector. 8/15 tasks have negative-integer input vectors that the frozen grammar cannot lex (unsigned literals; '-' is Sub), so they fault before the program runs and are recorded as gaps. Their algorithms ARE expressible in the frozen glyph set: candidate programs pass every non-negative vector (see candidate_* fields and GAPS.md). The primary aggregate is over the 7 tasks that pass ALL literal vectors; a supplementary all-15 aggregate (using the gap candidates) is included for context.",
+  "tasks": [
+    {
+      "id": "seal_collatz_steps",
+      "tier": "micro",
+      "expressible": true,
+      "mtl_tokens": {
+        "o200k_base": 23,
+        "cl100k_base": 24
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 52,
+        "cl100k_base": 52
+      },
+      "ratio": {
+        "o200k_base": 2.26,
+        "cl100k_base": 2.17
+      }
+    },
+    {
+      "id": "seal_digit_product",
+      "tier": "micro",
+      "expressible": false,
+      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
+      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
+      "candidate_mtl": ":0<[0~-][]?:0=[_0][1~[:0=][_][:10/~10%@*~][]|]?",
+      "candidate_nonneg_vectors_passed": "5/5",
+      "candidate_mtl_tokens": {
+        "o200k_base": 28,
+        "cl100k_base": 28
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 28,
+        "cl100k_base": 28
+      },
+      "candidate_ratio": {
+        "o200k_base": 1.0,
+        "cl100k_base": 1.0
+      }
+    },
+    {
+      "id": "seal_count_set_bits",
+      "tier": "micro",
+      "expressible": false,
+      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
+      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
+      "candidate_mtl": ":0<[0~-][]?0~[:0=][_][:2/~2%@+~][]|",
+      "candidate_nonneg_vectors_passed": "5/5",
+      "candidate_mtl_tokens": {
+        "o200k_base": 22,
+        "cl100k_base": 22
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 16,
+        "cl100k_base": 16
+      },
+      "candidate_ratio": {
+        "o200k_base": 0.73,
+        "cl100k_base": 0.73
+      }
+    },
+    {
+      "id": "seal_triangular",
+      "tier": "micro",
+      "expressible": true,
+      "mtl_tokens": {
+        "o200k_base": 6,
+        "cl100k_base": 6
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 17,
+        "cl100k_base": 17
+      },
+      "ratio": {
+        "o200k_base": 2.83,
+        "cl100k_base": 2.83
+      }
+    },
+    {
+      "id": "seal_int_sqrt",
+      "tier": "micro",
+      "expressible": true,
+      "mtl_tokens": {
+        "o200k_base": 15,
+        "cl100k_base": 15
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 39,
+        "cl100k_base": 38
+      },
+      "ratio": {
+        "o200k_base": 2.6,
+        "cl100k_base": 2.53
+      }
+    },
+    {
+      "id": "seal_num_divisors",
+      "tier": "micro",
+      "expressible": true,
+      "mtl_tokens": {
+        "o200k_base": 18,
+        "cl100k_base": 18
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 44,
+        "cl100k_base": 43
+      },
+      "ratio": {
+        "o200k_base": 2.44,
+        "cl100k_base": 2.39
+      }
+    },
+    {
+      "id": "seal_alternating_sum",
+      "tier": "tier2",
+      "expressible": false,
+      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
+      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
+      "candidate_mtl": "[>0=][0][][-]|",
+      "candidate_nonneg_vectors_passed": "6/6",
+      "candidate_mtl_tokens": {
+        "o200k_base": 9,
+        "cl100k_base": 9
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 39,
+        "cl100k_base": 39
+      },
+      "candidate_ratio": {
+        "o200k_base": 4.33,
+        "cl100k_base": 4.33
+      }
+    },
+    {
+      "id": "seal_running_max",
+      "tier": "tier2",
+      "expressible": false,
+      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
+      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
+      "candidate_mtl": "0~[>0=][_[]][[^^<[~_][_]?]'[:]'][;]|",
+      "candidate_nonneg_vectors_passed": "6/6",
+      "candidate_mtl_tokens": {
+        "o200k_base": 21,
+        "cl100k_base": 21
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 42,
+        "cl100k_base": 42
+      },
+      "candidate_ratio": {
+        "o200k_base": 2.0,
+        "cl100k_base": 2.0
+      }
+    },
+    {
+      "id": "seal_count_local_maxima",
+      "tier": "tier2",
+      "expressible": true,
+      "mtl_tokens": {
+        "o200k_base": 43,
+        "cl100k_base": 38
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 60,
+        "cl100k_base": 60
+      },
+      "ratio": {
+        "o200k_base": 1.4,
+        "cl100k_base": 1.58
+      }
+    },
+    {
+      "id": "seal_xor_reduce",
+      "tier": "tier2",
+      "expressible": true,
+      "mtl_tokens": {
+        "o200k_base": 3,
+        "cl100k_base": 3
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 25,
+        "cl100k_base": 25
+      },
+      "ratio": {
+        "o200k_base": 8.33,
+        "cl100k_base": 8.33
+      }
+    },
+    {
+      "id": "seal_max_adjacent_diff",
+      "tier": "tier2",
+      "expressible": false,
+      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
+      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
+      "candidate_mtl": "[:>[~_][[]]?>[__0][1]?][_0][:>_>__-:0<[0~-][]?~>_~_][^^<[~_][_]?]|",
+      "candidate_nonneg_vectors_passed": "5/5",
+      "candidate_mtl_tokens": {
+        "o200k_base": 42,
+        "cl100k_base": 39
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 44,
+        "cl100k_base": 44
+      },
+      "candidate_ratio": {
+        "o200k_base": 1.05,
+        "cl100k_base": 1.13
+      }
+    },
+    {
+      "id": "seal_dedup_adjacent",
+      "tier": "tier2",
+      "expressible": false,
+      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
+      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
+      "candidate_mtl": "[][^>[_^=][0]?[_][~;]?]([][~;](",
+      "candidate_nonneg_vectors_passed": "6/6",
+      "candidate_mtl_tokens": {
+        "o200k_base": 20,
+        "cl100k_base": 19
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 37,
+        "cl100k_base": 37
+      },
+      "candidate_ratio": {
+        "o200k_base": 1.85,
+        "cl100k_base": 1.95
+      }
+    },
+    {
+      "id": "seal_rle_flatten",
+      "tier": "tier3",
+      "expressible": false,
+      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
+      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
+      "candidate_mtl": "[][~>[@:@:>__~[=]'~[~_~1+~;][~[;]'~;1~;]?][[];1~;]?]([][~;](",
+      "candidate_nonneg_vectors_passed": "6/6",
+      "candidate_mtl_tokens": {
+        "o200k_base": 45,
+        "cl100k_base": 43
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 52,
+        "cl100k_base": 52
+      },
+      "candidate_ratio": {
+        "o200k_base": 1.16,
+        "cl100k_base": 1.21
+      }
+    },
+    {
+      "id": "seal_digit_sum_base",
+      "tier": "tier3",
+      "expressible": true,
+      "mtl_tokens": {
+        "o200k_base": 23,
+        "cl100k_base": 22
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 37,
+        "cl100k_base": 36
+      },
+      "ratio": {
+        "o200k_base": 1.61,
+        "cl100k_base": 1.64
+      }
+    },
+    {
+      "id": "seal_min_running_balance",
+      "tier": "tier3",
+      "expressible": false,
+      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
+      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
+      "candidate_mtl": "^~[>0=][_][[+:[^^<[_][~_]?]']'][]|",
+      "candidate_nonneg_vectors_passed": "3/3",
+      "candidate_mtl_tokens": {
+        "o200k_base": 22,
+        "cl100k_base": 22
+      },
+      "py_idiomatic_tokens": {
+        "o200k_base": 41,
+        "cl100k_base": 41
+      },
+      "candidate_ratio": {
+        "o200k_base": 1.86,
+        "cl100k_base": 1.86
+      }
+    }
+  ],
+  "aggregate": {
+    "expressible_count": 7,
+    "total_count": 15,
+    "overall": {
+      "o200k_base": {
+        "py_total": 274,
+        "mtl_total": 131,
+        "ratio": 2.09
+      },
+      "cl100k_base": {
+        "py_total": 271,
+        "mtl_total": 126,
+        "ratio": 2.15
+      }
+    },
+    "by_tier": {
+      "micro": {
+        "o200k_base": {
+          "py_total": 152,
+          "mtl_total": 62,
+          "ratio": 2.45
+        },
+        "cl100k_base": {
+          "py_total": 150,
+          "mtl_total": 63,
+          "ratio": 2.38
+        }
+      },
+      "tier2": {
+        "o200k_base": {
+          "py_total": 85,
+          "mtl_total": 46,
+          "ratio": 1.85
+        },
+        "cl100k_base": {
+          "py_total": 85,
+          "mtl_total": 41,
+          "ratio": 2.07
+        }
+      },
+      "tier3": {
+        "o200k_base": {
+          "py_total": 37,
+          "mtl_total": 23,
+          "ratio": 1.61
+        },
+        "cl100k_base": {
+          "py_total": 36,
+          "mtl_total": 22,
+          "ratio": 1.64
+        }
+      }
+    }
+  },
+  "supplementary_all15_algorithmic": {
+    "note": "Aggregate over all 15 tasks using the validated frozen-glyph candidate for each gap task (each passes all its non-negative vectors). Shows held-out compression if negative integers were expressible as input.",
+    "count": 15,
+    "overall": {
+      "o200k_base": {
+        "py_total": 573,
+        "mtl_total": 340,
+        "ratio": 1.69
+      },
+      "cl100k_base": {
+        "py_total": 570,
+        "mtl_total": 329,
+        "ratio": 1.73
+      }
+    },
+    "by_tier": {
+      "micro": {
+        "o200k_base": {
+          "py_total": 196,
+          "mtl_total": 112,
+          "ratio": 1.75
+        },
+        "cl100k_base": {
+          "py_total": 194,
+          "mtl_total": 113,
+          "ratio": 1.72
+        }
+      },
+      "tier2": {
+        "o200k_base": {
+          "py_total": 247,
+          "mtl_total": 138,
+          "ratio": 1.79
+        },
+        "cl100k_base": {
+          "py_total": 247,
+          "mtl_total": 129,
+          "ratio": 1.91
+        }
+      },
+      "tier3": {
+        "o200k_base": {
+          "py_total": 130,
+          "mtl_total": 90,
+          "ratio": 1.44
+        },
+        "cl100k_base": {
+          "py_total": 129,
+          "mtl_total": 87,
+          "ratio": 1.48
+        }
+      }
+    }
+  }
+}
