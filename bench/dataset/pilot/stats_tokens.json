@@ -1,0 +1,35 @@
+{
+  "records": 1500,
+  "encodings": [
+    "o200k_base",
+    "cl100k_base"
+  ],
+  "total_tokens": {
+    "o200k_base": 48524,
+    "cl100k_base": 48597
+  },
+  "instruction_tokens": {
+    "o200k_base": 42003,
+    "cl100k_base": 42002
+  },
+  "response_tokens": {
+    "o200k_base": 6521,
+    "cl100k_base": 6595
+  },
+  "per_kind_tokens": {
+    "gen": {
+      "o200k_base": 32849,
+      "cl100k_base": 32847
+    },
+    "repair": {
+      "o200k_base": 15675,
+      "cl100k_base": 15750
+    }
+  },
+  "blended_tokens_per_example": {
+    "o200k_base": 32.349333333333334,
+    "cl100k_base": 32.398
+  },
+  "primary_encoding": "o200k_base",
+  "note": "tiktoken o200k_base used as an offline deterministic proxy for the Qwen2.5-Coder tokenizer; both are byte-level BPE and every MTL glyph is 1 token under o200k (see bench/tokcount/token_profile.json)."
+}
