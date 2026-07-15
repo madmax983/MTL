@@ -7,10 +7,22 @@ is in the Rust build graph or CI gates.
 
 ## What it measures
 
+This is a **pure-computation** battery (10 pure tasks, no host capabilities). Its
+adopted default cold preamble is therefore the minimal quickref
+[`docs/mtl-quickref-min.md`](../../docs/mtl-quickref-min.md) — the 487-token
+`v4_compressed_minimal` ablation winner (PR #88), which matched the full
+quickref's solve rate on exactly this class of task. Capability (Tier-3) tasks
+are out of scope here and keep the full [`docs/mtl-quickref.md`](../../docs/mtl-quickref.md)
+in the sibling `tier3/` battery. The recorded run below predates that adoption
+and is frozen: the historical quickref it actually showed solvers is embedded
+verbatim in `payload.json` and is left unchanged.
+
 For each of 10 tasks, two arms are run head-to-head:
 
-- **MTL arm** — the model is given `docs/mtl-quickref.md` and a task prompt, and
-  must return an MTL program that leaves the correct result on the stack.
+- **MTL arm** — the model is given the cold quickref preamble (min quickref by
+  the adopted default above; the frozen recorded run used the embedded
+  historical copy) and a task prompt, and must return an MTL program that leaves
+  the correct result on the stack.
 - **Python arm** — the model is given the same task and must return a
   `solve(...)` function.
 

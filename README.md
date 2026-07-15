@@ -54,7 +54,7 @@ Artifacts: core [`crates/mtl-core/src/mtl_core.rs`](crates/mtl-core/src/mtl_core
 - **Comparison / bitwise:** `=` `<` · `$` xor
 - **Recursion:** `&` primrec · `.` times · `|` linrec · `(` fold
 
-Full table with stack effects and fault semantics: spec §5 ([`docs/mtl-spec.md`](docs/mtl-spec.md)) and the [quick reference](docs/mtl-quickref.md).
+Full table with stack effects and fault semantics: spec §5 ([`docs/mtl-spec.md`](docs/mtl-spec.md)) and the [quick reference](docs/mtl-quickref.md). Cold agents writing **pure-computation** MTL should start from the 487-token [minimal quick reference](docs/mtl-quickref-min.md) (the PR #88 ablation winner); reach for the full reference only when a task uses host capabilities.
 
 ## Effects & capabilities (v0.4)
 

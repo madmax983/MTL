@@ -1,5 +1,11 @@
 # MTL Quick Reference (v0.4)
 
+> **Division of labor.** `docs/mtl-quickref.md` (this file, full) = **pure
+> computation + host capabilities**. For pure-computation work only, the frozen
+> [`docs/mtl-quickref-min.md`](mtl-quickref-min.md) (the 487-token cold-preamble
+> ablation winner, PR #88) is the cheaper default; it omits the Host-capabilities
+> section below, so any task that reaches the host needs this full reference.
+
 New in v0.4: the **Host capabilities** section at the end of this document,
 covering Tier-3 capability calls, the grant model, budgets, and host faults.
 
