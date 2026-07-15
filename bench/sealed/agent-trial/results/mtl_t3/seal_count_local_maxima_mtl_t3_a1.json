@@ -1,0 +1,16 @@
+{
+  "task": "seal_count_local_maxima",
+  "arm": "mtl",
+  "program_tokens_o200k": 35,
+  "program_tokens_cl100k": 35,
+  "program": ">[[00@]'[>[;0][[]1]?][___][>_[^^<[:@<~[*+]']'~]'][]|][0]?",
+  "ok": false,
+  "error_type": "Underflow",
+  "error_detail": "FAULT: Underflow\n  stack: 1 0\n  next:  [Rot [2] [Uncons [Cons 0] [[] 1] If] [Drop Drop Drop] [Uncons Drop [Over Over Lt [Dup Rot Lt Swap [Mul Add] Dip] Dip Swap] Dip] [] LinRec]",
+  "failing_vector": {
+    "input_prefix": "[1 2] ",
+    "expected_halt": "0"
+  },
+  "trial": 3,
+  "attempt": 1
+}

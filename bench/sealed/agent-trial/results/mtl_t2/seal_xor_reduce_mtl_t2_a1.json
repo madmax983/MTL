@@ -1,0 +1,13 @@
+{
+  "task": "seal_xor_reduce",
+  "arm": "mtl",
+  "program_tokens_o200k": 3,
+  "program_tokens_cl100k": 3,
+  "program": "0[$](",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 2,
+  "attempt": 1
+}

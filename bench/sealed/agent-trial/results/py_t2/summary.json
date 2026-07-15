@@ -1,0 +1,13 @@
+{
+  "arm": "python",
+  "trial": 2,
+  "tasks": [
+    {"id": "seal_collatz_steps", "solved": true, "attempts_to_first_correct": 1, "final_program": "seal_collatz_steps.attempt1.py", "final_tokens_o200k": 58, "final_tokens_cl100k": 58},
+    {"id": "seal_triangular", "solved": true, "attempts_to_first_correct": 1, "final_program": "seal_triangular.attempt1.py", "final_tokens_o200k": 17, "final_tokens_cl100k": 17},
+    {"id": "seal_int_sqrt", "solved": true, "attempts_to_first_correct": 1, "final_program": "seal_int_sqrt.attempt1.py", "final_tokens_o200k": 73, "final_tokens_cl100k": 73},
+    {"id": "seal_num_divisors", "solved": true, "attempts_to_first_correct": 1, "final_program": "seal_num_divisors.attempt1.py", "final_tokens_o200k": 62, "final_tokens_cl100k": 62},
+    {"id": "seal_count_local_maxima", "solved": true, "attempts_to_first_correct": 1, "final_program": "seal_count_local_maxima.attempt1.py", "final_tokens_o200k": 57, "final_tokens_cl100k": 57},
+    {"id": "seal_xor_reduce", "solved": true, "attempts_to_first_correct": 1, "final_program": "seal_xor_reduce.attempt1.py", "final_tokens_o200k": 24, "final_tokens_cl100k": 24},
+    {"id": "seal_digit_sum_base", "solved": true, "attempts_to_first_correct": 1, "final_program": "seal_digit_sum_base.attempt1.py", "final_tokens_o200k": 47, "final_tokens_cl100k": 46}
+  ]
+}

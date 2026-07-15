@@ -1,0 +1,13 @@
+{
+  "task": "seal_int_sqrt",
+  "arm": "python",
+  "program_tokens_o200k": 67,
+  "program_tokens_cl100k": 67,
+  "program": "def solve(n):\n    if n < 2:\n        return n\n    r = int(n ** 0.5)\n    while r * r > n:\n        r -= 1\n    while (r + 1) * (r + 1) <= n:\n        r += 1\n    return r\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 1,
+  "attempt": 1
+}

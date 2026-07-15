@@ -1,0 +1,13 @@
+{
+  "task": "seal_collatz_steps",
+  "arm": "mtl",
+  "program_tokens_o200k": 25,
+  "program_tokens_cl100k": 25,
+  "program": "0~[:1=][_][[1+]':2%0=[2/][3*1+]?][]|",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 3,
+  "attempt": 1
+}

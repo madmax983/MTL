@@ -1,0 +1,13 @@
+{
+  "task": "seal_int_sqrt",
+  "arm": "python",
+  "program_tokens_o200k": 73,
+  "program_tokens_cl100k": 73,
+  "program": "def solve(n):\n    if n < 2:\n        return n\n    lo, hi = 0, n\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if mid * mid <= n:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return hi\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 2,
+  "attempt": 1
+}

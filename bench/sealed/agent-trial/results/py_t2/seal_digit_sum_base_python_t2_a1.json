@@ -1,0 +1,13 @@
+{
+  "task": "seal_digit_sum_base",
+  "arm": "python",
+  "program_tokens_o200k": 47,
+  "program_tokens_cl100k": 46,
+  "program": "def solve(n, b):\n    if n == 0:\n        return 0\n    total = 0\n    while n > 0:\n        total += n % b\n        n //= b\n    return total\n",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 2,
+  "attempt": 1
+}

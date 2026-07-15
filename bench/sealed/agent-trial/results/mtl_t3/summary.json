@@ -1,0 +1,62 @@
+{
+  "arm": "mtl",
+  "trial": 3,
+  "tasks": [
+    {
+      "id": "seal_collatz_steps",
+      "solved": true,
+      "attempts_to_first_correct": 1,
+      "final_program": "0~[:1=][_][[1+]':2%0=[2/][3*1+]?][]|",
+      "final_tokens_o200k": 25,
+      "final_tokens_cl100k": 25
+    },
+    {
+      "id": "seal_triangular",
+      "solved": true,
+      "attempts_to_first_correct": 1,
+      "final_program": ":1+*2/",
+      "final_tokens_o200k": 6,
+      "final_tokens_cl100k": 6
+    },
+    {
+      "id": "seal_int_sqrt",
+      "solved": true,
+      "attempts_to_first_correct": 1,
+      "final_program": "0~[^1+:*^~<][_][[1+]'][]|",
+      "final_tokens_o200k": 16,
+      "final_tokens_cl100k": 16
+    },
+    {
+      "id": "seal_num_divisors",
+      "solved": true,
+      "attempts_to_first_correct": 2,
+      "final_program": ":0@@[:0=][__][^^%0=[1-]'@[@+~]'~][]|",
+      "final_tokens_o200k": 24,
+      "final_tokens_cl100k": 24
+    },
+    {
+      "id": "seal_count_local_maxima",
+      "solved": true,
+      "attempts_to_first_correct": 2,
+      "final_program": ">[[0 0@]'[>[;0][[]1]?][___][>_[^^<[:@<~[*+]']'~]'][]|][0]?",
+      "final_tokens_o200k": 37,
+      "final_tokens_cl100k": 37
+    },
+    {
+      "id": "seal_xor_reduce",
+      "solved": true,
+      "attempts_to_first_correct": 1,
+      "final_program": "0[$](",
+      "final_tokens_o200k": 3,
+      "final_tokens_cl100k": 3
+    },
+    {
+      "id": "seal_digit_sum_base",
+      "solved": true,
+      "attempts_to_first_correct": 1,
+      "final_program": "~0@@[:0=][__][^^~%[^/]'@[@+~]'~][]|",
+      "final_tokens_o200k": 23,
+      "final_tokens_cl100k": 23
+    }
+  ]
+}

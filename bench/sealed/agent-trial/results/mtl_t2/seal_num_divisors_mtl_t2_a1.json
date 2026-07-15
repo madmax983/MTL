@@ -1,0 +1,16 @@
+{
+  "task": "seal_num_divisors",
+  "arm": "mtl",
+  "program_tokens_o200k": 13,
+  "program_tokens_cl100k": 13,
+  "program": ":[0][[^~%0=]'+]&~_",
+  "ok": false,
+  "error_type": "wrong_output",
+  "error_detail": "got '2', expected '4'",
+  "failing_vector": {
+    "input_prefix": "6 ",
+    "expected_halt": "4"
+  },
+  "trial": 2,
+  "attempt": 1
+}

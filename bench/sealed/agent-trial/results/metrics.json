@@ -1,0 +1,297 @@
+{
+  "meta": {
+    "arms": [
+      "mtl",
+      "python"
+    ],
+    "attempts_found": 46,
+    "cells_found": 42,
+    "expected_trials_per_task_arm": 3,
+    "in_progress_cells": [],
+    "load_errors": [],
+    "max_attempts": 5,
+    "payload_missing": false,
+    "quickref_tokens_cl100k": 4037,
+    "quickref_tokens_o200k": 4051,
+    "underfilled_task_arms": []
+  },
+  "per_arm": {
+    "mtl": {
+      "attempts_to_first_correct_distribution": {
+        "1": 18,
+        "2": 2,
+        "3": 1,
+        "4": 0,
+        "5": 0
+      },
+      "attempts_to_first_correct_mean": 1.1904761904761905,
+      "attempts_to_first_correct_median": 1,
+      "correct_solutions_per_million_tokens": 42682.9268292683,
+      "error_type_distribution": {
+        "Underflow": 1,
+        "parse": 1,
+        "wrong_output": 2
+      },
+      "output_tokens_to_first_correct_mean": 23.428571428571427,
+      "output_tokens_to_first_correct_median": 19,
+      "p_correct_within_5": 1.0,
+      "parse_fault_count": 1,
+      "program_only_first_correct_mean": 19.428571428571427,
+      "program_only_first_correct_median": 19,
+      "repair": {
+        "failed_attempt1_cells": 3,
+        "failed_attempt1_then_solved": 3,
+        "mean_attempts_among_repaired": 2.3333333333333335,
+        "repair_success_rate": 1.0
+      },
+      "solved_cells": 21,
+      "stack_tracking_fault_count": 1,
+      "total_cells": 21,
+      "total_output_tokens_all_cells": 492,
+      "unsolved_cells": 0,
+      "wrong_output_fault_count": 2
+    },
+    "python": {
+      "attempts_to_first_correct_distribution": {
+        "1": 21,
+        "2": 0,
+        "3": 0,
+        "4": 0,
+        "5": 0
+      },
+      "attempts_to_first_correct_mean": 1.0,
+      "attempts_to_first_correct_median": 1,
+      "correct_solutions_per_million_tokens": 20095.693779904304,
+      "error_type_distribution": {},
+      "output_tokens_to_first_correct_mean": 49.76190476190476,
+      "output_tokens_to_first_correct_median": 57,
+      "p_correct_within_5": 1.0,
+      "parse_fault_count": 0,
+      "program_only_first_correct_mean": 49.76190476190476,
+      "program_only_first_correct_median": 57,
+      "repair": {
+        "failed_attempt1_cells": 0,
+        "failed_attempt1_then_solved": 0,
+        "mean_attempts_among_repaired": null,
+        "repair_success_rate": null
+      },
+      "solved_cells": 21,
+      "stack_tracking_fault_count": 0,
+      "total_cells": 21,
+      "total_output_tokens_all_cells": 1045,
+      "unsolved_cells": 0,
+      "wrong_output_fault_count": 0
+    }
+  },
+  "per_task": {
+    "seal_collatz_steps": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 41666.666666666664,
+        "output_tokens_to_first_correct_median": 25,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 17241.379310344826,
+        "output_tokens_to_first_correct_median": 58,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "seal_count_local_maxima": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 17857.142857142855,
+        "output_tokens_to_first_correct_median": 52,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 16759.77653631285,
+        "output_tokens_to_first_correct_median": 57,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "seal_digit_sum_base": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 49180.32786885246,
+        "output_tokens_to_first_correct_median": 19,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 20979.02097902098,
+        "output_tokens_to_first_correct_median": 48,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "seal_int_sqrt": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 62500.0,
+        "output_tokens_to_first_correct_median": 16,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 12820.51282051282,
+        "output_tokens_to_first_correct_median": 73,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "seal_num_divisors": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 25862.068965517243,
+        "output_tokens_to_first_correct_median": 37,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 15625.0,
+        "output_tokens_to_first_correct_median": 65,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "seal_triangular": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 166666.66666666666,
+        "output_tokens_to_first_correct_median": 6,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 58823.529411764706,
+        "output_tokens_to_first_correct_median": 17,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    },
+    "seal_xor_reduce": {
+      "mtl": {
+        "correct_solutions_per_million_tokens": 333333.3333333333,
+        "output_tokens_to_first_correct_median": 3,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      },
+      "python": {
+        "correct_solutions_per_million_tokens": 41666.666666666664,
+        "output_tokens_to_first_correct_median": 24,
+        "p_correct_within_5": 1.0,
+        "solved_cells": 3,
+        "total_cells": 3,
+        "trials_present": [
+          1,
+          2,
+          3
+        ]
+      }
+    }
+  },
+  "token_accounting": {
+    "mtl": {
+      "amortized_over_10_tasks": 424.1,
+      "cold_instruction_cost_o200k": 4051,
+      "cold_total_per_solve": 4070,
+      "generation_plus_repair_median": 19,
+      "program_only_median": 19
+    },
+    "python": {
+      "amortized_over_10_tasks": 57.0,
+      "cold_instruction_cost_o200k": 0,
+      "cold_total_per_solve": 57,
+      "generation_plus_repair_median": 57,
+      "program_only_median": 57
+    }
+  },
+  "verdict": {
+    "cold_total_per_solve_mtl": 4070,
+    "cold_total_per_solve_python": 57,
+    "cspm_mtl": 42682.9268292683,
+    "cspm_python": 20095.693779904304,
+    "cspm_ratio_mtl_over_python": 2.123983739837399,
+    "static_edge_favors_mtl": true,
+    "static_edge_survives_total_accounting": true,
+    "static_program_median_mtl": 19,
+    "static_program_median_python": 57
+  }
+}

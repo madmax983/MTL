@@ -1,0 +1,13 @@
+{
+  "task": "seal_int_sqrt",
+  "arm": "mtl",
+  "program_tokens_o200k": 15,
+  "program_tokens_cl100k": 15,
+  "program": "0[^^1+:*<][~_][1+][]|",
+  "ok": true,
+  "error_type": null,
+  "error_detail": null,
+  "failing_vector": null,
+  "trial": 1,
+  "attempt": 1
+}

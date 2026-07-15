@@ -1,0 +1,16 @@
+{
+  "task": "seal_num_divisors",
+  "arm": "mtl",
+  "program_tokens_o200k": 23,
+  "program_tokens_cl100k": 23,
+  "program": ":0@@[:0=][__][^^%0=@@[[+]']']'1-][]|",
+  "ok": false,
+  "error_type": "parse",
+  "error_detail": "PARSE ERROR: parse error at byte 34: unexpected `]` with no matching open `[`",
+  "failing_vector": {
+    "input_prefix": "1 ",
+    "expected_halt": "1"
+  },
+  "trial": 2,
+  "attempt": 2
+}
