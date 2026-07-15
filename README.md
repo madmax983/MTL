@@ -117,6 +117,8 @@ cargo run --bin mtlrun -p mtl-bench-validate
 
 GitHub's hosted runners were stalled by GitHub-side rate-limiting through the v0.2–v0.4 work, so **CI did not gate these merges**. All verification evidence is **local, from source-built Verus** using the commands above. The workflow's P5 step is a hard gate and the core/P4 steps are advisory, but the runners haven't dispatched — so the proof counts here are reproducible locally, not (yet) attested by a green CI badge. We state this plainly rather than imply CI coverage that isn't there.
 
+The workflow has since been hardened for reliability and given coverage + fuzz jobs (issue #58; root-cause and mitigations in [`docs/ci-reliability.md`](docs/ci-reliability.md)): per-job `timeout-minutes`, a `concurrency` group that cancels superseded PR runs (but never default-branch runs), a docs-only path filter, caching, and a bounded retry on the Verus download. A `coverage` job reports `cargo-llvm-cov` numbers (advisory), and a `fuzz` job runs the parser round-trip and the interp-vs-arena differential under `cargo-fuzz` (gating on any panic or divergence). **This does not change the honesty note above:** until a self-hosted verifier lands, proof evidence remains local source-built Verus — the reliability work reduces the stall, it does not by itself turn the badge green.
+
 ## Related work
 
 Concatenative controls Forth and Joy, plus jq, a compact S-expression DSL, and idiomatic/minified/model-generated Python form the comparison panel (spec §10.3). The base `{dup, drop, cat, cons, apply}` follows Kerby's minimal concatenative core; the reference-counting direction draws on Perceus/Koka (spec §14, adversarial review).

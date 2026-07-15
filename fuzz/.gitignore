@@ -1,0 +1,8 @@
+# cargo-fuzz build output and saved crash/timeout/oom inputs — never committed.
+/target
+/artifacts
+/coverage
+
+# Auto-generated libFuzzer corpus entries (hash-named). Curated seeds are
+# tracked explicitly and are unaffected by this rule; add new seeds with -f.
+/corpus/**/*

@@ -5,13 +5,62 @@ on:
     branches: [main, bootstrap]
   pull_request:
 
+# RELIABILITY (issue #58): supersede stale in-flight runs so a re-push does not
+# sit behind an obsolete run for a queue slot — a direct queue-pressure win
+# against the documented runner-dispatch starvation (RELEASE-NOTES-0.4.0.md,
+# "The CI that never ran"). The group key is the PR head branch on pull_request
+# and the unique run id on push, so:
+#   * a new push to a PR CANCELS the PR's older in-flight run (saves the slot);
+#   * pushes to a protected branch (main/bootstrap) each get a unique group and
+#     are therefore NEVER cancelled — default-branch runs always complete.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
+  # Cheap path gate: docs-only diffs skip the heavy verus/coverage/fuzz legs so
+  # they never consume a hosted-runner slot for a README typo. The fast `cargo`
+  # gate below always runs (no `needs: changes`) so a required status check
+  # always reports on every push/PR, docs-only or not.
+  changes:
+    name: detect code changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          # `code` is true iff at least one changed file is NOT docs/markdown/
+          # metadata. `predicate-quantifier: every` means a file matches `code`
+          # only when it matches ALL of the negations (i.e. it is a real code
+          # file); the filter output is then true if ANY changed file does.
+          predicate-quantifier: 'every'
+          filters: |
+            code:
+              - '!docs/**'
+              - '!**/*.md'
+              - '!LICENSE'
+              - '!.gitignore'
+
   cargo:
     name: cargo check + test (stable)
     runs-on: ubuntu-latest
+    # Fast gate: always runs (no path gate) so it can serve as the always-green
+    # required check. Bounded so a hung runner turns RED instead of hanging the
+    # queue indefinitely.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      # Cache registry + git + target dir to cut cold-build time (reliability:
+      # a shorter job holds a runner slot for less time).
+      - uses: Swatinem/rust-cache@v2
       - name: cargo check
         run: cargo check --workspace --all-targets
       - name: cargo test
@@ -20,6 +69,13 @@ jobs:
   verus:
     name: verus verify (0.2026.07.05.49b8806)
     runs-on: ubuntu-latest
+    # Skip on docs-only diffs (queue-pressure win); always runs when code changed.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    # The heaviest leg: bounded generously so a genuinely stuck runner fails RED
+    # rather than hanging the queue, but long enough for a cold Verus install +
+    # the full proof set (P1/P3 + P5 + Layer C + arena refinement).
+    timeout-minutes: 45
     # Toolchain health is a HARD gate. Install + a `verus --version` smoke check run
     # fail-fast (NO continue-on-error): if Verus cannot even be invoked, this job
     # goes RED. It must never again read as "skipped, job green" — which is exactly
@@ -51,14 +107,37 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Cache the pinned Verus release zip across runs. The release asset is
+      # immutable per tag, so a hit skips the network entirely — removing the
+      # single most stall-prone step (the historical 404 + rate-limited fetch).
+      - name: Cache Verus release zip
+        uses: actions/cache@v4
+        with:
+          path: verus.zip
+          key: verus-zip-${{ env.VERUS_VERSION }}-x86-linux
+
       - name: Install Verus ${{ env.VERUS_VERSION }} (+ pinned Rust toolchain) — fail-fast
         run: |
           set -euxo pipefail
           # 1) Fetch + unpack the pinned Verus release.
           # Tag is `release/<VERUS_VERSION>`; the '/' is URL-encoded as %2F.
           url="https://github.com/verus-lang/verus/releases/download/release%2F${VERUS_VERSION}/verus-${VERUS_VERSION}-x86-linux.zip"
-          echo "Fetching $url"
-          curl -fL "$url" -o verus.zip
+          # RELIABILITY (issue #58): only fetch on a cache miss, and retry the
+          # download with exponential backoff so a transient network/rate-limit
+          # blip does not fail the job (bounded: 4 tries, 2s/4s/8s/16s).
+          if [ ! -s verus.zip ]; then
+            n=0
+            until curl -fL "$url" -o verus.zip; do
+              n=$((n + 1))
+              if [ "$n" -ge 4 ]; then
+                echo "Verus download failed after $n attempts" >&2
+                exit 1
+              fi
+              sleep $((2 ** n))
+            done
+          else
+            echo "Using cached verus.zip"
+          fi
           unzip -q verus.zip -d verus-dist
           # Resolve the dir holding the `verus` binary; make it (+ its driver) invocable.
           verus_dir="$(dirname "$(find verus-dist -name verus -type f | head -1)")"
@@ -275,3 +354,104 @@ jobs:
           name: verus-proof-log
           path: artifacts/
           if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # Coverage (issue #58). ADVISORY: reports line/region % over the core surface
+  # (mtl-core interp + host, and the mtl-check checker) as a step summary and an
+  # HTML+lcov artifact. It NEVER gates the merge (no threshold failure) so it
+  # cannot join the historical stall in blocking merges; the number is baselined
+  # here and ratcheted (not lowered) per the issue's success metric (>=70% on
+  # the core surface).
+  # ---------------------------------------------------------------------------
+  coverage:
+    name: coverage (cargo-llvm-cov, advisory)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - name: Coverage (workspace) — text summary + lcov + HTML
+        run: |
+          set -o pipefail
+          mkdir -p coverage
+          # One instrumented test run, three reports (summary/lcov/html) from the
+          # same profraw so the numbers are consistent.
+          cargo llvm-cov --workspace --no-report
+          cargo llvm-cov report --summary-only | tee coverage/summary.txt
+          cargo llvm-cov report --lcov --output-path coverage/lcov.info
+          cargo llvm-cov report --html --output-dir coverage/html
+      - name: Publish coverage to step summary (core surface highlighted)
+        if: always()
+        run: |
+          {
+            echo "### Coverage (advisory — cargo-llvm-cov)"
+            echo ""
+            echo "Success-metric surfaces (issue #58 target: >= 70%):"
+            echo '```'
+            grep -E 'interp.rs|mtl-core/src/host.rs|mtl-check/src/lib.rs|^TOTAL' coverage/summary.txt || true
+            echo '```'
+            echo ""
+            echo "Full per-file table is in the \`coverage-report\` artifact (open \`html/index.html\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          if-no-files-found: warn
+
+  # ---------------------------------------------------------------------------
+  # Fuzz (issue #58). GATING on findings: a SHORT libFuzzer smoke per PR over the
+  # parser round-trip/totality and the interp-vs-arena differential (the Engine
+  # seam). libFuzzer exits non-zero on the FIRST panic or engine divergence, so
+  # this job goes RED on any new finding and uploads the crash artifact. The
+  # budget is a smoke, not a soak; fuzz/README.md documents the longer local run.
+  # Wired to the existing properties: p4_roundtrip.rs, the arena oracle, and the
+  # mtl-core run_refines_reference differential.
+  # ---------------------------------------------------------------------------
+  fuzz:
+    name: fuzz smoke (cargo-fuzz, gates on findings)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      # Each target runs a bounded smoke under libFuzzer resource guards
+      # (`-rss_limit_mb` + `-timeout`). We then GATE precisely per issue #58 AC:
+      # a genuine panic or engine divergence is saved by libFuzzer as a
+      # `crash-*` artifact and FAILS the job; a `timeout-*`/`oom-*` artifact is an
+      # adversarial RESOURCE-EXHAUSTION input (step-fuel bounds steps, not the
+      # memory of an exponential quote-doubling loop — see docs/ci-reliability.md
+      # §3 and fuzz/README.md), reported as advisory rather than flaking the gate.
+      - name: Fuzz smoke — parser totality + round-trip (gates on crash)
+        run: bash .github/scripts/fuzz-smoke.sh parse_roundtrip 60
+      - name: Fuzz smoke — interp-vs-arena differential / Engine seam (gates on crash)
+        run: bash .github/scripts/fuzz-smoke.sh differential 90
+      - name: Fuzz smoke — parse -> execute pipeline (gates on crash)
+        run: bash .github/scripts/fuzz-smoke.sh parse_exec 60
+      - name: Upload fuzz artifacts (crashes / timeouts / oom, if any)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
