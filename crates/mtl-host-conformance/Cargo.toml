@@ -1,0 +1,13 @@
+[package]
+name = "mtl-host-conformance"
+version = "0.1.0"
+edition = "2021"
+description = "Reusable host-conformance test kit: runs any mtl_core::host::Host impl against the enumerated Invoke-contract obligations (O1-O8)."
+license = "MIT"
+repository = "https://github.com/madmax983/MTL"
+
+[dependencies]
+mtl-core = { path = "../mtl-core" }
+
+[dev-dependencies]
+mtl-host = { path = "../mtl-host" }
