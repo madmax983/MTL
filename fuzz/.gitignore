@@ -1,0 +1,4 @@
+# cargo-fuzz build output and saved crash/timeout/oom inputs — never committed.
+/target
+/artifacts
+/coverage

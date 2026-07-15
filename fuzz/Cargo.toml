@@ -1,0 +1,48 @@
+[package]
+name = "mtl-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+description = "cargo-fuzz targets for MTL: parser totality/round-trip and the interp-vs-arena differential (Engine seam) oracle."
+
+[package.metadata]
+cargo-fuzz = true
+
+# Detach from the parent workspace: the fuzz crate builds on nightly with the
+# sanitizer/libFuzzer instrumentation and must NOT be pulled into `cargo
+# check/test --workspace` on stable.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+mtl-syntax = { path = "../crates/mtl-syntax" }
+mtl-core = { path = "../crates/mtl-core" }
+mtl-arena = { path = "../crates/mtl-arena" }
+
+[[bin]]
+name = "parse_roundtrip"
+path = "fuzz_targets/parse_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "differential"
+path = "fuzz_targets/differential.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_exec"
+path = "fuzz_targets/parse_exec.rs"
+test = false
+doc = false
+bench = false
+
+# libFuzzer requires the instrumented profile to keep overflow checks on so the
+# fuzzer can actually SEE arithmetic panics as crashes.
+[profile.release]
+debug = 1
+overflow-checks = true
