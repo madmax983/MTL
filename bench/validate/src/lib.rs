@@ -14,8 +14,10 @@
 
 use std::path::Path;
 
-use mtl_core::interp::Word as IWord;
+use mtl_core::interp::{run as interp_run, Outcome, Value, Vm, Word as IWord};
 use mtl_syntax::{parse, ParseError, Word};
+
+pub use mtl_arena::Engine;
 
 /// Generate the syntax-`Prim` → interp-`Prim` opcode map from the checked
 /// manifest's canonical rows (`mtl_syntax::for_each_primitive!`). This is the
@@ -52,6 +54,25 @@ pub fn conv(w: &Word) -> IWord {
 /// Convert a whole parsed program into an executable program.
 pub fn conv_program(prog: &[Word]) -> Vec<IWord> {
     prog.iter().map(conv).collect()
+}
+
+/// Run `prog` against `initial_stack` on the selected [`Engine`], bounded by
+/// `fuel`, and return the reference-typed [`Outcome`].
+///
+/// The DEFAULT engine is the arena ([`Engine::Arena`]); [`Engine::Interp`] keeps
+/// the reference interpreter reachable as the differential anchor. Both paths
+/// produce the identically-shaped `interp::Outcome`, so the corpus gate compares
+/// the same value regardless of engine — the arena flip is byte-for-byte
+/// observationally invisible here (the differential oracle proves this across
+/// 148 cases).
+pub fn run_program(engine: Engine, prog: &[IWord], initial_stack: &[Value], fuel: u64) -> Outcome {
+    match engine {
+        Engine::Interp => interp_run(Vm::with_stack(initial_stack.to_vec(), prog.to_vec()), fuel),
+        Engine::Arena => {
+            let arena_prog = mtl_arena::prog_from_interp_with_stack(initial_stack, prog);
+            mtl_arena::run_arena(&arena_prog, fuel).outcome().into_interp()
+        }
+    }
 }
 
 /// Read a corpus `solution.mtl` file, strip a single trailing newline, parse it

@@ -7,6 +7,7 @@
 //! mid-run. `fuel == 0` returns `FuelExhausted` immediately.
 
 use crate::arena::VmState;
+use crate::compact::{compact, CompactPolicy};
 use crate::types::{Fault, ProgWord};
 use crate::vm::{StepR, Vm};
 use mtl_core::interp as itp;
@@ -84,6 +85,23 @@ pub enum Outcome {
     Invoke { name: String, stack: Vec<itp::Value>, cont: Vec<itp::Word> },
 }
 
+impl Outcome {
+    /// Reinterpret this arena [`Outcome`] as the reference `interp::Outcome`.
+    /// The two enums are structurally identical (same variant names, same
+    /// reference-typed payloads produced at the reification boundary), so this
+    /// is a total, field-for-field relabel — it is the seam that lets a
+    /// user-facing entry point render arena and interp results through ONE code
+    /// path, guaranteeing byte-identical output between engines.
+    pub fn into_interp(self) -> itp::Outcome {
+        match self {
+            Outcome::Halt(stack) => itp::Outcome::Halt(stack),
+            Outcome::Fault(info) => itp::Outcome::Fault(info),
+            Outcome::FuelExhausted { stack, cont } => itp::Outcome::FuelExhausted { stack, cont },
+            Outcome::Invoke { name, stack, cont } => itp::Outcome::Invoke { name, stack, cont },
+        }
+    }
+}
+
 /// Execute exactly one small step, mutating `st` in place.
 ///
 /// TOTAL: no panic sites. Returns [`Step::Halt`] when the continuation is empty.
@@ -135,6 +153,61 @@ pub fn run_arena(prog: &[ProgWord], fuel: u64) -> ArenaRun {
             Step::Halt => return ArenaRun { vm, end: ArenaEnd::Halt, state: st, steps },
             Step::Fault(f) => {
                 // arena_step restored st to the pre-step position.
+                return ArenaRun { vm, end: ArenaEnd::Fault(f), state: st, steps };
+            }
+            Step::Invoke(name) => {
+                return ArenaRun { vm, end: ArenaEnd::Invoke(name), state: st, steps };
+            }
+        }
+    }
+}
+
+/// Fuel-bounded arena driver **with opt-in reachable-state compaction** (issue
+/// #51). Identical to [`run_arena`] except that, at each generation-safe point
+/// (the top of the driver loop, between atomic [`arena_step`]s — never mid-step),
+/// it checks `policy` and, if triggered, compacts the live state: it re-interns
+/// only the cells reachable from the in-flight [`VmState`] (plus the immortal
+/// base-program floor captured after compile+prepend) into fresh arenas, remaps
+/// the [`VmState`] through the copy, and continues.
+///
+/// With [`CompactPolicy::Off`] this is byte-for-byte [`run_arena`] (the compaction
+/// branch is never taken); the differential oracle runs it with
+/// [`CompactPolicy::Always`] to prove a compaction anywhere in a run yields a
+/// terminal bit-identical to the reference interpreter.
+///
+/// The reified terminal ([`ArenaRun::outcome`]) is invariant under compaction:
+/// compaction only reorganizes storage and remaps handles, so the reified stack /
+/// continuation / fault info are unchanged (AC#6).
+pub fn run_arena_compacting(prog: &[ProgWord], fuel: u64, policy: CompactPolicy) -> ArenaRun {
+    let mut vm = Vm::new();
+    let mut st = VmState::initial();
+    match vm.compile(prog) {
+        Some(pid) => vm.prepend(&mut st, pid),
+        None => {
+            return ArenaRun { vm, end: ArenaEnd::Fault(Fault::Overflow), state: st, steps: 0 };
+        }
+    }
+    // The generation floor: the base program tape and its initial continuation
+    // node are immortal (preserved verbatim by compaction); only cells allocated
+    // by execution (cat/cons/linrec/primrec/times/fold/dip setup segments, stack
+    // growth, cont growth) live above the floor and are reclaimed.
+    let floor = vm.mark();
+
+    let mut steps: u64 = 0;
+    loop {
+        if steps >= fuel {
+            return ArenaRun { vm, end: ArenaEnd::FuelExhausted, state: st, steps };
+        }
+        // Generation-safe point: a clean VmState between atomic steps.
+        if policy.triggered(&vm, floor) {
+            let (nvm, nroots, _stats) = compact(&vm, floor, core::slice::from_ref(&st));
+            vm = nvm;
+            st = nroots[0];
+        }
+        match arena_step(&mut vm, &mut st) {
+            Step::Next => steps += 1,
+            Step::Halt => return ArenaRun { vm, end: ArenaEnd::Halt, state: st, steps },
+            Step::Fault(f) => {
                 return ArenaRun { vm, end: ArenaEnd::Fault(f), state: st, steps };
             }
             Step::Invoke(name) => {
