@@ -28,7 +28,14 @@ artdir="fuzz/artifacts/${target}"
 rm -f "${artdir}"/crash-* "${artdir}"/timeout-* "${artdir}"/oom-* 2>/dev/null || true
 
 set -x
-cargo fuzz run "${target}" -- \
+# Force the nightly toolchain explicitly. cargo-fuzz needs nightly for the
+# sanitizer/coverage instrumentation (`-Zsanitizer=address`), but the repo-root
+# `rust-toolchain.toml` pins `channel = "stable"` for the rest of the workspace.
+# That toolchain file is a directory-hierarchy override that also applies here,
+# so a bare `cargo fuzz run` resolves to STABLE and fails with
+# "error: the option `Z` is only accepted on the nightly compiler". `+nightly`
+# bypasses the override (matching the documented local `cargo +nightly fuzz`).
+cargo +nightly fuzz run "${target}" -- \
   -max_total_time="${budget}" \
   -rss_limit_mb=2048 \
   -timeout=25 \
