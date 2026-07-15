@@ -1,0 +1,30 @@
+{
+  "v1_full": 4051,
+  "v2_grammar_only": 2055,
+  "v3_worked_examples_heavy": 1675,
+  "v4_compressed_minimal": 487,
+  "v5_task_adaptive": {
+    "per_task": {
+      "affine": 264,
+      "rev3": 257,
+      "is_even": 281,
+      "factorial": 296,
+      "gcd": 411,
+      "sum_list": 356,
+      "reverse_list": 438,
+      "palindrome_number": 530,
+      "contains": 556,
+      "climbing_stairs": 375
+    },
+    "mean": 376.4
+  },
+  "_encoding": "o200k_base",
+  "_pct_of_v1_full": {
+    "v1_full": 100.0,
+    "v2_grammar_only": 50.7,
+    "v3_worked_examples_heavy": 41.3,
+    "v4_compressed_minimal": 12.0,
+    "v5_task_adaptive_mean": 9.3
+  },
+  "_note": "Token counts via bench/tokcount (tiktoken o200k_base), one trailing newline stripped per file (count_file). v5 mean is over the 10 tasks."
+}

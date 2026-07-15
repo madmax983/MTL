@@ -1,0 +1,12 @@
+{
+  "variant": "v3_worked_examples_heavy",
+  "task": "is_even",
+  "trial": 2,
+  "preamble_tokens": 1675,
+  "solved": true,
+  "attempts": 1,
+  "first_correct_attempt": 1,
+  "programs": [
+    "2%0="
+  ]
+}

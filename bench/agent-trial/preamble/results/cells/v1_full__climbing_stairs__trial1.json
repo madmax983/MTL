@@ -1,0 +1,1 @@
+{"variant": "v1_full", "task": "climbing_stairs", "trial": 1, "preamble_tokens": 4051, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1 1]'[~^+]._"]}

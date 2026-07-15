@@ -1,0 +1,12 @@
+{
+  "variant": "v4_compressed_minimal",
+  "task": "sum_list",
+  "trial": 3,
+  "preamble_tokens": 487,
+  "solved": true,
+  "attempts": 1,
+  "first_correct_attempt": 1,
+  "programs": [
+    "0 [+] ("
+  ]
+}

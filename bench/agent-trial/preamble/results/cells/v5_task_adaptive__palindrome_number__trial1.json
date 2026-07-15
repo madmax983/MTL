@@ -1,0 +1,12 @@
+{
+  "variant": "v5_task_adaptive",
+  "task": "palindrome_number",
+  "trial": 1,
+  "preamble_tokens": 530,
+  "solved": true,
+  "attempts": 1,
+  "first_correct_attempt": 1,
+  "programs": [
+    ": 0 ~ [: 0 =] [_ =] [: 10 % @ 10 * + ~ 10 /] [] |"
+  ]
+}

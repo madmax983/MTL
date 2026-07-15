@@ -1,0 +1,12 @@
+{
+  "variant": "v1_full",
+  "task": "reverse_list",
+  "trial": 2,
+  "preamble_tokens": 4051,
+  "solved": true,
+  "attempts": 1,
+  "first_correct_attempt": 1,
+  "programs": [
+    "[][~;]("
+  ]
+}

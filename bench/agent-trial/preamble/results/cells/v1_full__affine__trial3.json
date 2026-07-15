@@ -1,0 +1,12 @@
+{
+  "variant": "v1_full",
+  "task": "affine",
+  "trial": 3,
+  "preamble_tokens": 4051,
+  "solved": true,
+  "attempts": 1,
+  "first_correct_attempt": 1,
+  "programs": [
+    "3*7+"
+  ]
+}

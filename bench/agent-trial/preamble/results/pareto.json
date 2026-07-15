@@ -1,0 +1,42 @@
+{
+  "objective": {
+    "maximize": "solve_rate",
+    "minimize": "preamble_tokens"
+  },
+  "reference_variant": "v1_full",
+  "pareto_frontier": [
+    "v5_task_adaptive"
+  ],
+  "points": [
+    {
+      "variant": "v1_full",
+      "preamble_tokens": 4051,
+      "solve_rate": 1.0,
+      "median_tokens_to_first_correct": 4055.5
+    },
+    {
+      "variant": "v2_grammar_only",
+      "preamble_tokens": 2055,
+      "solve_rate": 1.0,
+      "median_tokens_to_first_correct": 2059.5
+    },
+    {
+      "variant": "v3_worked_examples_heavy",
+      "preamble_tokens": 1675,
+      "solve_rate": 1.0,
+      "median_tokens_to_first_correct": 1682.0
+    },
+    {
+      "variant": "v4_compressed_minimal",
+      "preamble_tokens": 487,
+      "solve_rate": 1.0,
+      "median_tokens_to_first_correct": 492.5
+    },
+    {
+      "variant": "v5_task_adaptive",
+      "preamble_tokens": 376.4,
+      "solve_rate": 1.0,
+      "median_tokens_to_first_correct": 382.0
+    }
+  ]
+}

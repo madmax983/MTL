@@ -1,0 +1,12 @@
+{
+  "variant": "v2_grammar_only",
+  "task": "rev3",
+  "trial": 1,
+  "preamble_tokens": 2055,
+  "solved": true,
+  "attempts": 1,
+  "first_correct_attempt": 1,
+  "programs": [
+    "~@"
+  ]
+}
