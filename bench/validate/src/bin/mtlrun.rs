@@ -16,7 +16,7 @@
 
 use std::io::Read;
 
-use mtl_bench_validate::conv_program;
+use mtl_bench_validate::{conv_program, Engine};
 use mtl_core::interp::{run, Outcome, Value, Vm, Word as IWord};
 use mtl_syntax::parse;
 
@@ -63,7 +63,29 @@ fn show_stack(stack: &[Value]) -> String {
 }
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    // Engine selection: `--engine=arena|interp` (default arena, the
+    // refinement-proved backend). The flag is stripped from argv before the
+    // remaining tokens are joined into the program source, so it works whether
+    // the program comes from argv or stdin. Output for Halt/Fault is byte-
+    // identical across engines — that identity is the whole point.
+    let mut engine = Engine::default();
+    let mut args: Vec<String> = Vec::new();
+    for a in std::env::args().skip(1) {
+        if let Some(val) = a.strip_prefix("--engine=") {
+            engine = match Engine::parse(val) {
+                Ok(e) => e,
+                Err(msg) => {
+                    eprintln!("mtlrun: {msg}");
+                    std::process::exit(2);
+                }
+            };
+        } else if a == "--engine" {
+            eprintln!("mtlrun: --engine needs a value, e.g. --engine=arena");
+            std::process::exit(2);
+        } else {
+            args.push(a);
+        }
+    }
     let src = if args.is_empty() {
         let mut s = String::new();
         std::io::stdin()
@@ -86,7 +108,15 @@ fn main() {
 
     // Program executed against an empty initial stack; input literals are part
     // of the program string (prepended by the caller), mirroring corpus.rs.
-    let outcome = run(Vm::new(iprog), FUEL);
+    // Both engines produce the identically-shaped `interp::Outcome`, so the
+    // rendering below is a single code path — guaranteeing byte-identical output.
+    let outcome = match engine {
+        Engine::Arena => {
+            let prog = mtl_arena::prog_from_interp(&iprog);
+            mtl_arena::run_arena(&prog, FUEL).outcome().into_interp()
+        }
+        Engine::Interp => run(Vm::new(iprog), FUEL),
+    };
     match outcome {
         Outcome::Halt(stack) => {
             println!("HALT: {}", show_stack(&stack));

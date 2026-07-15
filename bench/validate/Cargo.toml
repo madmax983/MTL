@@ -6,3 +6,7 @@ edition = "2021"
 [dependencies]
 mtl-syntax = { path = "../../crates/mtl-syntax" }
 mtl-core = { path = "../../crates/mtl-core" }
+# The arena backend is the DEFAULT execution engine (refinement-proved); the
+# validation harness selects it via `mtl_arena::Engine`, with interp reachable
+# as the differential anchor.
+mtl-arena = { path = "../../crates/mtl-arena" }

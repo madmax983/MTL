@@ -7,11 +7,9 @@ description = "MTL v0.4 host half: the unverified host runner (driver, capabilit
 [dependencies]
 mtl-core = { path = "../mtl-core" }
 mtl-syntax = { path = "../mtl-syntax" }
-
-[dev-dependencies]
-# OPT-IN arena backend, used ONLY by `tests/arena_backend.rs` to prove that the
-# arena host driver (`mtl_arena::host::arena_drive`) is behaviourally identical to
-# the default `mtl_core::host::drive` when driven through this crate's REAL
-# `HostShim`. It is NOT a production dependency: the default `driver::drive` path
-# is untouched, so selecting the arena backend is an explicit caller choice.
+# The arena backend is now the DEFAULT execution engine (`driver::drive` routes to
+# `mtl_arena::host::arena_drive`); the reference interpreter (`mtl_core::host::drive`)
+# stays reachable as the differential anchor via `driver::drive_interp` /
+# `drive_with(Engine::Interp, ...)`. The refinement obligation is discharged
+# (machine-checked Verus), so this is a proved default, not a silent substitute.
 mtl-arena = { path = "../mtl-arena" }

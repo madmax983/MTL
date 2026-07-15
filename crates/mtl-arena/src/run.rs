@@ -84,6 +84,23 @@ pub enum Outcome {
     Invoke { name: String, stack: Vec<itp::Value>, cont: Vec<itp::Word> },
 }
 
+impl Outcome {
+    /// Reinterpret this arena [`Outcome`] as the reference `interp::Outcome`.
+    /// The two enums are structurally identical (same variant names, same
+    /// reference-typed payloads produced at the reification boundary), so this
+    /// is a total, field-for-field relabel — it is the seam that lets a
+    /// user-facing entry point render arena and interp results through ONE code
+    /// path, guaranteeing byte-identical output between engines.
+    pub fn into_interp(self) -> itp::Outcome {
+        match self {
+            Outcome::Halt(stack) => itp::Outcome::Halt(stack),
+            Outcome::Fault(info) => itp::Outcome::Fault(info),
+            Outcome::FuelExhausted { stack, cont } => itp::Outcome::FuelExhausted { stack, cont },
+            Outcome::Invoke { name, stack, cont } => itp::Outcome::Invoke { name, stack, cont },
+        }
+    }
+}
+
 /// Execute exactly one small step, mutating `st` in place.
 ///
 /// TOTAL: no panic sites. Returns [`Step::Halt`] when the continuation is empty.

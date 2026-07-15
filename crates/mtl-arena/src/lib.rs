@@ -23,14 +23,25 @@
 //! [`VmState`] (stack + cont + cursor = three `u32`s, 12 bytes, `Copy`) is the
 //! whole machine position, so **fork is a 12-byte copy** independent of depth.
 //!
-//! ## Opt-in, never a silent substitute
+//! ## Default engine — refinement PROVED, precondition met, ratified
 //!
-//! This crate is a *separate, explicit* entry point ([`run_arena`] / [`arena_step`]).
-//! It never replaces `interp::run` — the reference interpreter remains the default
-//! twin and the oracle of truth. Parity is proven by the differential oracle
-//! (`tests/oracle.rs`, 47/47) and the fault-corpus parity test
-//! (`tests/fault_parity.rs`); the arena "does not ship" unless those are green
-//! (design §5 drift-accounting gate).
+//! The old "never default without proof" rule is now **discharged**. The arena
+//! refinement obligation — `α(arena_step(s)) = spec_step(α(s))` — is a
+//! machine-checked Verus proof (`proofs/arena_verus.rs`, 145 verified / 0 errors,
+//! unconditional, admit/assume-free, with fault parity), so the precondition the
+//! rule guarded is satisfied, and the owner has ratified arena-as-default. The
+//! arena is now the DEFAULT execution path across the user-facing entry points,
+//! selectable via [`Engine`] ([`Engine::Arena`] = default).
+//!
+//! `interp::run` is **not** retired: `mtl_core::interp` remains the reference twin
+//! and **differential anchor**, reachable behind an explicit `--engine=interp` /
+//! [`Engine::Interp`] selection. The default is arena, but the oracle keeps
+//! running BOTH engines and comparing them — parity is still enforced by the
+//! differential oracle (`tests/oracle.rs`, 148 cases, both engines), the
+//! fault-corpus parity test (`tests/fault_parity.rs`), and the host-driver parity
+//! suites (`tests/host_parity.rs`, `mtl-host/tests/arena_backend.rs`). Those twin
+//! runs are what make the arena default safe: interp is the anchor the arena is
+//! continuously checked against, not a fallback that ever executes by default.
 //!
 //! ## Production hygiene
 //!
@@ -51,11 +62,19 @@
 //! into an [`Outcome`] identical in shape to `interp::Outcome`.
 
 mod arena;
+mod convert;
 pub mod host;
 mod prim;
 mod run;
 mod types;
 mod vm;
+
+// ---- interp -> arena input conversion + the user-facing Engine selector ----
+//      (the single DRY home for the flip; see `convert.rs`).
+pub use convert::{
+    prim_from_interp, prog_from_interp, prog_from_interp_with_stack, value_to_progword,
+    word_from_interp, Engine,
+};
 
 // ---- arena types (the policed internal mirrors; pub for conformance + oracle) --
 pub use types::{Fault, Prim, ProgWord, QuoteId, Value, Word};

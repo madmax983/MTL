@@ -7,8 +7,8 @@
 
 use std::path::PathBuf;
 
-use mtl_bench_validate::load_solution;
-use mtl_core::interp::{run, Outcome, Value, Vm};
+use mtl_bench_validate::{load_solution, run_program, Engine};
+use mtl_core::interp::{Outcome, Value};
 
 const FUEL: u64 = 100_000;
 
@@ -53,7 +53,9 @@ fn check_v2(task: &str, input: Vec<Value>, expected: Vec<Value>) {
 #[track_caller]
 fn check_path(task: &str, path: PathBuf, input: Vec<Value>, expected: Vec<Value>) {
     let prog = load_solution(&path).unwrap_or_else(|e| panic!("{task}: parse failed: {e}"));
-    let outcome = run(Vm::with_stack(input.clone(), prog), FUEL);
+    // Default engine is the arena (refinement-proved); interp stays reachable as
+    // the differential anchor via `Engine::Interp`.
+    let outcome = run_program(Engine::default(), &prog, &input, FUEL);
     match outcome {
         Outcome::Halt(stack) => assert_eq!(
             stack, expected,

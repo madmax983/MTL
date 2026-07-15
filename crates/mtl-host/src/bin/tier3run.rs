@@ -22,16 +22,35 @@
 
 use std::io::Read;
 
+use mtl_host::driver::{drive_with, Engine, HostCode, RunResult};
 use mtl_host::caps::{task_setup, TaskSetup};
-use mtl_host::driver::{drive, HostCode, RunResult};
 
 const FUEL: u64 = 100_000;
 
 fn main() {
-    let task = match std::env::args().nth(1) {
+    // Args: `tier3run [--engine=arena|interp] <task_name>` (MTL program on stdin).
+    // Default engine is the arena (refinement-proved); `--engine=interp` selects
+    // the reference interpreter as the differential anchor. The verdict line is
+    // byte-identical across engines.
+    let mut engine = Engine::default();
+    let mut task: Option<String> = None;
+    for a in std::env::args().skip(1) {
+        if let Some(val) = a.strip_prefix("--engine=") {
+            engine = match Engine::parse(val) {
+                Ok(e) => e,
+                Err(msg) => {
+                    eprintln!("tier3run: {msg}");
+                    std::process::exit(1);
+                }
+            };
+        } else if task.is_none() {
+            task = Some(a);
+        }
+    }
+    let task = match task {
         Some(t) => t,
         None => {
-            eprintln!("usage: tier3run <task_name>   (MTL program on stdin)");
+            eprintln!("usage: tier3run [--engine=arena|interp] <task_name>   (MTL program on stdin)");
             std::process::exit(1);
         }
     };
@@ -66,7 +85,7 @@ fn main() {
     };
     let prog = mtl_host::conv_program(&parsed);
 
-    let verdict = match drive(prog, vec![], FUEL, &mut reg, &mut ctx) {
+    let verdict = match drive_with(engine, prog, vec![], FUEL, &mut reg, &mut ctx) {
         RunResult::Done(_) => {
             let got = ctx.output_utf8();
             if got == expected_output {

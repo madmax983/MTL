@@ -28,6 +28,43 @@ use mtl_perf::{drive, fold_sum, primrec_sumto, selfapp_countdown, straightline};
 
 const FUEL: u64 = 200_000_000;
 
+/// Which engine arms to time. The DEFAULT is [`Sel::Both`] — this is a
+/// COMPARATIVE harness, so it runs both engines by default (arena is now the
+/// production default engine; interp is the differential anchor "before"). The
+/// `--engine=arena|interp` flag restricts to a single arm for focused timing.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Sel {
+    Both,
+    Arena,
+    Interp,
+}
+
+impl Sel {
+    fn runs_interp(self) -> bool {
+        matches!(self, Sel::Both | Sel::Interp)
+    }
+    fn runs_arena(self) -> bool {
+        matches!(self, Sel::Both | Sel::Arena)
+    }
+}
+
+/// Parse `--engine=arena|interp` from argv; absence ⇒ [`Sel::Both`].
+fn parse_sel() -> Sel {
+    for a in std::env::args().skip(1) {
+        if let Some(val) = a.strip_prefix("--engine=") {
+            match arena::Engine::parse(val) {
+                Ok(arena::Engine::Arena) => return Sel::Arena,
+                Ok(arena::Engine::Interp) => return Sel::Interp,
+                Err(msg) => {
+                    eprintln!("arena_vs_interp: {msg}");
+                    std::process::exit(2);
+                }
+            }
+        }
+    }
+    Sel::Both
+}
+
 // ---------------------------------------------------- conversions (interp -> arena)
 fn conv_prim(p: Prim) -> arena::Prim {
     use arena::Prim as A;
@@ -132,19 +169,53 @@ struct Row {
     projected: Option<f64>, // projected interp ns when capped
 }
 
+/// Time one interp arm, honouring the engine selection: when interp is not
+/// selected, return the `(0, NaN)` sentinel that [`print_table`] renders as `n/a`.
+fn time_interp_sel(sel: Sel, init: &[Value], prog: &[Word], reps: u32) -> (u64, f64) {
+    if sel.runs_interp() {
+        time_interp(init, prog, reps)
+    } else {
+        (0, f64::NAN)
+    }
+}
+
+/// Time one arena arm, honouring the engine selection.
+fn time_arena_sel(sel: Sel, full: &[arena::ProgWord], reps: u32) -> (u64, f64) {
+    if sel.runs_arena() {
+        time_arena(full, reps)
+    } else {
+        (0, f64::NAN)
+    }
+}
+
 fn print_table(title: &str, note: &str, rows: &[Row]) {
     println!("### {}\n", title);
     println!("{}\n", note);
     println!("| scale | interp steps | interp total ms | interp ns/step | arena steps | arena total ms | arena ns/step | speedup |");
     println!("|---:|---:|---:|---:|---:|---:|---:|---:|");
     for r in rows {
+        if r.a_ns.is_nan() {
+            // Arena arm not selected (interp-only run).
+            let i_nsps = r.i_ns / r.i_steps as f64;
+            println!(
+                "| {} | {} | {:.4} | {:.1} | n/a | n/a | n/a | n/a |",
+                r.scale, r.i_steps, ms(r.i_ns), i_nsps,
+            );
+            continue;
+        }
         let a_nsps = r.a_ns / r.a_steps as f64;
         if r.i_ns.is_nan() {
-            let proj = r.projected.unwrap_or(f64::NAN);
-            println!(
-                "| {} | {} | n/a (proj ~{:.1}s) | n/a | {} | {:.4} | {:.1} | proj ~{:.0}× |",
-                r.scale, r.i_steps, proj / 1e9, r.a_steps, ms(r.a_ns), a_nsps, proj / r.a_ns,
-            );
+            // Interp arm capped/projected or not selected.
+            match r.projected {
+                Some(proj) => println!(
+                    "| {} | {} | n/a (proj ~{:.1}s) | n/a | {} | {:.4} | {:.1} | proj ~{:.0}× |",
+                    r.scale, r.i_steps, proj / 1e9, r.a_steps, ms(r.a_ns), a_nsps, proj / r.a_ns,
+                ),
+                None => println!(
+                    "| {} | n/a | n/a | n/a | {} | {:.4} | {:.1} | n/a |",
+                    r.scale, r.a_steps, ms(r.a_ns), a_nsps,
+                ),
+            }
         } else {
             let i_nsps = r.i_ns / r.i_steps as f64;
             println!(
@@ -158,6 +229,7 @@ fn print_table(title: &str, note: &str, rows: &[Row]) {
 }
 
 fn main() {
+    let sel = parse_sel();
     println!("# MTL v0.5 arena backend — PRODUCTION arena-vs-interp measurements\n");
     println!("BEFORE = `mtl_core::interp::run` (Vec continuation).");
     println!("AFTER  = `mtl_arena::run_arena` (PRODUCTION segment-cursor arena continuation).");
@@ -171,8 +243,8 @@ fn main() {
         let prog = straightline(units);
         let full = to_arena(&prog);
         let reps = if n <= 1024 { 200 } else { 20 };
-        let (is, i_ns) = time_interp(&[], &prog, reps);
-        let (as_, a_ns) = time_arena(&full, reps.max(50));
+        let (is, i_ns) = time_interp_sel(sel, &[], &prog, reps);
+        let (as_, a_ns) = time_arena_sel(sel, &full, reps.max(50));
         flat.push(Row { scale: format!("N={}", n), i_steps: is, i_ns, a_steps: as_, a_ns, projected: None });
     }
     print_table(
@@ -187,10 +259,10 @@ fn main() {
     for &n in &[1000i64, 10000, 100000] {
         let (init, prog) = primrec_sumto(n);
         let full = to_arena(&full_prog(&init, &prog));
-        let (as_, a_ns) = time_arena(&full, 20);
+        let (as_, a_ns) = time_arena_sel(sel, &full, 20);
         if n <= 10000 {
             let reps = if n <= 1000 { 20 } else { 3 };
-            let (is, i_ns) = time_interp(&init, &prog, reps);
+            let (is, i_ns) = time_interp_sel(sel, &init, &prog, reps);
             if n == 10000 {
                 interp_10k_ns = i_ns;
             }
@@ -224,10 +296,10 @@ fn main() {
     for &n in &[1000usize, 10000, 100000] {
         let (init, prog) = fold_sum(n);
         let full = to_arena(&full_prog(&init, &prog));
-        let (as_, a_ns) = time_arena(&full, 20);
+        let (as_, a_ns) = time_arena_sel(sel, &full, 20);
         if n <= 10000 {
             let reps = if n <= 1000 { 20 } else { 5 };
-            let (is, i_ns) = time_interp(&init, &prog, reps);
+            let (is, i_ns) = time_interp_sel(sel, &init, &prog, reps);
             if n == 10000 {
                 fold_10k_ns = i_ns;
             }
@@ -254,8 +326,8 @@ fn main() {
     for &n in &[1000i64, 10000] {
         let (init, prog) = selfapp_countdown(n);
         let full = to_arena(&full_prog(&init, &prog));
-        let (is, i_ns) = time_interp(&init, &prog, 10);
-        let (as_, a_ns) = time_arena(&full, 20);
+        let (is, i_ns) = time_interp_sel(sel, &init, &prog, 10);
+        let (as_, a_ns) = time_arena_sel(sel, &full, 20);
         dp.push(Row { scale: format!("n={}", n), i_steps: is, i_ns, a_steps: as_, a_ns, projected: None });
     }
     print_table(
@@ -265,7 +337,7 @@ fn main() {
     );
 
     // fork-cost microbenchmark
-    fork_table();
+    fork_table(sel);
 
     println!("---\n");
     println!("Production numbers. Compare against the spike's claimed figures in");
@@ -283,36 +355,49 @@ fn arena_stack_state(d: usize) -> (arena::Vm, arena::VmState) {
     (run.vm, run.state)
 }
 
-fn fork_table() {
+fn fork_table(sel: Sel) {
     println!("### Fork-cost microbenchmark — clone a machine position at stack depth d\n");
     println!("BEFORE: `clone()` a persistent-free `interp::Vm` holding a depth-d stack + a small cont (O(d) Vec clone). AFTER: copy an arena `VmState` (3×u32 = 12 bytes) sitting on a depth-d persistent stack (O(1), depth-independent).\n");
     println!("| stack depth d | interp Vm.clone() ns | arena VmState copy ns |");
     println!("|---:|---:|---:|");
     for &d in &[1usize, 10, 100, 1000, 10000] {
         // BEFORE: interp Vm with depth-d stack + representative cont.
-        let stack: Vec<Value> = (0..d).map(|i| Value::Int(i as i64)).collect();
-        let cont = vec![Word::PushInt(1), Word::Prim(Prim::Add)];
-        let vm = Vm::with_stack(stack, cont);
-        let iters: u64 = if d >= 1000 { 20_000 } else { 500_000 };
-        black_box(vm.clone());
-        let t = Instant::now();
-        for _ in 0..iters {
+        let clone_ns = if sel.runs_interp() {
+            let stack: Vec<Value> = (0..d).map(|i| Value::Int(i as i64)).collect();
+            let cont = vec![Word::PushInt(1), Word::Prim(Prim::Add)];
+            let vm = Vm::with_stack(stack, cont);
+            let iters: u64 = if d >= 1000 { 20_000 } else { 500_000 };
             black_box(vm.clone());
-        }
-        let clone_ns = t.elapsed().as_nanos() as f64 / iters as f64;
+            let t = Instant::now();
+            for _ in 0..iters {
+                black_box(vm.clone());
+            }
+            t.elapsed().as_nanos() as f64 / iters as f64
+        } else {
+            f64::NAN
+        };
 
         // AFTER: arena VmState copy at depth d (fork = 12-byte Copy).
-        let (_avm, st) = arena_stack_state(d);
-        let citers: u64 = 5_000_000;
-        black_box(st);
-        let t = Instant::now();
-        for _ in 0..citers {
-            let s2 = black_box(st);
-            black_box(s2);
-        }
-        let copy_ns = t.elapsed().as_nanos() as f64 / citers as f64;
+        let copy_ns = if sel.runs_arena() {
+            let (_avm, st) = arena_stack_state(d);
+            let citers: u64 = 5_000_000;
+            black_box(st);
+            let t = Instant::now();
+            for _ in 0..citers {
+                let s2 = black_box(st);
+                black_box(s2);
+            }
+            t.elapsed().as_nanos() as f64 / citers as f64
+        } else {
+            f64::NAN
+        };
 
-        println!("| {} | {:.1} | {:.2} |", d, clone_ns, copy_ns);
+        match (clone_ns.is_nan(), copy_ns.is_nan()) {
+            (false, false) => println!("| {} | {:.1} | {:.2} |", d, clone_ns, copy_ns),
+            (false, true) => println!("| {} | {:.1} | n/a |", d, clone_ns),
+            (true, false) => println!("| {} | n/a | {:.2} |", d, copy_ns),
+            (true, true) => println!("| {} | n/a | n/a |", d),
+        }
     }
     println!();
 }

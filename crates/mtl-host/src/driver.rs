@@ -1,5 +1,10 @@
-//! The public run entry — a thin wrapper that FULLY DELEGATES the impure driver
-//! loop to [`mtl_core::host::drive`] (design §2.3 `drive`, §7 cancellation).
+//! The public run entry — routes the impure driver loop to the selected engine.
+//! The DEFAULT is the arena backend ([`drive_arena`], wrapping
+//! [`mtl_arena::host::arena_drive`]); the reference interpreter
+//! ([`drive_interp`], wrapping [`mtl_core::host::drive`]) stays reachable as the
+//! differential anchor. Both drivers share the SAME [`HostShim`] seam and are
+//! parity-pinned bit-for-bit (`tests/arena_backend.rs`), so the flip is
+//! host-observationally invisible.
 //!
 //! ## Reconciled onto `mtl_core::host::drive` (approach (a))
 //!
@@ -21,6 +26,10 @@
 //! at-most-once servicing all live in the core.
 
 use mtl_core::interp::{Value, Vm, Word};
+
+/// The user-facing engine selector, re-exported from `mtl-arena` (default
+/// [`Engine::Arena`]). See [`drive_with`].
+pub use mtl_arena::Engine;
 
 /// The terminal result of a driven run, re-exported verbatim from the core seam
 /// (`Done` | `Faulted` | `Cancelled` | `HostFaulted`). There is NO `Refused`
@@ -50,7 +59,63 @@ use crate::host::HostCtx;
 /// `reg` and `ctx` are borrowed by the shim only for the duration of the drive,
 /// so the caller still owns `ctx` afterwards and can read `ctx`'s emitted output
 /// and per-capability call counts.
+/// Drive on the DEFAULT engine (the arena, [`Engine::Arena`]). Equivalent to
+/// `drive_with(Engine::default(), ...)`. The arena refinement obligation is
+/// discharged (machine-checked, unconditional), so it is the default execution
+/// path; the reference interpreter stays reachable via [`drive_interp`] /
+/// `drive_with(Engine::Interp, ...)` as the differential anchor.
 pub fn drive(
+    program: Vec<Word>,
+    initial_stack: Vec<Value>,
+    fuel: u64,
+    reg: &mut Registry,
+    ctx: &mut HostCtx,
+) -> RunResult {
+    drive_with(Engine::default(), program, initial_stack, fuel, reg, ctx)
+}
+
+/// Drive `program` on the explicitly selected [`Engine`]. Both engines share the
+/// SAME [`HostShim`] seam (grant → meter → effect → record) and the same global
+/// fuel budget, and are parity-pinned bit-for-bit in `tests/arena_backend.rs`.
+pub fn drive_with(
+    engine: Engine,
+    program: Vec<Word>,
+    initial_stack: Vec<Value>,
+    fuel: u64,
+    reg: &mut Registry,
+    ctx: &mut HostCtx,
+) -> RunResult {
+    match engine {
+        Engine::Arena => drive_arena(program, initial_stack, fuel, reg, ctx),
+        Engine::Interp => drive_interp(program, initial_stack, fuel, reg, ctx),
+    }
+}
+
+/// Drive on the DEFAULT arena backend ([`mtl_arena::host::arena_drive`]).
+///
+/// `arena_drive` starts from an empty `VmState`, so a non-empty `initial_stack`
+/// is threaded by prepending it to the program as leading pushes
+/// ([`mtl_arena::prog_from_interp_with_stack`]) — the same encoding the corpus
+/// and differential oracle use. `tier3run` (the sole in-tree caller) always
+/// passes an empty initial stack, so for it this is a direct drop-in; the
+/// prepend keeps the wrapper fully general.
+pub fn drive_arena(
+    program: Vec<Word>,
+    initial_stack: Vec<Value>,
+    fuel: u64,
+    reg: &mut Registry,
+    ctx: &mut HostCtx,
+) -> RunResult {
+    let prog = mtl_arena::prog_from_interp_with_stack(&initial_stack, &program);
+    let mut shim = HostShim::new(reg, ctx);
+    mtl_arena::host::arena_drive(&prog, fuel, &mut shim)
+}
+
+/// Drive on the reference interpreter ([`mtl_core::host::drive`]) — the
+/// differential anchor, reachable behind an explicit selection. This is the
+/// original delegation kept intact: it is the twin the arena is checked against,
+/// never deleted.
+pub fn drive_interp(
     program: Vec<Word>,
     initial_stack: Vec<Value>,
     fuel: u64,
