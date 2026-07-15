@@ -1,0 +1,9 @@
+# Dependencies for bench/design-lora/tokcompress.py
+# tiktoken is pinned to the version used by bench/tokcount so the o200k_base /
+# cl100k_base baselines reproduce the repo's published numbers exactly.
+tiktoken==0.8.0
+# HuggingFace tokenizer stack for the open-weights LoRA candidate tokenizers.
+# Only tokenizer files are downloaded (no model weights, no torch needed).
+transformers>=4.44
+tokenizers>=0.20
+sentencepiece>=0.2.0
