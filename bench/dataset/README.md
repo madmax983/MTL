@@ -104,11 +104,17 @@ well under 10M for 2–3 epochs).
 
 ## Sealed / contamination discipline
 
-The real sealed-eval split is reserved-empty in-repo; `sealed/sealed.manifest.json`
-is a documented **placeholder** of reserved canonical forms that #53 will replace
-with the real sealed tasks. See `sealed/README.md`. The gate asserts the dataset
-is hash-disjoint from the sealed set by canonical-SHA-256 **and** io-behavior
-hash, and is CI-runnable (`tests/contamination.rs`).
+`sealed/sealed.manifest.json` is the **real** salted contamination manifest
+(schema `mtl-sealed-manifest/v2`), derived from the sealed task set at
+`bench/sealed/tasks.json` (15 tasks authored blind to the MTL glyph/primitive
+set; regenerate with `cargo run -p mtl-datagen --bin mkseal`). Each entry
+carries a salted `content_sha256` tamper-evidence fingerprint and the task's
+`io_hash`; `canonical_sha256` is empty until the post-freeze unseal (reference
+solutions are withheld). See `sealed/README.md` and `bench/sealed/README.md`.
+The gate asserts the dataset is hash-disjoint from the sealed set by
+canonical-SHA-256 **and** io-behavior hash (empty keys never match), and is
+CI-runnable (`tests/contamination.rs`), which also proves sealed⇔dev
+disjointness and that a planted dev-task I/O reproduction is caught.
 
 ## Correctness proof — the re-validation invariant
 

@@ -1,40 +1,62 @@
-# Sealed-eval contamination placeholder (feeds #53)
+# Sealed-eval contamination manifest (issue #53)
 
-The real sealed-eval split is **reserved-empty in-repo** today: every task in
-`bench/tokcount/tasks.json` carries `"split": "dev"`, and `bench/BASELINE.md` /
-`bench/README.md` state that `train` and `sealed-eval` are reserved-empty. There
-is no committed sealed manifest anywhere in the tree.
+`sealed.manifest.json` is the **real** sealed-set contamination manifest,
+derived from the sealed task set at [`bench/sealed/tasks.json`](../../sealed/tasks.json)
+(15 tasks authored blind to the MTL glyph/primitive set — see
+[`bench/sealed/README.md`](../../sealed/README.md) and
+[`bench/sealed/AUTHORSHIP.md`](../../sealed/AUTHORSHIP.md)). It replaces the
+former *placeholder* of reserved canonical forms.
 
-Authoring the actual sealed tasks is the job of **issue #53** ("Populate the
-sealed eval set and report held-out results"), which is explicitly *out of scope*
-for the data-factory crate. What the factory owns is the **hash-disjoint
-machinery**: the two-key mechanical dedup gate that #83 requires so a warm number
-on a contaminated task is void.
+## Shape (`mtl-sealed-manifest/v2`)
 
-## What `sealed.manifest.json` is
+An OBJECT, not an array:
 
-`sealed.manifest.json` is the visible no-peek artifact in the shape #53 mandates
-— a JSON array of `{task_id, tier, canonical_sha256, io_hash}`. It is a
-**placeholder** populated with a handful of *reserved canonical forms* — programs
-the generators are constructed never to emit (out-of-range affine constants, an
-n^4 form, a literal-quote concatenation, …). Each row carries the program's real
-`mtl_syntax::print` canonical SHA-256 and its io-behavior-vector hash.
+```json
+{
+  "schema": "mtl-sealed-manifest/v2",
+  "salt": "mtl-sealed-v1:issue-53",
+  "freeze_commit": "",
+  "generated_from": "bench/sealed/tasks.json",
+  "entries": [
+    { "task_id": "seal_collatz_steps", "tier": 0,
+      "content_sha256": "<salted spec fingerprint>",
+      "io_hash": "<canon::io_hash over the task's I/O vectors>",
+      "canonical_sha256": "" },
+    ...
+  ]
+}
+```
 
-Regenerate it with:
+- `content_sha256` — salted tamper-evidence fingerprint of the task spec
+  (`sha256_hex(salt ++ 0x00 ++ serde_json(canonical_spec))`).
+- `io_hash` — the same io-behavior hash the dataset generator computes per row,
+  so a training row reproducing a sealed task's exact I/O collides.
+- `canonical_sha256` — the reference MTL solution's canonical SHA-256, **empty
+  until the post-freeze unseal** (reference solutions are withheld). The gate
+  treats an empty key as "no key".
+
+The exact `content_sha256` formula, the io-hash construction, the salt, and the
+no-peek protocol are documented in
+[`bench/sealed/README.md`](../../sealed/README.md).
+
+## Regenerate
 
 ```
 cargo run -p mtl-datagen --bin mkseal
 ```
 
+Reads `bench/sealed/tasks.json`, writes this manifest deterministically (pretty
+JSON + trailing newline). No randomness — reproducible byte-for-byte.
+
 ## What the gate does
 
-`gen` loads this manifest and asserts **no dataset item collides** with any
-sealed entry by canonical-SHA-256 **or** io-hash (`bench/dataset/src/contamination.rs`),
-emitting `pilot/contamination_report.json`. The build FAILS on any collision. The
-`tests/contamination.rs` suite proves both directions: a clean dataset passes and
-a planted canonical/io collision is caught.
+`gen` loads this manifest (`load_sealed` → `contamination::parse_manifest`,
+which returns `.entries`) and asserts **no dataset item collides** with any
+sealed entry by `canonical_sha256` **or** `io_hash`
+(`bench/dataset/src/contamination.rs`), emitting `pilot/contamination_report.json`.
+The build FAILS on any collision. Empty `canonical_sha256`/`io_hash` keys never
+match, so the pre-freeze empty canonical column cannot false-trigger.
 
-When #53 authors the real sealed tasks, replace this placeholder manifest with
-the real `{task_id, tier, canonical_sha256, io_hash}` rows (plus the withheld
-`sealed.jsonl` reference solutions, encrypted/held-out per the no-peek protocol);
-the gate and CI wiring here work unchanged against them.
+`tests/contamination.rs` proves the mechanism in both directions plus the
+issue-#53 disjointness / held-out proofs (`sealed_disjoint_from_dev`,
+`planted_dev_task_collision_is_caught`, `manifest_matches_sealed_tasks`).

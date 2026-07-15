@@ -39,6 +39,7 @@ pub mod coverage;
 pub mod families;
 pub mod oracle;
 pub mod repair;
+pub mod sealed_spec;
 pub mod sft;
 
 use mtl_core::interp::{Prim as IPrim, Value, Word as IWord};
