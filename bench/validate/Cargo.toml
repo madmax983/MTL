@@ -10,3 +10,7 @@ mtl-core = { path = "../../crates/mtl-core" }
 # validation harness selects it via `mtl_arena::Engine`, with interp reachable
 # as the differential anchor.
 mtl-arena = { path = "../../crates/mtl-arena" }
+
+[dev-dependencies]
+# Used only by tests/sealed.rs to read bench/sealed/tasks.json vectors.
+serde_json = "1"

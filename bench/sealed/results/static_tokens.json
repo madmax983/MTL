@@ -6,12 +6,16 @@
     "o200k_base",
     "cl100k_base"
   ],
-  "note": "Expressibility uses the literal mtlrun harness contract (printf '%s' input_prefix+program, first line == 'HALT: '+expected_halt) for EVERY vector. 8/15 tasks have negative-integer input vectors that the frozen grammar cannot lex (unsigned literals; '-' is Sub), so they fault before the program runs and are recorded as gaps. Their algorithms ARE expressible in the frozen glyph set: candidate programs pass every non-negative vector (see candidate_* fields and GAPS.md). The primary aggregate is over the 7 tasks that pass ALL literal vectors; a supplementary all-15 aggregate (using the gap candidates) is included for context.",
+  "validation": "dev-parity: constructed-stack interpretation (real Value::Int + int_list, negatives included) via mtl-bench-validate tests/sealed.rs, matching how the dev BASELINE-TIER2 numbers are validated. A task is algorithmically_correct iff its committed frozen-glyph solution passes ALL of its python.vectors (incl. negatives) to HALT with the expected stack.",
+  "note": "14/15 sealed tasks are algorithmically correct under constructed-stack validation and have committed corpus artifacts. The remaining task (seal_running_max) is a genuine ALGORITHMIC gap: its authored candidate seeds the running maximum at 0, so all-negative input yields the wrong result; recorded, not patched (issue #53). The gap taxonomy separates text-input-encoding artifacts (negatives the text mtlrun harness cannot lex) from algorithmic gaps. 'text_feedable' = the task has no negative inputs, so it also passes the text harness; that subset (7 tasks) reproduces the earlier 2.09x. The PRIMARY held-out static number is the dev-parity aggregate over the 14 algorithmically-correct tasks.",
   "tasks": [
     {
       "id": "seal_collatz_steps",
       "tier": "micro",
-      "expressible": true,
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
       "mtl_tokens": {
         "o200k_base": 23,
         "cl100k_base": 24
@@ -28,33 +32,31 @@
     {
       "id": "seal_digit_product",
       "tier": "micro",
-      "expressible": false,
-      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
-      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
-      "candidate_mtl": ":0<[0~-][]?:0=[_0][1~[:0=][_][:10/~10%@*~][]|]?",
-      "candidate_nonneg_vectors_passed": "5/5",
-      "candidate_mtl_tokens": {
+      "gap_class": "input_encoding(scalar)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
         "o200k_base": 28,
         "cl100k_base": 28
       },
       "py_idiomatic_tokens": {
-        "o200k_base": 28,
-        "cl100k_base": 28
+        "o200k_base": 29,
+        "cl100k_base": 29
       },
-      "candidate_ratio": {
-        "o200k_base": 1.0,
-        "cl100k_base": 1.0
+      "ratio": {
+        "o200k_base": 1.04,
+        "cl100k_base": 1.04
       }
     },
     {
       "id": "seal_count_set_bits",
       "tier": "micro",
-      "expressible": false,
-      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
-      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
-      "candidate_mtl": ":0<[0~-][]?0~[:0=][_][:2/~2%@+~][]|",
-      "candidate_nonneg_vectors_passed": "5/5",
-      "candidate_mtl_tokens": {
+      "gap_class": "input_encoding(scalar)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
         "o200k_base": 22,
         "cl100k_base": 22
       },
@@ -62,7 +64,7 @@
         "o200k_base": 16,
         "cl100k_base": 16
       },
-      "candidate_ratio": {
+      "ratio": {
         "o200k_base": 0.73,
         "cl100k_base": 0.73
       }
@@ -70,7 +72,10 @@
     {
       "id": "seal_triangular",
       "tier": "micro",
-      "expressible": true,
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
       "mtl_tokens": {
         "o200k_base": 6,
         "cl100k_base": 6
@@ -87,7 +92,10 @@
     {
       "id": "seal_int_sqrt",
       "tier": "micro",
-      "expressible": true,
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
       "mtl_tokens": {
         "o200k_base": 15,
         "cl100k_base": 15
@@ -104,7 +112,10 @@
     {
       "id": "seal_num_divisors",
       "tier": "micro",
-      "expressible": true,
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
       "mtl_tokens": {
         "o200k_base": 18,
         "cl100k_base": 18
@@ -121,12 +132,11 @@
     {
       "id": "seal_alternating_sum",
       "tier": "tier2",
-      "expressible": false,
-      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
-      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
-      "candidate_mtl": "[>0=][0][][-]|",
-      "candidate_nonneg_vectors_passed": "6/6",
-      "candidate_mtl_tokens": {
+      "gap_class": "input_encoding(list)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
         "o200k_base": 9,
         "cl100k_base": 9
       },
@@ -134,7 +144,7 @@
         "o200k_base": 39,
         "cl100k_base": 39
       },
-      "candidate_ratio": {
+      "ratio": {
         "o200k_base": 4.33,
         "cl100k_base": 4.33
       }
@@ -142,28 +152,20 @@
     {
       "id": "seal_running_max",
       "tier": "tier2",
-      "expressible": false,
-      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
-      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
+      "gap_class": "algorithmic",
+      "text_feedable": false,
+      "algorithmically_correct": false,
+      "committed": false,
       "candidate_mtl": "0~[>0=][_[]][[^^<[~_][_]?]'[:]'][;]|",
-      "candidate_nonneg_vectors_passed": "6/6",
-      "candidate_mtl_tokens": {
-        "o200k_base": 21,
-        "cl100k_base": 21
-      },
-      "py_idiomatic_tokens": {
-        "o200k_base": 42,
-        "cl100k_base": 42
-      },
-      "candidate_ratio": {
-        "o200k_base": 2.0,
-        "cl100k_base": 2.0
-      }
+      "gap_reason": "authored candidate seeds the running maximum at 0; all-negative input (e.g. [-5 -2 -8 -1]) yields [0 0 0 0] instead of [-5 -2 -2 -1]. Wrong under full constructed-stack validation. Recorded, not patched."
     },
     {
       "id": "seal_count_local_maxima",
       "tier": "tier2",
-      "expressible": true,
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
       "mtl_tokens": {
         "o200k_base": 43,
         "cl100k_base": 38
@@ -180,7 +182,10 @@
     {
       "id": "seal_xor_reduce",
       "tier": "tier2",
-      "expressible": true,
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
       "mtl_tokens": {
         "o200k_base": 3,
         "cl100k_base": 3
@@ -197,33 +202,31 @@
     {
       "id": "seal_max_adjacent_diff",
       "tier": "tier2",
-      "expressible": false,
-      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
-      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
-      "candidate_mtl": "[:>[~_][[]]?>[__0][1]?][_0][:>_>__-:0<[0~-][]?~>_~_][^^<[~_][_]?]|",
-      "candidate_nonneg_vectors_passed": "5/5",
-      "candidate_mtl_tokens": {
+      "gap_class": "input_encoding(list)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
         "o200k_base": 42,
         "cl100k_base": 39
       },
       "py_idiomatic_tokens": {
-        "o200k_base": 44,
-        "cl100k_base": 44
+        "o200k_base": 45,
+        "cl100k_base": 45
       },
-      "candidate_ratio": {
-        "o200k_base": 1.05,
-        "cl100k_base": 1.13
+      "ratio": {
+        "o200k_base": 1.07,
+        "cl100k_base": 1.15
       }
     },
     {
       "id": "seal_dedup_adjacent",
       "tier": "tier2",
-      "expressible": false,
-      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
-      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
-      "candidate_mtl": "[][^>[_^=][0]?[_][~;]?]([][~;](",
-      "candidate_nonneg_vectors_passed": "6/6",
-      "candidate_mtl_tokens": {
+      "gap_class": "input_encoding(list)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
         "o200k_base": 20,
         "cl100k_base": 19
       },
@@ -231,7 +234,7 @@
         "o200k_base": 37,
         "cl100k_base": 37
       },
-      "candidate_ratio": {
+      "ratio": {
         "o200k_base": 1.85,
         "cl100k_base": 1.95
       }
@@ -239,12 +242,11 @@
     {
       "id": "seal_rle_flatten",
       "tier": "tier3",
-      "expressible": false,
-      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
-      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
-      "candidate_mtl": "[][~>[@:@:>__~[=]'~[~_~1+~;][~[;]'~;1~;]?][[];1~;]?]([][~;](",
-      "candidate_nonneg_vectors_passed": "6/6",
-      "candidate_mtl_tokens": {
+      "gap_class": "input_encoding(list)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
         "o200k_base": 45,
         "cl100k_base": 43
       },
@@ -252,7 +254,7 @@
         "o200k_base": 52,
         "cl100k_base": 52
       },
-      "candidate_ratio": {
+      "ratio": {
         "o200k_base": 1.16,
         "cl100k_base": 1.21
       }
@@ -260,7 +262,10 @@
     {
       "id": "seal_digit_sum_base",
       "tier": "tier3",
-      "expressible": true,
+      "gap_class": "none",
+      "text_feedable": true,
+      "algorithmically_correct": true,
+      "committed": true,
       "mtl_tokens": {
         "o200k_base": 23,
         "cl100k_base": 22
@@ -277,12 +282,11 @@
     {
       "id": "seal_min_running_balance",
       "tier": "tier3",
-      "expressible": false,
-      "gap_reason": "negative-integer input vectors cannot be lexed by the frozen grammar (unsigned literals; '-' is Sub); algorithm is expressible and passes all non-negative vectors",
-      "gap_class": "input-encoding (negative-integer literal); not an algorithmic/primitive gap",
-      "candidate_mtl": "^~[>0=][_][[+:[^^<[_][~_]?]']'][]|",
-      "candidate_nonneg_vectors_passed": "3/3",
-      "candidate_mtl_tokens": {
+      "gap_class": "input_encoding(list)",
+      "text_feedable": false,
+      "algorithmically_correct": true,
+      "committed": true,
+      "mtl_tokens": {
         "o200k_base": 22,
         "cl100k_base": 22
       },
@@ -290,16 +294,75 @@
         "o200k_base": 41,
         "cl100k_base": 41
       },
-      "candidate_ratio": {
+      "ratio": {
         "o200k_base": 1.86,
         "cl100k_base": 1.86
       }
     }
   ],
-  "aggregate": {
-    "expressible_count": 7,
+  "dev_parity_aggregate": {
+    "description": "PRIMARY held-out static number. Token-SUM ratio (py_idiomatic/mtl) over the 14 algorithmically-correct sealed tasks, constructed-stack-validated (apples-to-apples with dev BASELINE-TIER2's 3.87x, which is also constructed-stack-validated).",
+    "algorithmically_correct_count": 14,
     "total_count": 15,
     "overall": {
+      "count": 14,
+      "o200k_base": {
+        "py_total": 533,
+        "mtl_total": 319,
+        "ratio": 1.67
+      },
+      "cl100k_base": {
+        "py_total": 530,
+        "mtl_total": 308,
+        "ratio": 1.72
+      }
+    },
+    "by_tier": {
+      "micro": {
+        "count": 6,
+        "o200k_base": {
+          "py_total": 197,
+          "mtl_total": 112,
+          "ratio": 1.76
+        },
+        "cl100k_base": {
+          "py_total": 195,
+          "mtl_total": 113,
+          "ratio": 1.73
+        }
+      },
+      "tier2": {
+        "count": 5,
+        "o200k_base": {
+          "py_total": 206,
+          "mtl_total": 117,
+          "ratio": 1.76
+        },
+        "cl100k_base": {
+          "py_total": 206,
+          "mtl_total": 108,
+          "ratio": 1.91
+        }
+      },
+      "tier3": {
+        "count": 3,
+        "o200k_base": {
+          "py_total": 130,
+          "mtl_total": 90,
+          "ratio": 1.44
+        },
+        "cl100k_base": {
+          "py_total": 129,
+          "mtl_total": 87,
+          "ratio": 1.48
+        }
+      }
+    }
+  },
+  "text_feedable_subset": {
+    "description": "SECONDARY: token-SUM ratio over the 7 tasks with no negative inputs (also pass the text mtlrun harness). Reproduces the earlier 2.09x.",
+    "overall": {
+      "count": 7,
       "o200k_base": {
         "py_total": 274,
         "mtl_total": 131,
@@ -313,6 +376,7 @@
     },
     "by_tier": {
       "micro": {
+        "count": 4,
         "o200k_base": {
           "py_total": 152,
           "mtl_total": 62,
@@ -325,6 +389,7 @@
         }
       },
       "tier2": {
+        "count": 2,
         "o200k_base": {
           "py_total": 85,
           "mtl_total": 46,
@@ -337,6 +402,7 @@
         }
       },
       "tier3": {
+        "count": 1,
         "o200k_base": {
           "py_total": 37,
           "mtl_total": 23,
@@ -350,58 +416,13 @@
       }
     }
   },
-  "supplementary_all15_algorithmic": {
-    "note": "Aggregate over all 15 tasks using the validated frozen-glyph candidate for each gap task (each passes all its non-negative vectors). Shows held-out compression if negative integers were expressible as input.",
-    "count": 15,
-    "overall": {
-      "o200k_base": {
-        "py_total": 573,
-        "mtl_total": 340,
-        "ratio": 1.69
-      },
-      "cl100k_base": {
-        "py_total": 570,
-        "mtl_total": 329,
-        "ratio": 1.73
-      }
-    },
-    "by_tier": {
-      "micro": {
-        "o200k_base": {
-          "py_total": 196,
-          "mtl_total": 112,
-          "ratio": 1.75
-        },
-        "cl100k_base": {
-          "py_total": 194,
-          "mtl_total": 113,
-          "ratio": 1.72
-        }
-      },
-      "tier2": {
-        "o200k_base": {
-          "py_total": 247,
-          "mtl_total": 138,
-          "ratio": 1.79
-        },
-        "cl100k_base": {
-          "py_total": 247,
-          "mtl_total": 129,
-          "ratio": 1.91
-        }
-      },
-      "tier3": {
-        "o200k_base": {
-          "py_total": 130,
-          "mtl_total": 90,
-          "ratio": 1.44
-        },
-        "cl100k_base": {
-          "py_total": 129,
-          "mtl_total": 87,
-          "ratio": 1.48
-        }
-      }
-    }
+  "gap_taxonomy": {
+    "algorithmically_correct": 14,
+    "total": 15,
+    "none_text_feedable": 7,
+    "input_encoding_scalar": 2,
+    "input_encoding_list": 5,
+    "algorithmic": 1,
+    "note": "The 8 tasks that fail the TEXT harness split into: 2 input_encoding(scalar) [negative scalar the text lexer can't type; fixable as `0 N -`; NOT a language gap], 5 input_encoding(list) [negative list elements can't be lexed from text; representable as runtime Values, so algorithmically correct under constructed stack], and 1 algorithmic [seal_running_max: authored candidate is wrong]. Nothing was patched in the frozen language."
   }
 }
