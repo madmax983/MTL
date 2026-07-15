@@ -16,6 +16,12 @@ fn decls_of(sigs: &[CapabilitySig]) -> HashMap<String, Decl> {
     sigs.iter().map(|s| (s.name.clone(), Decl { consumes: s.consumes, produces: s.produces })).collect()
 }
 
+/// Apply `f` to the resumed stack, passing any `HostFault` through untouched.
+/// Shared by the adversarial hosts that each perturb the `Resume` stack.
+fn on_resume(r: HostResult, f: impl FnOnce(&mut Vec<Value>)) -> HostResult {
+    match r { HostResult::Resume(mut s) => { f(&mut s); HostResult::Resume(s) } other => other }
+}
+
 /// A host that can report how many effects it performed (for the O6 probe).
 pub trait ObservableHost: Host { fn effect_count(&self) -> u64; }
 
@@ -23,7 +29,7 @@ pub trait ObservableHost: Host { fn effect_count(&self) -> u64; }
 /// untouched prefix verbatim, pushes `produces` fresh opaque Int handles.
 pub struct ConformingHost { decls: HashMap<String, Decl>, effects: Arc<AtomicU64> }
 impl ConformingHost {
-    pub fn from_sigs(sigs: &[CapabilitySig]) -> Self { ConformingHost { decls: decls_of(sigs), effects: Arc::new(AtomicU64::new(0)) } }
+    pub fn from_sigs(sigs: &[CapabilitySig]) -> Self { ConformingHost::with_counter(sigs, Arc::new(AtomicU64::new(0))) }
     pub fn with_counter(sigs: &[CapabilitySig], effects: Arc<AtomicU64>) -> Self { ConformingHost { decls: decls_of(sigs), effects } }
 }
 impl Host for ConformingHost {
@@ -43,7 +49,7 @@ pub struct WrongArityHost(ConformingHost);
 impl WrongArityHost { pub fn from_sigs(sigs: &[CapabilitySig]) -> Self { WrongArityHost(ConformingHost::from_sigs(sigs)) } }
 impl Host for WrongArityHost {
     fn service(&mut self, name: &str, stack: Vec<Value>) -> HostResult {
-        match self.0.service(name, stack) { HostResult::Resume(mut s) => { s.push(Value::Int(-1)); HostResult::Resume(s) } other => other }
+        on_resume(self.0.service(name, stack), |s| s.push(Value::Int(-1)))
     }
 }
 
@@ -52,7 +58,7 @@ pub struct MutatePrefixHost(ConformingHost);
 impl MutatePrefixHost { pub fn from_sigs(sigs: &[CapabilitySig]) -> Self { MutatePrefixHost(ConformingHost::from_sigs(sigs)) } }
 impl Host for MutatePrefixHost {
     fn service(&mut self, name: &str, stack: Vec<Value>) -> HostResult {
-        match self.0.service(name, stack) { HostResult::Resume(mut s) => { if let Some(v) = s.first_mut() { *v = Value::Int(0xBAD_BEEF); } HostResult::Resume(s) } other => other }
+        on_resume(self.0.service(name, stack), |s| { if let Some(v) = s.first_mut() { *v = Value::Int(0xBAD_BEEF); } })
     }
 }
 
@@ -61,7 +67,7 @@ pub struct LeakHost(ConformingHost);
 impl LeakHost { pub fn from_sigs(sigs: &[CapabilitySig]) -> Self { LeakHost(ConformingHost::from_sigs(sigs)) } }
 impl Host for LeakHost {
     fn service(&mut self, name: &str, stack: Vec<Value>) -> HostResult {
-        match self.0.service(name, stack) { HostResult::Resume(mut s) => { for i in 0..3 { s.push(Value::Int(1000 + i)); } HostResult::Resume(s) } other => other }
+        on_resume(self.0.service(name, stack), |s| { for i in 0..3 { s.push(Value::Int(1000 + i)); } })
     }
 }
 
@@ -99,7 +105,7 @@ pub struct StringsLeakHost(ConformingHost);
 impl StringsLeakHost { pub fn from_sigs(sigs: &[CapabilitySig]) -> Self { StringsLeakHost(ConformingHost::from_sigs(sigs)) } }
 impl Host for StringsLeakHost {
     fn service(&mut self, name: &str, stack: Vec<Value>) -> HostResult {
-        match self.0.service(name, stack) { HostResult::Resume(mut s) => { s.push(Value::Quote(vec![Word::PushInt(104), Word::PushInt(105)])); HostResult::Resume(s) } other => other }
+        on_resume(self.0.service(name, stack), |s| s.push(Value::Quote(vec![Word::PushInt(104), Word::PushInt(105)])))
     }
 }
 
