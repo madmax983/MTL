@@ -1,0 +1,196 @@
+{
+  "set": "T_sealed-trial",
+  "tasks": [
+    {
+      "id": "seal_collatz_steps",
+      "arm_common_desc": "Given an integer n >= 1, repeatedly apply the Collatz map: if the current value is even, divide it by 2; if it is odd, replace it with 3*value + 1. Count how many such steps are required to first reach the value 1. If n is already 1, the answer is 0.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "1 ", "expected_halt": "0"},
+          {"input_prefix": "2 ", "expected_halt": "1"},
+          {"input_prefix": "3 ", "expected_halt": "7"},
+          {"input_prefix": "4 ", "expected_halt": "2"},
+          {"input_prefix": "6 ", "expected_halt": "8"},
+          {"input_prefix": "7 ", "expected_halt": "16"},
+          {"input_prefix": "16 ", "expected_halt": "4"}
+        ]
+      },
+      "python": {
+        "signature": "solve(n)",
+        "vectors": [
+          {"args": [1], "expected": 0},
+          {"args": [2], "expected": 1},
+          {"args": [3], "expected": 7},
+          {"args": [4], "expected": 2},
+          {"args": [6], "expected": 8},
+          {"args": [7], "expected": 16},
+          {"args": [16], "expected": 4}
+        ]
+      }
+    },
+    {
+      "id": "seal_triangular",
+      "arm_common_desc": "Given an integer n >= 0, return the n-th triangular number, i.e. the sum of all integers from 1 to n inclusive, which equals n*(n+1)/2. For n = 0 the result is 0.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "0 ", "expected_halt": "0"},
+          {"input_prefix": "1 ", "expected_halt": "1"},
+          {"input_prefix": "2 ", "expected_halt": "3"},
+          {"input_prefix": "5 ", "expected_halt": "15"},
+          {"input_prefix": "7 ", "expected_halt": "28"},
+          {"input_prefix": "10 ", "expected_halt": "55"},
+          {"input_prefix": "100 ", "expected_halt": "5050"}
+        ]
+      },
+      "python": {
+        "signature": "solve(n)",
+        "vectors": [
+          {"args": [0], "expected": 0},
+          {"args": [1], "expected": 1},
+          {"args": [2], "expected": 3},
+          {"args": [5], "expected": 15},
+          {"args": [7], "expected": 28},
+          {"args": [10], "expected": 55},
+          {"args": [100], "expected": 5050}
+        ]
+      }
+    },
+    {
+      "id": "seal_int_sqrt",
+      "arm_common_desc": "Given an integer n >= 0, return the integer square root of n: the largest integer r such that r*r <= n. This is the floor of the real square root of n.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "0 ", "expected_halt": "0"},
+          {"input_prefix": "1 ", "expected_halt": "1"},
+          {"input_prefix": "2 ", "expected_halt": "1"},
+          {"input_prefix": "8 ", "expected_halt": "2"},
+          {"input_prefix": "9 ", "expected_halt": "3"},
+          {"input_prefix": "15 ", "expected_halt": "3"},
+          {"input_prefix": "16 ", "expected_halt": "4"},
+          {"input_prefix": "10000 ", "expected_halt": "100"}
+        ]
+      },
+      "python": {
+        "signature": "solve(n)",
+        "vectors": [
+          {"args": [0], "expected": 0},
+          {"args": [1], "expected": 1},
+          {"args": [2], "expected": 1},
+          {"args": [8], "expected": 2},
+          {"args": [9], "expected": 3},
+          {"args": [15], "expected": 3},
+          {"args": [16], "expected": 4},
+          {"args": [10000], "expected": 100}
+        ]
+      }
+    },
+    {
+      "id": "seal_num_divisors",
+      "arm_common_desc": "Given an integer n >= 1, return the number of positive integers that divide n exactly (with no remainder), including 1 and n itself.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "1 ", "expected_halt": "1"},
+          {"input_prefix": "2 ", "expected_halt": "2"},
+          {"input_prefix": "6 ", "expected_halt": "4"},
+          {"input_prefix": "12 ", "expected_halt": "6"},
+          {"input_prefix": "16 ", "expected_halt": "5"},
+          {"input_prefix": "17 ", "expected_halt": "2"},
+          {"input_prefix": "100 ", "expected_halt": "9"}
+        ]
+      },
+      "python": {
+        "signature": "solve(n)",
+        "vectors": [
+          {"args": [1], "expected": 1},
+          {"args": [2], "expected": 2},
+          {"args": [6], "expected": 4},
+          {"args": [12], "expected": 6},
+          {"args": [16], "expected": 5},
+          {"args": [17], "expected": 2},
+          {"args": [100], "expected": 9}
+        ]
+      }
+    },
+    {
+      "id": "seal_count_local_maxima",
+      "arm_common_desc": "Given a list of integers xs, count the number of interior indices i (with 0 < i < len(xs)-1) that are strict local maxima, meaning xs[i] > xs[i-1] AND xs[i] > xs[i+1]. First and last elements are never counted. Lists of length 0, 1, or 2 always yield 0.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "[] ", "expected_halt": "0"},
+          {"input_prefix": "[1 2] ", "expected_halt": "0"},
+          {"input_prefix": "[1 3 2] ", "expected_halt": "1"},
+          {"input_prefix": "[1 3 2 5 4] ", "expected_halt": "2"},
+          {"input_prefix": "[5 4 3 2 1] ", "expected_halt": "0"},
+          {"input_prefix": "[1 2 2 1] ", "expected_halt": "0"},
+          {"input_prefix": "[2 1 2 1 2] ", "expected_halt": "1"}
+        ]
+      },
+      "python": {
+        "signature": "solve(xs)",
+        "vectors": [
+          {"args": [[]], "expected": 0},
+          {"args": [[1, 2]], "expected": 0},
+          {"args": [[1, 3, 2]], "expected": 1},
+          {"args": [[1, 3, 2, 5, 4]], "expected": 2},
+          {"args": [[5, 4, 3, 2, 1]], "expected": 0},
+          {"args": [[1, 2, 2, 1]], "expected": 0},
+          {"args": [[2, 1, 2, 1, 2]], "expected": 1}
+        ]
+      }
+    },
+    {
+      "id": "seal_xor_reduce",
+      "arm_common_desc": "Given a list of non-negative integers xs, return the bitwise XOR of all elements, folded left to right. The XOR of an empty list is 0. (All inputs are non-negative so bit patterns are unambiguous.)",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "[] ", "expected_halt": "0"},
+          {"input_prefix": "[5] ", "expected_halt": "5"},
+          {"input_prefix": "[1 2 3] ", "expected_halt": "0"},
+          {"input_prefix": "[4 4] ", "expected_halt": "0"},
+          {"input_prefix": "[7 0 7] ", "expected_halt": "0"},
+          {"input_prefix": "[1 2 4 8] ", "expected_halt": "15"},
+          {"input_prefix": "[10 10 5] ", "expected_halt": "5"}
+        ]
+      },
+      "python": {
+        "signature": "solve(xs)",
+        "vectors": [
+          {"args": [[]], "expected": 0},
+          {"args": [[5]], "expected": 5},
+          {"args": [[1, 2, 3]], "expected": 0},
+          {"args": [[4, 4]], "expected": 0},
+          {"args": [[7, 0, 7]], "expected": 0},
+          {"args": [[1, 2, 4, 8]], "expected": 15},
+          {"args": [[10, 10, 5]], "expected": 5}
+        ]
+      }
+    },
+    {
+      "id": "seal_digit_sum_base",
+      "arm_common_desc": "Given two integers n >= 0 and b >= 2, write n in base b (the standard positional representation with digits 0..b-1, no leading zeros except for n=0 which is the single digit 0) and return the sum of those base-b digits.",
+      "mtl": {
+        "vectors": [
+          {"input_prefix": "0 2 ", "expected_halt": "0"},
+          {"input_prefix": "5 2 ", "expected_halt": "2"},
+          {"input_prefix": "255 16 ", "expected_halt": "30"},
+          {"input_prefix": "100 10 ", "expected_halt": "1"},
+          {"input_prefix": "7 2 ", "expected_halt": "3"},
+          {"input_prefix": "12 3 ", "expected_halt": "2"},
+          {"input_prefix": "100 7 ", "expected_halt": "4"}
+        ]
+      },
+      "python": {
+        "signature": "solve(n,b)",
+        "vectors": [
+          {"args": [0, 2], "expected": 0},
+          {"args": [5, 2], "expected": 2},
+          {"args": [255, 16], "expected": 30},
+          {"args": [100, 10], "expected": 1},
+          {"args": [7, 2], "expected": 3},
+          {"args": [12, 3], "expected": 2},
+          {"args": [100, 7], "expected": 4}
+        ]
+      }
+    }
+  ]
+}
