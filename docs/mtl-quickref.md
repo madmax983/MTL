@@ -27,6 +27,17 @@ names, or environments — all abstraction is done with quotations.
 - Integer literals are **unsigned**: `[0-9]+`. A leading `-` is **never** part
   of a literal — `-` is always the `Sub` primitive. Write `-7` as `0 7 -`
   (push 0, push 7, subtract).
+  - **In-program constants:** use the `0 N -` idiom above for a negative
+    constant in the *program text*. (A negative *list* element cannot be written
+    this way — `[0 5 -]` is a quote of the words `Sub 5`, not the value `-5`.)
+  - **Negative or list INPUTS:** because input literals are unsigned by the
+    frozen lexer, supply them out-of-band via the harness flag
+    `mtlrun --input '<spec>'`, which builds the initial stack directly (a
+    constructed stack, not the program lexer). The spec accepts signed scalars
+    and lists, e.g. `--input '-24'`, `--input '[-5 -2 -8 -1]'`,
+    `--input '0 [-1 -2 3]'` (whitespace-separated top-level items, bottom..top).
+    This is a harness input-encoding decoder only — it does **not** change the
+    language or the lexer decision (spec §2.3).
 - Symbol words are single ASCII characters and **self-delimiting**: write them
   with no spaces, e.g. `~@^`, `3*7+`, `:!`.
 - **Whitespace is required only** between two adjacent integer literals
