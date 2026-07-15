@@ -65,38 +65,73 @@ def render_png(points: list[dict], frontier: set[str], out_png: str) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
 
-    fig, ax = plt.subplots(figsize=(8, 5.5))
+    fig, ax = plt.subplots(figsize=(9, 5.75))
     valid = [p for p in points
              if p["preamble_tokens"] is not None and p["solve_rate"] is not None]
 
-    # Frontier line (sorted by tokens ascending).
+    # Frontier guide line (sorted by tokens ascending). With saturated
+    # solve-rate the non-dominated set is a single point (min tokens), so this
+    # is drawn only when >=2 variants share the frontier.
     fr = sorted((p for p in valid if p["variant"] in frontier),
                 key=lambda p: p["preamble_tokens"])
     if len(fr) >= 2:
         ax.plot([p["preamble_tokens"] for p in fr],
                 [p["solve_rate"] for p in fr],
-                "--", color="tab:green", zorder=1, label="Pareto frontier")
+                "--", color="tab:green", zorder=1)
 
+    # Per-variant label offsets (points). All variants sit at y=1.0 (ceiling),
+    # so labels are staggered vertically to avoid collisions.
+    label_offset = {
+        "v5_task_adaptive": (-6, -70),
+        "v4_compressed_minimal": (6, -18),
+        "v3_worked_examples_heavy": (-4, 22),
+        "v2_grammar_only": (6, -18),
+        "v1_full": (-12, -22),
+    }
     for p in valid:
         on_front = p["variant"] in frontier
         is_ref = p["variant"] == REFERENCE_VARIANT
+        adaptive = p["variant"] == "v5_task_adaptive"
         ax.scatter(p["preamble_tokens"], p["solve_rate"],
-                   s=170 if on_front else 90,
+                   s=230 if on_front else (150 if is_ref else 90),
                    marker="*" if is_ref else ("o" if on_front else "x"),
                    color="tab:green" if on_front else "tab:red",
-                   edgecolors="black" if on_front else "none",
+                   edgecolors="black" if (on_front or is_ref) else "none",
+                   linewidths=1.0,
                    zorder=3)
-        ax.annotate(p["variant"],
+        label = p["variant"]
+        if adaptive:
+            label += "\n(per-task; mean 376.4)"
+        if is_ref:
+            label += "\n(reference)"
+        dx, dy = label_offset.get(p["variant"], (8, -4))
+        ax.annotate(label,
                     (p["preamble_tokens"], p["solve_rate"]),
-                    textcoords="offset points", xytext=(7, 5), fontsize=9)
+                    textcoords="offset points", xytext=(dx, dy),
+                    fontsize=8.5, va="top",
+                    arrowprops=dict(arrowstyle="-", color="0.6", lw=0.6,
+                                    shrinkA=0, shrinkB=4))
 
     ax.set_xlabel("preamble tokens (o200k_base, mean per cell)")
-    ax.set_ylabel("solve rate")
-    ax.set_title("ICL-preamble ablation — solve rate vs preamble tokens (issue #73)")
+    ax.set_ylabel("solve rate (n/30)")
+    ax.set_title("ICL-preamble ablation — solve rate vs preamble tokens (issue #73)\n"
+                 "all variants solve 100% (ceiling): Pareto-optimal = fewest-token variant")
     ax.grid(True, alpha=0.3)
-    ax.set_ylim(-0.05, 1.05)
-    ax.legend(loc="lower right")
+    ax.set_ylim(0.0, 1.08)
+    ax.set_xlim(-150, 4400)
+    legend_handles = [
+        Line2D([0], [0], marker="*", color="w", markerfacecolor="tab:red",
+               markeredgecolor="black", markersize=15,
+               label="full-quickref reference (v1, 4051 tok)"),
+        Line2D([0], [0], marker="o", color="w", markerfacecolor="tab:green",
+               markeredgecolor="black", markersize=12,
+               label="Pareto-optimal (min tokens)"),
+        Line2D([0], [0], marker="x", color="tab:red", linestyle="None",
+               markersize=9, label="dominated"),
+    ]
+    ax.legend(handles=legend_handles, loc="lower right", fontsize=9)
     fig.tight_layout()
     fig.savefig(out_png, dpi=130)
     plt.close(fig)

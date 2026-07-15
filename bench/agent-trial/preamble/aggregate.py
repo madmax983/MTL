@@ -68,12 +68,25 @@ def aggregate(cells: list[dict]) -> dict:
         solved = [c for c in group if c.get("solved")]
         ttfc = [_tokens_to_first_correct(c) for c in solved]
         preamble_tokens = [int(c["preamble_tokens"]) for c in group]
+        # Secondary discriminators (solve-rate is saturated at 1.0):
+        #   - attempts-to-first-correct: first_correct_attempt over solved cells
+        #   - first-attempt success rate: fraction of cells solved on attempt 1
+        atfc = [int(c["first_correct_attempt"]) for c in solved
+                if c.get("first_correct_attempt") is not None]
+        first_try = [c for c in group
+                     if c.get("first_correct_attempt") == 1]
         metrics[variant] = {
             "n_cells": n_cells,
             "n_solved": len(solved),
             "solve_rate": (len(solved) / n_cells) if n_cells else 0.0,
             "median_tokens_to_first_correct": (
                 statistics.median(ttfc) if ttfc else None
+            ),
+            "mean_attempts_to_first_correct": (
+                statistics.mean(atfc) if atfc else None
+            ),
+            "first_attempt_success_rate": (
+                (len(first_try) / n_cells) if n_cells else 0.0
             ),
             "mean_preamble_tokens": (
                 statistics.mean(preamble_tokens) if preamble_tokens else None

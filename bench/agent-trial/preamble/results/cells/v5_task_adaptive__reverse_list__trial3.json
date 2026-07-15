@@ -1,0 +1,13 @@
+{
+  "variant": "v5_task_adaptive",
+  "task": "reverse_list",
+  "trial": 3,
+  "preamble_tokens": 438,
+  "solved": true,
+  "attempts": 2,
+  "first_correct_attempt": 2,
+  "programs": [
+    "[] ~ [>] [] [[~ ;] '] [] |",
+    "[] ~ [> 1 ~ -] [] [[~ ;] '] [] |"
+  ]
+}

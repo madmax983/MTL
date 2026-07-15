@@ -1,0 +1,12 @@
+{
+  "variant": "v5_task_adaptive",
+  "task": "climbing_stairs",
+  "trial": 3,
+  "preamble_tokens": 375,
+  "solved": true,
+  "attempts": 1,
+  "first_correct_attempt": 1,
+  "programs": [
+    "1 1 @ [~ ^ +] . _"
+  ]
+}

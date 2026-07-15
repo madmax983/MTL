@@ -1,0 +1,12 @@
+{
+  "variant": "v4_compressed_minimal",
+  "task": "palindrome_number",
+  "trial": 3,
+  "preamble_tokens": 487,
+  "solved": true,
+  "attempts": 1,
+  "first_correct_attempt": 1,
+  "programs": [
+    ": 0 20 [^ [~ : 10 % @ 10 * + ~ 10 / ~] [] ?] . ~ _ ="
+  ]
+}

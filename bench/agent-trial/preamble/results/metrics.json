@@ -1,0 +1,47 @@
+{
+  "v1_full": {
+    "n_cells": 30,
+    "n_solved": 30,
+    "solve_rate": 1.0,
+    "median_tokens_to_first_correct": 4055.5,
+    "mean_attempts_to_first_correct": 1.0333333333333334,
+    "first_attempt_success_rate": 0.9666666666666667,
+    "mean_preamble_tokens": 4051
+  },
+  "v2_grammar_only": {
+    "n_cells": 30,
+    "n_solved": 30,
+    "solve_rate": 1.0,
+    "median_tokens_to_first_correct": 2059.5,
+    "mean_attempts_to_first_correct": 1,
+    "first_attempt_success_rate": 1.0,
+    "mean_preamble_tokens": 2055
+  },
+  "v3_worked_examples_heavy": {
+    "n_cells": 30,
+    "n_solved": 30,
+    "solve_rate": 1.0,
+    "median_tokens_to_first_correct": 1682.0,
+    "mean_attempts_to_first_correct": 1.0666666666666667,
+    "first_attempt_success_rate": 0.9333333333333333,
+    "mean_preamble_tokens": 1675
+  },
+  "v4_compressed_minimal": {
+    "n_cells": 30,
+    "n_solved": 30,
+    "solve_rate": 1.0,
+    "median_tokens_to_first_correct": 492.5,
+    "mean_attempts_to_first_correct": 1.0333333333333334,
+    "first_attempt_success_rate": 0.9666666666666667,
+    "mean_preamble_tokens": 487
+  },
+  "v5_task_adaptive": {
+    "n_cells": 30,
+    "n_solved": 30,
+    "solve_rate": 1.0,
+    "median_tokens_to_first_correct": 382.0,
+    "mean_attempts_to_first_correct": 1.2666666666666666,
+    "first_attempt_success_rate": 0.7666666666666667,
+    "mean_preamble_tokens": 376.4
+  }
+}

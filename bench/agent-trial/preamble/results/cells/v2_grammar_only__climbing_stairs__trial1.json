@@ -1,0 +1,12 @@
+{
+  "variant": "v2_grammar_only",
+  "task": "climbing_stairs",
+  "trial": 1,
+  "preamble_tokens": 2055,
+  "solved": true,
+  "attempts": 1,
+  "first_correct_attempt": 1,
+  "programs": [
+    "[0]'[1]'[~^+].~_"
+  ]
+}

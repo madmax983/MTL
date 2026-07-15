@@ -1,0 +1,12 @@
+{
+  "variant": "v5_task_adaptive",
+  "task": "factorial",
+  "trial": 3,
+  "preamble_tokens": 296,
+  "solved": true,
+  "attempts": 1,
+  "first_correct_attempt": 1,
+  "programs": [
+    "[1] [*] &"
+  ]
+}

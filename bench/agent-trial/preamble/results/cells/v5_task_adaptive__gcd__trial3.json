@@ -1,0 +1,12 @@
+{
+  "variant": "v5_task_adaptive",
+  "task": "gcd",
+  "trial": 3,
+  "preamble_tokens": 411,
+  "solved": true,
+  "attempts": 1,
+  "first_correct_attempt": 1,
+  "programs": [
+    "[: 0 =] [_] [~ ^ %] [] |"
+  ]
+}

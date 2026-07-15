@@ -1,0 +1,13 @@
+{
+  "variant": "v4_compressed_minimal",
+  "task": "factorial",
+  "trial": 1,
+  "preamble_tokens": 487,
+  "solved": true,
+  "attempts": 2,
+  "first_correct_attempt": 2,
+  "programs": [
+    "1[*]&",
+    "[1][*]&"
+  ]
+}

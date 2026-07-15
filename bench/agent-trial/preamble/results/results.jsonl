@@ -1,0 +1,150 @@
+{"variant": "v1_full", "task": "affine", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3*7+"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "affine", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3*7+"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "affine", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3*7+"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "rev3", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~@"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "rev3", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~@"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "rev3", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~@"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "is_even", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2%0="], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "is_even", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2%0="], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "is_even", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2%0="], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "factorial", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1][*]&"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "factorial", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1][*]&"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "factorial", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1][*]&"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "gcd", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[:0=][_][:@~%][]|"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "gcd", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[:0=][_][:@~%][]|"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "gcd", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[:0=][_][:@~%][]|"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "sum_list", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0[+]("], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "sum_list", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0[+]("], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "sum_list", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0[+]("], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "reverse_list", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[][~;]("], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "reverse_list", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[][~;]("], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "reverse_list", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[][~;]("], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "palindrome_number", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [":0~[:0=][][:10%@10*+~10/][]|_="], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "palindrome_number", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [":0[^0=][~_][10*^10%+[10/]'][]|="], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "palindrome_number", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [":0~[:0=][_][:10%@10*+~10/][]|="], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "contains", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[=+0~<];0~("], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "contains", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[=+];[0]'(0~<"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "contains", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[=+];0~(0=1~-"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "climbing_stairs", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1 1]'[~^+]._"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "climbing_stairs", "trial": 2, "solved": true, "attempts": 2, "first_correct_attempt": 2, "programs": ["[1 1][_~^+]&_", "[1 1]'[~^+]._"], "preamble_tokens": 4051}
+{"variant": "v1_full", "task": "climbing_stairs", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1 1]'[:@+]._"], "preamble_tokens": 4051}
+{"variant": "v2_grammar_only", "task": "affine", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3*7+"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "affine", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3*7+"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "affine", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3*7+"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "rev3", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~@"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "rev3", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~@"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "rev3", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~@"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "is_even", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2%0="], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "is_even", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2%0="], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "is_even", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2%0="], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "factorial", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1][*]&"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "factorial", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1][*]&"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "factorial", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1][*]&"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "gcd", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[:0=][_][:@~%][]|"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "gcd", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[:0=][_][:@~%][]|"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "gcd", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[:0=][_][~^%][]|"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "sum_list", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0[+]("], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "sum_list", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0[+]("], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "sum_list", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0[+]("], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "reverse_list", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[][~;]("], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "reverse_list", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[][~;]("], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "reverse_list", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[][~;]("], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "palindrome_number", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [":0~[:0=][_][:10/~10%~[~10*+]'][]|="], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "palindrome_number", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [":0[^0=][~_=][~:10%@10*+~10/~][]|"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "palindrome_number", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [":0~[:0=][_=][:10/[10%~10*+]'][]|"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "contains", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[=+];0~(0~<"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "contains", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[=+];0~(0~<"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "contains", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[=+];0~(0~<"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "climbing_stairs", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[0]'[1]'[~^+].~_"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "climbing_stairs", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1 1]'[:@+]._"], "preamble_tokens": 2055}
+{"variant": "v2_grammar_only", "task": "climbing_stairs", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["1 1@[~^+]._"], "preamble_tokens": 2055}
+{"variant": "v3_worked_examples_heavy", "task": "affine", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3*7+"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "affine", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3*7+"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "affine", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3*7+"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "rev3", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~@"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "rev3", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~@"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "rev3", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~@"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "is_even", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2%0="], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "is_even", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2%0="], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "is_even", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2%0="], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "factorial", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1][*]&"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "factorial", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1][*]&"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "factorial", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1][*]&"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "gcd", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[:0=][_][~^%][]|"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "gcd", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[:0=][_][~^%][]|"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "gcd", "trial": 3, "solved": true, "attempts": 2, "first_correct_attempt": 2, "programs": ["[:0=][_][~^%]|", "[:0=][_][~^%][]|"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "sum_list", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0[+]("], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "sum_list", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0[+]("], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "sum_list", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0 [+] ("], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "reverse_list", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[]~[>[;0][[]1]?][_][>_[~;]'][]|"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "reverse_list", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[]~[>[;0][[]1]?][_][>_[~;]'][]|"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "reverse_list", "trial": 3, "solved": true, "attempts": 2, "first_correct_attempt": 2, "programs": ["[]~[>[;0][[]1]?][_][>_[~;]'\\''][]|", "[]~[>[;0][[]1]?][_][>_[~;]'][]|"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "palindrome_number", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [":[0]'[:0=][_=][:10%~10/[~10*+]'][]|"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "palindrome_number", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [": 0 [ ^ 0 = ] [ ~ _ = ] [ 10 * ^ 10 % + ~ 10 / ~ ] [ ] |"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "palindrome_number", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [":0~[:0=][_][:10%~10/@10*@+~][]|="], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "contains", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[=+0~<];0~("], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "contains", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[= +];0~(0~<"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "contains", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[= + 0 ~ <] ; 0 ~ ("], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "climbing_stairs", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1 1]'[~^+]._"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "climbing_stairs", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1 1]'[:@+]._"], "preamble_tokens": 1675}
+{"variant": "v3_worked_examples_heavy", "task": "climbing_stairs", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["1 1 @ [~^+] . _"], "preamble_tokens": 1675}
+{"variant": "v4_compressed_minimal", "task": "affine", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [": : + + 7 +"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "affine", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3*7+"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "affine", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3 * 7 +"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "rev3", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~@"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "rev3", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~@"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "rev3", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~ @"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "is_even", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2 % 0 ="], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "is_even", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2 % 0 ="], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "is_even", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2 % 0 ="], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "factorial", "trial": 1, "solved": true, "attempts": 2, "first_correct_attempt": 2, "programs": ["1[*]&", "[1][*]&"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "factorial", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1][*]&"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "factorial", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1][*]&"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "gcd", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[ : 0 = ] [ _ ] [ ~ ^ % ] [ ] |"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "gcd", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[:0=][_][:@~%][]|"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "gcd", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[:0=][_][~^%][]|"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "sum_list", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0 [+] ("], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "sum_list", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0[+]("], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "sum_list", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["0 [+] ("], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "reverse_list", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[][~;]("], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "reverse_list", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[][~;]("], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "reverse_list", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[] [~;] ("], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "palindrome_number", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [": 0 ~ 19 [ : [ : 10 % @ 10 * + ~ 10 / ] [ ] ? ] . _ ="], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "palindrome_number", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [": 0 ~ [: 0 =] [_] [: 10 % ~ 10 / [~ 10 * +] '] [] | ="], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "palindrome_number", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [": 0 20 [^ [~ : 10 % @ 10 * + ~ 10 / ~] [] ?] . ~ _ ="], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "contains", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[= +] ; [0] ' ( 0 ~ <"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "contains", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[=+0~<];0~("], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "contains", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[= +] ; 0 ~ ( 0 ~ <"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "climbing_stairs", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1 1] [@_~^+] &_"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "climbing_stairs", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1 1]'[~^+]._"], "preamble_tokens": 487}
+{"variant": "v4_compressed_minimal", "task": "climbing_stairs", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1 1] ' [: @ +] . _"], "preamble_tokens": 487}
+{"variant": "v5_task_adaptive", "task": "affine", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3 * 7 +"], "preamble_tokens": 264}
+{"variant": "v5_task_adaptive", "task": "affine", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3 * 7 +"], "preamble_tokens": 264}
+{"variant": "v5_task_adaptive", "task": "affine", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["3 * 7 +"], "preamble_tokens": 264}
+{"variant": "v5_task_adaptive", "task": "rev3", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~ @"], "preamble_tokens": 257}
+{"variant": "v5_task_adaptive", "task": "rev3", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~ @"], "preamble_tokens": 257}
+{"variant": "v5_task_adaptive", "task": "rev3", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~ @"], "preamble_tokens": 257}
+{"variant": "v5_task_adaptive", "task": "is_even", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2 % 0 ="], "preamble_tokens": 281}
+{"variant": "v5_task_adaptive", "task": "is_even", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2 % 0 ="], "preamble_tokens": 281}
+{"variant": "v5_task_adaptive", "task": "is_even", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["2 % 0 ="], "preamble_tokens": 281}
+{"variant": "v5_task_adaptive", "task": "factorial", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1] [*] &"], "preamble_tokens": 296}
+{"variant": "v5_task_adaptive", "task": "factorial", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1] [*] &"], "preamble_tokens": 296}
+{"variant": "v5_task_adaptive", "task": "factorial", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[1] [*] &"], "preamble_tokens": 296}
+{"variant": "v5_task_adaptive", "task": "gcd", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[: 0 =] [_] [~ ^ %] [] |"], "preamble_tokens": 411}
+{"variant": "v5_task_adaptive", "task": "gcd", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[: 0 =] [_] [~ ^ %] [] |"], "preamble_tokens": 411}
+{"variant": "v5_task_adaptive", "task": "gcd", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["[: 0 =] [_] [~ ^ %] [] |"], "preamble_tokens": 411}
+{"variant": "v5_task_adaptive", "task": "sum_list", "trial": 1, "solved": true, "attempts": 2, "first_correct_attempt": 2, "programs": ["[>][0][][+]|", "[> 0 =][0][][+]|"], "preamble_tokens": 356}
+{"variant": "v5_task_adaptive", "task": "sum_list", "trial": 2, "solved": true, "attempts": 2, "first_correct_attempt": 2, "programs": ["[>][0][][+]|", "[> 0 =][0][][+]|"], "preamble_tokens": 356}
+{"variant": "v5_task_adaptive", "task": "sum_list", "trial": 3, "solved": true, "attempts": 2, "first_correct_attempt": 2, "programs": ["[>] [0] [] [+] |", "[> 0 =] [0] [] [+] |"], "preamble_tokens": 356}
+{"variant": "v5_task_adaptive", "task": "reverse_list", "trial": 1, "solved": true, "attempts": 2, "first_correct_attempt": 2, "programs": ["[] ~ [>] [] [~ ;] [] |", "[] ~ [> [; 0] [[] 1] ?] [_] [> _ [~ ;] '] [] |"], "preamble_tokens": 438}
+{"variant": "v5_task_adaptive", "task": "reverse_list", "trial": 2, "solved": true, "attempts": 3, "first_correct_attempt": 3, "programs": ["[] ~ [>] [_] [> _ [~ ;] '] [] |", "[] ~ [>] [] [[~ ;] '] [] |", "[] ~ [> [0] [1] ?] [] [[~ ;] '] [] |"], "preamble_tokens": 438}
+{"variant": "v5_task_adaptive", "task": "reverse_list", "trial": 3, "solved": true, "attempts": 2, "first_correct_attempt": 2, "programs": ["[] ~ [>] [] [[~ ;] '] [] |", "[] ~ [> 1 ~ -] [] [[~ ;] '] [] |"], "preamble_tokens": 438}
+{"variant": "v5_task_adaptive", "task": "palindrome_number", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [": 0 ~ [: 0 =] [_ =] [: 10 % @ 10 * + ~ 10 /] [] |"], "preamble_tokens": 530}
+{"variant": "v5_task_adaptive", "task": "palindrome_number", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": [": 0 ~ [ : 0 = ] [ _ ] [ : 10 % @ 10 * + ~ 10 / ] [ ] | ="], "preamble_tokens": 530}
+{"variant": "v5_task_adaptive", "task": "palindrome_number", "trial": 3, "solved": true, "attempts": 2, "first_correct_attempt": 2, "programs": [": 0 [ ^ 0 = ] [ ~ _ ] [ ~ : 10 % @ 10 * + ~ 10 / ~ ] [ ] |", ": 0 [ ^ 0 = ] [ ~ _ ] [ ~ : 10 % @ 10 * + ~ 10 / ~ ] [ ] | ="], "preamble_tokens": 530}
+{"variant": "v5_task_adaptive", "task": "contains", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~ [ 0 ~ ] ' [ > 0 = ] [ _ 0 ~ < ] [ [ ^ = @ + ~ ] ' ] [ ] |"], "preamble_tokens": 556}
+{"variant": "v5_task_adaptive", "task": "contains", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~ [[] ^ > [_ _ _ 0] [_ 1] ?] [_ _ 0] [> _ [^ = ~] '] [+ 0 ~ <] |"], "preamble_tokens": 556}
+{"variant": "v5_task_adaptive", "task": "contains", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["~ [0] ' [> [; 0] [[] 1] ?] [_ ~ _] [> _ [@ ~ ^ = @ + 0 ~ <] '] [] |"], "preamble_tokens": 556}
+{"variant": "v5_task_adaptive", "task": "climbing_stairs", "trial": 1, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["1 1 @ [ ~ ^ + ] . _"], "preamble_tokens": 375}
+{"variant": "v5_task_adaptive", "task": "climbing_stairs", "trial": 2, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["1 1 @ [~ ^ +] . _"], "preamble_tokens": 375}
+{"variant": "v5_task_adaptive", "task": "climbing_stairs", "trial": 3, "solved": true, "attempts": 1, "first_correct_attempt": 1, "programs": ["1 1 @ [~ ^ +] . _"], "preamble_tokens": 375}

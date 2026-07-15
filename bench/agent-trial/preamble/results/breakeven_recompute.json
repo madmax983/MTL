@@ -1,0 +1,137 @@
+{
+  "_model": "issue #80 break-even, recomputed under issue #73 preamble winners",
+  "_formula": {
+    "dO_taxonly": "Q * pr * (p_in/p_out)",
+    "dO_full": "dO_taxonly + (P_mtl - P_py) * (p_in/p_out)",
+    "note": "pr = cache_read_mult; p_in/p_out = 1/(p_out_over_p_in); tax term scales linearly in Q, input-penalty term is Q-independent"
+  },
+  "measured_output_savings_per_task": 6.963,
+  "measured_input_penalty_per_task": 8.3889,
+  "Q_values": {
+    "v1_full_baseline": 4051,
+    "v4_compressed_minimal": 487,
+    "v5_task_adaptive_mean": 376.4
+  },
+  "configs": {
+    "default": {
+      "label": "Anthropic published Opus-tier rates (spec-mandated default)",
+      "p_out_over_p_in": 5.0,
+      "cache_read_mult": 0.1,
+      "p_in_over_p_out": 0.2,
+      "Q": {
+        "Q4051_full": {
+          "Q_tokens": 4051,
+          "dO_taxonly": 81.02,
+          "dO_full": 82.6978,
+          "gap_ratio_taxonly_vs_measured": 11.6358,
+          "gap_ratio_full_vs_measured": 11.8767,
+          "crossover_reached_taxonly": false,
+          "crossover_reached_full": false
+        },
+        "Q487_v4": {
+          "Q_tokens": 487,
+          "dO_taxonly": 9.74,
+          "dO_full": 11.4178,
+          "gap_ratio_taxonly_vs_measured": 1.3988,
+          "gap_ratio_full_vs_measured": 1.6398,
+          "crossover_reached_taxonly": false,
+          "crossover_reached_full": false
+        },
+        "Q376_v5": {
+          "Q_tokens": 376.4,
+          "dO_taxonly": 7.528,
+          "dO_full": 9.2058,
+          "gap_ratio_taxonly_vs_measured": 1.0811,
+          "gap_ratio_full_vs_measured": 1.3221,
+          "crossover_reached_taxonly": false,
+          "crossover_reached_full": false
+        }
+      },
+      "closure": {
+        "full_Q_gap_ratio_full": 11.8767,
+        "v4_gap_ratio_full": 1.6398,
+        "v5_gap_ratio_full": 1.3221
+      }
+    },
+    "alt2_lower_out_ratio": {
+      "label": "Cheaper output ratio (p_out = 4x p_in instead of 5x)",
+      "p_out_over_p_in": 4.0,
+      "cache_read_mult": 0.1,
+      "p_in_over_p_out": 0.25,
+      "Q": {
+        "Q4051_full": {
+          "Q_tokens": 4051,
+          "dO_taxonly": 101.275,
+          "dO_full": 103.3722,
+          "gap_ratio_taxonly_vs_measured": 14.5447,
+          "gap_ratio_full_vs_measured": 14.8459,
+          "crossover_reached_taxonly": false,
+          "crossover_reached_full": false
+        },
+        "Q487_v4": {
+          "Q_tokens": 487,
+          "dO_taxonly": 12.175,
+          "dO_full": 14.2722,
+          "gap_ratio_taxonly_vs_measured": 1.7485,
+          "gap_ratio_full_vs_measured": 2.0497,
+          "crossover_reached_taxonly": false,
+          "crossover_reached_full": false
+        },
+        "Q376_v5": {
+          "Q_tokens": 376.4,
+          "dO_taxonly": 9.41,
+          "dO_full": 11.5072,
+          "gap_ratio_taxonly_vs_measured": 1.3514,
+          "gap_ratio_full_vs_measured": 1.6526,
+          "crossover_reached_taxonly": false,
+          "crossover_reached_full": false
+        }
+      },
+      "closure": {
+        "full_Q_gap_ratio_full": 14.8459,
+        "v4_gap_ratio_full": 2.0497,
+        "v5_gap_ratio_full": 1.6526
+      }
+    },
+    "alt3_dearer_cache_read": {
+      "label": "More expensive cache read (cache_read=0.25x)",
+      "p_out_over_p_in": 5.0,
+      "cache_read_mult": 0.25,
+      "p_in_over_p_out": 0.2,
+      "Q": {
+        "Q4051_full": {
+          "Q_tokens": 4051,
+          "dO_taxonly": 202.55,
+          "dO_full": 204.2278,
+          "gap_ratio_taxonly_vs_measured": 29.0895,
+          "gap_ratio_full_vs_measured": 29.3304,
+          "crossover_reached_taxonly": false,
+          "crossover_reached_full": false
+        },
+        "Q487_v4": {
+          "Q_tokens": 487,
+          "dO_taxonly": 24.35,
+          "dO_full": 26.0278,
+          "gap_ratio_taxonly_vs_measured": 3.4971,
+          "gap_ratio_full_vs_measured": 3.738,
+          "crossover_reached_taxonly": false,
+          "crossover_reached_full": false
+        },
+        "Q376_v5": {
+          "Q_tokens": 376.4,
+          "dO_taxonly": 18.82,
+          "dO_full": 20.4978,
+          "gap_ratio_taxonly_vs_measured": 2.7029,
+          "gap_ratio_full_vs_measured": 2.9438,
+          "crossover_reached_taxonly": false,
+          "crossover_reached_full": false
+        }
+      },
+      "closure": {
+        "full_Q_gap_ratio_full": 29.3304,
+        "v4_gap_ratio_full": 3.738,
+        "v5_gap_ratio_full": 2.9438
+      }
+    }
+  }
+}

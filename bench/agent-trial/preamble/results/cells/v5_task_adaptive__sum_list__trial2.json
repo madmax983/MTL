@@ -1,0 +1,13 @@
+{
+  "variant": "v5_task_adaptive",
+  "task": "sum_list",
+  "trial": 2,
+  "preamble_tokens": 356,
+  "solved": true,
+  "attempts": 2,
+  "first_correct_attempt": 2,
+  "programs": [
+    "[>][0][][+]|",
+    "[> 0 =][0][][+]|"
+  ]
+}

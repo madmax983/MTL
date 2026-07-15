@@ -1,0 +1,124 @@
+{
+  "_schema": "issue #45 handoff manifest \u2014 preamble-ablation winner (issue #73)",
+  "_consumer": "issue #45 (session-economics crossover harness): substitute Q below to recompute N*.",
+  "battery": {
+    "model": "claude-opus-4-8",
+    "tasks": [
+      "affine",
+      "rev3",
+      "is_even",
+      "factorial",
+      "gcd",
+      "sum_list",
+      "reverse_list",
+      "palindrome_number",
+      "contains",
+      "climbing_stairs"
+    ],
+    "task_kind": "pure",
+    "trials_per_cell": 3,
+    "n_cells_per_variant": 30,
+    "token_encoding": "o200k_base"
+  },
+  "baseline_full_quickref": {
+    "variant": "v1_full",
+    "preamble_file": "docs/mtl-quickref.md (verbatim; local copy bench/agent-trial/preamble/variants/v1_full.md)",
+    "Q_o200k_tokens": 4051,
+    "solve_rate": 1.0,
+    "dO_recomputed": {
+      "default": {
+        "dO_taxonly": 81.02,
+        "dO_full": 82.6978,
+        "gap_ratio_full_vs_measured": 11.8767,
+        "crossover_reached_full": false
+      },
+      "alt2_lower_out_ratio": {
+        "dO_taxonly": 101.275,
+        "dO_full": 103.3722,
+        "gap_ratio_full_vs_measured": 14.8459,
+        "crossover_reached_full": false
+      },
+      "alt3_dearer_cache_read": {
+        "dO_taxonly": 202.55,
+        "dO_full": 204.2278,
+        "gap_ratio_full_vs_measured": 29.3304,
+        "crossover_reached_full": false
+      }
+    }
+  },
+  "practical_winner": {
+    "note": "Fixed single drop-in preamble. Recommended new default COLD preamble.",
+    "variant": "v4_compressed_minimal",
+    "preamble_file": "bench/agent-trial/preamble/variants/v4_compressed_minimal.md",
+    "Q_o200k_tokens": 487,
+    "pct_of_full": 12.0,
+    "solve_rate": 1.0,
+    "first_attempt_success_rate": 0.9666666666666667,
+    "mean_attempts_to_first_correct": 1.0333333333333334,
+    "median_tokens_to_first_correct": 492.5,
+    "dO_recomputed": {
+      "default": {
+        "dO_taxonly": 9.74,
+        "dO_full": 11.4178,
+        "gap_ratio_full_vs_measured": 1.6398,
+        "crossover_reached_full": false
+      },
+      "alt2_lower_out_ratio": {
+        "dO_taxonly": 12.175,
+        "dO_full": 14.2722,
+        "gap_ratio_full_vs_measured": 2.0497,
+        "crossover_reached_full": false
+      },
+      "alt3_dearer_cache_read": {
+        "dO_taxonly": 24.35,
+        "dO_full": 26.0278,
+        "gap_ratio_full_vs_measured": 3.738,
+        "crossover_reached_full": false
+      }
+    }
+  },
+  "theoretical_pareto_winner": {
+    "note": "Per-task adaptive: only the primitives a task uses. Lowest tokens on the Pareto frontier, but requires per-task primitive selection (you must know which primitives a task uses) \u2014 NOT a fixed drop-in.",
+    "variant": "v5_task_adaptive",
+    "preamble_files": "bench/agent-trial/preamble/variants/v5_task_adaptive/<task>.md (see SELECTION.md)",
+    "Q_o200k_tokens_mean": 376.4,
+    "Q_o200k_tokens_per_task": {
+      "affine": 264,
+      "rev3": 257,
+      "is_even": 281,
+      "factorial": 296,
+      "gcd": 411,
+      "sum_list": 356,
+      "reverse_list": 438,
+      "palindrome_number": 530,
+      "contains": 556,
+      "climbing_stairs": 375
+    },
+    "pct_of_full_mean": 9.3,
+    "solve_rate": 1.0,
+    "first_attempt_success_rate": 0.7666666666666667,
+    "mean_attempts_to_first_correct": 1.2666666666666666,
+    "median_tokens_to_first_correct": 382.0,
+    "dO_recomputed_at_mean_Q": {
+      "default": {
+        "dO_taxonly": 7.528,
+        "dO_full": 9.2058,
+        "gap_ratio_full_vs_measured": 1.3221,
+        "crossover_reached_full": false
+      },
+      "alt2_lower_out_ratio": {
+        "dO_taxonly": 9.41,
+        "dO_full": 11.5072,
+        "gap_ratio_full_vs_measured": 1.6526,
+        "crossover_reached_full": false
+      },
+      "alt3_dearer_cache_read": {
+        "dO_taxonly": 18.82,
+        "dO_full": 20.4978,
+        "gap_ratio_full_vs_measured": 2.9438,
+        "crossover_reached_full": false
+      }
+    }
+  },
+  "operational_tradeoff": "v4 is a fixed drop-in (one file, no task inspection). v5 needs per-task primitive selection (chicken-and-egg: you must already know a task's primitives to pick its preamble) and is capability-aware but untested on Tier-3/capability tasks. For #45's N* recompute use Q=487 (v4) as the robust operating point; Q=376.4 (v5) is the theoretical floor."
+}
