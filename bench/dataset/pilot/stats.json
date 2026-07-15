@@ -1,0 +1,118 @@
+{
+  "chars": {
+    "grand_total": 141843,
+    "instruction_total": 132633,
+    "response_total": 9210
+  },
+  "count_requested": 1200,
+  "gen_pairs": 1200,
+  "heuristic_token_estimate": 42368,
+  "mutation_acceptance": {
+    "accepted": 137,
+    "rate": 0.010285285285285285,
+    "total": 13320
+  },
+  "per_family": {
+    "arithmetic": {
+      "acceptance_rate": 1.0,
+      "accepted": 802,
+      "pulled": 802
+    },
+    "bitwise": {
+      "acceptance_rate": 1.0,
+      "accepted": 1,
+      "pulled": 1
+    },
+    "capability": {
+      "acceptance_rate": 1.0,
+      "accepted": 16,
+      "pulled": 16
+    },
+    "enumerated": {
+      "acceptance_rate": 1.0,
+      "accepted": 200,
+      "pulled": 200
+    },
+    "fold": {
+      "acceptance_rate": 1.0,
+      "accepted": 7,
+      "pulled": 7
+    },
+    "mutation": {
+      "acceptance_rate": 1.0,
+      "accepted": 40,
+      "pulled": 40
+    },
+    "predicate": {
+      "acceptance_rate": 1.0,
+      "accepted": 42,
+      "pulled": 42
+    },
+    "quotation": {
+      "acceptance_rate": 1.0,
+      "accepted": 71,
+      "pulled": 71
+    },
+    "recursion": {
+      "acceptance_rate": 1.0,
+      "accepted": 13,
+      "pulled": 13
+    },
+    "stack-shuffle": {
+      "acceptance_rate": 1.0,
+      "accepted": 8,
+      "pulled": 8
+    }
+  },
+  "repair_fault_kinds": {
+    "DivByZero": 75,
+    "Overflow": 75,
+    "TypeMismatch": 75,
+    "Underflow": 75
+  },
+  "repair_fraction": 0.2,
+  "repair_pairs": 300,
+  "seed": 0,
+  "tier_breakdown": {
+    "0": 1403,
+    "2": 81,
+    "3": 16
+  },
+  "tiktoken_note": "exact o200k/cl100k totals are added by bench/dataset/stats.py",
+  "total_pairs": 1500,
+  "tiktoken": {
+    "records": 1500,
+    "encodings": [
+      "o200k_base",
+      "cl100k_base"
+    ],
+    "total_tokens": {
+      "o200k_base": 48524,
+      "cl100k_base": 48597
+    },
+    "instruction_tokens": {
+      "o200k_base": 42003,
+      "cl100k_base": 42002
+    },
+    "response_tokens": {
+      "o200k_base": 6521,
+      "cl100k_base": 6595
+    },
+    "per_kind_tokens": {
+      "gen": {
+        "o200k_base": 32849,
+        "cl100k_base": 32847
+      },
+      "repair": {
+        "o200k_base": 15675,
+        "cl100k_base": 15750
+      }
+    },
+    "blended_tokens_per_example": {
+      "o200k_base": 32.349333333333334,
+      "cl100k_base": 32.398
+    },
+    "primary_encoding": "o200k_base",
+    "note": "tiktoken o200k_base used as an offline deterministic proxy for the Qwen2.5-Coder tokenizer; both are byte-level BPE and every MTL glyph is 1 token under o200k (see bench/tokcount/token_profile.json)."
+  }
+}

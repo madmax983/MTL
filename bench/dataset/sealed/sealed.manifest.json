@@ -1,0 +1,32 @@
+[
+  {
+    "task_id": "seal_affine_100",
+    "tier": 0,
+    "canonical_sha256": "bcbaf7a7545766f9f2bf94c6951c508ad07953ec2f657c4eccd17328734487c8",
+    "io_hash": "0ebd809b3bd17e61fe80325e37c9df8f2f89eeedabf8d8b752be6e689d70717f"
+  },
+  {
+    "task_id": "seal_quartic",
+    "tier": 0,
+    "canonical_sha256": "b89842edf706f55cc5b76f8095f3d7475de24fd0dd3561c72608811deb2bba21",
+    "io_hash": "aa90c168e3de18d17282b2c7090c22f321eb63fdf5df391d8a550b62a86c0c04"
+  },
+  {
+    "task_id": "seal_mul321",
+    "tier": 0,
+    "canonical_sha256": "5dceef0ae0743ab167f61668f3d5bf237b81565a2b03983c4cdd6d73c05deb07",
+    "io_hash": "419db4691873d123515b8628e3cd6e221b80e9161d504ce73fb1e0a4f6042f97"
+  },
+  {
+    "task_id": "seal_affine_55",
+    "tier": 0,
+    "canonical_sha256": "28c36183d54b0bdd36aad2d36a3bdeb865807b11732f0e9823dfea16c61c4137",
+    "io_hash": "c014f5fd8c3cb289fe1ffa0044857e67c096488f0a3f0bb714348a384bdd6a5e"
+  },
+  {
+    "task_id": "seal_cat_lits",
+    "tier": 2,
+    "canonical_sha256": "b144c3c1a3f9cad1c0473ff42a9d82604acdbb45529608bb97e652a516ab6a86",
+    "io_hash": "6b28febff365680ac69d51012a62d9d4a7ae47438db481265802f323ee338898"
+  }
+]
