@@ -892,6 +892,292 @@ fn family_capability(_seed: u64) -> Vec<TaskInstance> {
         .collect()
 }
 
+// ===========================================================================
+// v0.8 broad-distribution families — the uncovered "sealed" task shapes.
+//
+// Added for the v0.8 generalization round (see `bench/design-v0.8/`). These
+// cover the scan/control-flow and scalar bit/digit shapes the sealed post-mortem
+// (`bench/BASELINE-SEALED.md` §6) identified as UNCOVERED by the original
+// families — the shapes that dragged out-of-sample compression from ~3.9x to
+// ~1.67x. Every program here is oracle-verified by construction (each instance
+// ships a Rust `checked_*` reference contract gated by `mtl_core::interp`), and
+// each is seeded from a working held-out solution in `bench/sealed/corpus/`
+// (the base-`b` digit programs generalise `seal_count_set_bits` / the base-10
+// digit programs). NO `Value::Vec` / `Value::Str` — lists are the existing
+// tier-2 quote-of-ints, scans use the fold/linrec/cons machinery.
+// ===========================================================================
+
+/// A modest scalar grid for digit/bit ops: avoids `i64::MIN` (abs overflow) and
+/// keeps products bounded so `*` never overflows on the digit reference.
+fn grid_scalar_digits() -> Vec<i64> {
+    vec![
+        0, 1, 2, 3, 7, 8, 9, 10, 15, 16, 25, 34, 63, 64, 99, 100, 255, 256, 511, 1023, -5, -34,
+        -100, -255,
+    ]
+}
+
+fn io_scalar(grid: &[i64], f: impl Fn(i64) -> Option<i64>) -> Vec<IoVector> {
+    grid.iter()
+        .map(|&n| IoVector {
+            input: vec![vi(n)],
+            expected: match f(n) {
+                Some(v) => Expected::Halt(vec![vi(v)]),
+                None => Expected::Fault,
+            },
+        })
+        .collect()
+}
+
+/// A modest list grid for scans (edges: empty, singleton, runs, negatives,
+/// alternations). Values stay small so no scan reference overflows.
+fn scan_lists() -> Vec<Vec<i64>> {
+    vec![
+        vec![],
+        vec![5],
+        vec![3, 8],
+        vec![1, 2, 3, 4],
+        vec![4, 3, 2, 1],
+        vec![3, 1, 4, 1, 5, 9, 2],
+        vec![-5, -2, -8, -1],
+        vec![7, 7, 7],
+        vec![2, 2, 3, 3, 3, 1],
+        vec![0, 0, 0],
+        vec![-3, 5, -3, 5],
+        vec![10, -10, 10, -10, 10],
+    ]
+}
+
+/// Base-b digit sum of |n| (base 2 == popcount). checked_* reference.
+fn digit_sum_base(n: i64, b: i64) -> i64 {
+    let mut m = n.unsigned_abs();
+    let bb = b as u64;
+    let mut s: i64 = 0;
+    while m > 0 {
+        s += (m % bb) as i64;
+        m /= bb;
+    }
+    s
+}
+
+/// Base-b digit product of |n| (n==0 -> 0). `None` on overflow (matches MTL `*`).
+fn digit_product_base(n: i64, b: i64) -> Option<i64> {
+    if n == 0 {
+        return Some(0);
+    }
+    let mut m = n.unsigned_abs();
+    let bb = b as u64;
+    let mut p: i64 = 1;
+    while m > 0 {
+        p = p.checked_mul((m % bb) as i64)?;
+        m /= bb;
+    }
+    Some(p)
+}
+
+/// scalar bit/digit ops — popcount, digit-sum base b, digit-product base b.
+/// Seeded from `seal_count_set_bits` (base 2) generalised over the base literal.
+fn family_bitdigit(_seed: u64) -> Vec<TaskInstance> {
+    let mut out = Vec::new();
+    let grid = grid_scalar_digits();
+
+    // popcount == digit-sum base 2 (the sealed `seal_count_set_bits` program).
+    out.push(TaskInstance {
+        family: "bitdigit".into(),
+        tier: 0,
+        difficulty: 2,
+        description: "Given an integer n, count the set bits in |n| (population count).".into(),
+        io: io_scalar(&grid, |n| Some(digit_sum_base(n, 2))),
+        program: ":0<[0~-][]?0~[:0=][_][:2/~2%@+~][]|".into(),
+        tier3_task: None,
+    });
+
+    // digit-sum base b for a spread of bases (base 2 already emitted as popcount).
+    for b in [3i64, 4, 5, 8, 10, 12, 16] {
+        out.push(TaskInstance {
+            family: "bitdigit".into(),
+            tier: 0,
+            difficulty: 2,
+            description: format!(
+                "Given an integer n, sum the base-{b} digits of |n| (0 for n == 0)."
+            ),
+            io: io_scalar(&grid, move |n| Some(digit_sum_base(n, b))),
+            program: format!(":0<[0~-][]?0~[:0=][_][:{b}/~{b}%@+~][]|"),
+            tier3_task: None,
+        });
+    }
+
+    // digit-product base b (base 10 is `seal_digit_product`; others generalise).
+    for b in [8i64, 10, 16] {
+        out.push(TaskInstance {
+            family: "bitdigit".into(),
+            tier: 0,
+            difficulty: 2,
+            description: format!(
+                "Given an integer n, multiply the base-{b} digits of |n| (0 for n == 0)."
+            ),
+            io: io_scalar(&grid, move |n| digit_product_base(n, b)),
+            program: format!(":0<[0~-][]?:0=[_0][1~[:0=][_][:{b}/~{b}%@*~][]|]?"),
+            tier3_task: None,
+        });
+    }
+
+    out
+}
+
+/// list-scan / control-flow families — running/adjacent scans over a list.
+/// Each program is seeded verbatim from the matching `bench/sealed/corpus/`
+/// held-out solution and re-verified here against a fresh `checked_*` reference
+/// over a fresh (non-sealed) input grid.
+fn family_scan(_seed: u64) -> Vec<TaskInstance> {
+    let lists = scan_lists();
+
+    // list -> scalar scans -------------------------------------------------
+    let scalar_scan =
+        |family: &str, prog: &str, desc: &str, f: &dyn Fn(&[i64]) -> i64| -> TaskInstance {
+            TaskInstance {
+                family: family.to_string(),
+                tier: 2,
+                difficulty: 2,
+                description: desc.to_string(),
+                io: lists
+                    .iter()
+                    .map(|l| IoVector {
+                        input: vec![int_list(l)],
+                        expected: Expected::Halt(vec![vi(f(l))]),
+                    })
+                    .collect(),
+                program: prog.to_string(),
+                tier3_task: None,
+            }
+        };
+
+    // list -> list scans ---------------------------------------------------
+    let list_scan =
+        |family: &str, prog: &str, desc: &str, f: &dyn Fn(&[i64]) -> Vec<i64>| -> TaskInstance {
+            TaskInstance {
+                family: family.to_string(),
+                tier: 2,
+                difficulty: 3,
+                description: desc.to_string(),
+                io: lists
+                    .iter()
+                    .map(|l| IoVector {
+                        input: vec![int_list(l)],
+                        expected: Expected::Halt(vec![int_list(&f(l))]),
+                    })
+                    .collect(),
+                program: prog.to_string(),
+                tier3_task: None,
+            }
+        };
+
+    let mut out = vec![
+        scalar_scan(
+            "scan",
+            "[>0=][0][][-]|",
+            "Given a list of integers, compute the alternating sum x0 - x1 + x2 - ... (0 for the empty list).",
+            &|l| {
+                l.iter()
+                    .enumerate()
+                    .map(|(i, &x)| if i % 2 == 0 { x } else { -x })
+                    .sum()
+            },
+        ),
+        scalar_scan(
+            "scan",
+            "[:>[~_][[]]?>[~_][[]]?>[__0][1]?][_0][:>_>_>__^<@@<*~>_~_][+]|",
+            "Given a list of integers, count the strict local maxima (elements strictly greater than both neighbours).",
+            &|l| {
+                let mut c = 0i64;
+                if l.len() >= 3 {
+                    for i in 1..l.len() - 1 {
+                        if l[i] > l[i - 1] && l[i] > l[i + 1] {
+                            c += 1;
+                        }
+                    }
+                }
+                c
+            },
+        ),
+        scalar_scan(
+            "scan",
+            "[:>[~_][[]]?>[__0][1]?][_0][:>_>__-:0<[0~-][]?~>_~_][^^<[~_][_]?]|",
+            "Given a list of integers, compute the maximum absolute difference between adjacent elements (0 for lists shorter than 2).",
+            &|l| {
+                if l.len() < 2 {
+                    return 0;
+                }
+                (1..l.len()).map(|i| (l[i] - l[i - 1]).abs()).max().unwrap()
+            },
+        ),
+        list_scan(
+            "scan",
+            "[][^>[_^=][0]?[_][~;]?]([][~;](",
+            "Given a list of integers, remove consecutive duplicate elements (adjacent dedup).",
+            &|l| {
+                let mut r: Vec<i64> = Vec::new();
+                for &x in l {
+                    if r.last() != Some(&x) {
+                        r.push(x);
+                    }
+                }
+                r
+            },
+        ),
+        list_scan(
+            "scan",
+            "[][~>[@:@:>__~[=]'~[~_~1+~;][~[;]'~;1~;]?][[];1~;]?]([][~;](",
+            "Given a list of integers, run-length encode adjacent runs, emitting each value followed by its run count.",
+            &|l| {
+                let mut r: Vec<i64> = Vec::new();
+                for &x in l {
+                    if r.len() >= 2 && r[r.len() - 2] == x {
+                        let n = r.len();
+                        r[n - 1] += 1;
+                    } else {
+                        r.push(x);
+                        r.push(1);
+                    }
+                }
+                r
+            },
+        ),
+    ];
+
+    // (start, list) -> scalar : minimum running prefix balance -------------
+    let mrb = "^~[>0=][_][[+:[^^<[_][~_]?]']'][]|";
+    let mrb_lists = scan_lists();
+    for start in [0i64, 5, -3] {
+        out.push(TaskInstance {
+            family: "scan".into(),
+            tier: 2,
+            difficulty: 3,
+            description: format!(
+                "Given a starting balance {start} then a list of deltas, compute the minimum running balance (the lowest the balance ever reaches, including the start)."
+            ),
+            io: mrb_lists
+                .iter()
+                .map(|l| {
+                    let mut bal = start;
+                    let mut lo = start;
+                    for &d in l {
+                        bal += d;
+                        lo = lo.min(bal);
+                    }
+                    IoVector {
+                        input: vec![vi(start), int_list(l)],
+                        expected: Expected::Halt(vec![vi(lo)]),
+                    }
+                })
+                .collect(),
+            program: mrb.to_string(),
+            tier3_task: None,
+        });
+    }
+
+    out
+}
+
 /// All family groups (for round-robin interleaving), in a stable order.
 pub fn family_groups(seed: u64) -> Vec<Vec<TaskInstance>> {
     vec![
@@ -905,5 +1191,7 @@ pub fn family_groups(seed: u64) -> Vec<Vec<TaskInstance>> {
         family_fold(seed),
         family_glyphs(seed),
         family_capability(seed),
+        family_bitdigit(seed),
+        family_scan(seed),
     ]
 }
