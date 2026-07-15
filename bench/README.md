@@ -1,10 +1,24 @@
 # MTL tokenizer-measurement harness (`bench/`)
 
+> **Restated (v0.8, 2026-07-15): the ≥3x compression gate is retired.** The
+> 3.72x–3.92x figures below are **in-sample dev corpora** only. The first
+> out-of-sample, held-out (sealed) measurement is **1.67x (o200k) / 1.72x
+> (cl100k)** — below the ≥3x bar — so the gate did **not** generalize and has
+> been retired. Compression is now framed as a **niche** property (2–4x on
+> loop/fold-heavy tasks, ≤1x on scans and where Python has a terse builtin), not
+> a headline. What *does* generalize: agent writability (**100% pass@5** held-out)
+> and per-solution economics (**CSPM 2.124x** held-out, widening from dev). See
+> [`BASELINE-SEALED.md`](BASELINE-SEALED.md) and
+> [`../docs/design/v0.8-generalization.md`](../docs/design/v0.8-generalization.md).
+> The in-sample numbers below are preserved as recorded.
+
 ## What this is
 
 A **stage-1 static-program token-measurement harness** for the MTL north-star
-metric: **>=3x token reduction versus idiomatic Python at equal-or-better agent
-success**. It measures how many tokens each solution's *source* consumes under
+metric (token reduction versus idiomatic Python at equal-or-better agent
+success). The original **≥3x Abrash gate is retired out-of-sample** — it held
+only on in-sample dev corpora (see the banner above). It measures how many
+tokens each solution's *source* consumes under
 public LLM tokenizers, so we can track whether MTL's dense glyph encoding
 actually buys the reduction the project is betting on.
 
@@ -24,13 +38,17 @@ For each task we hold three variants — `mtl`, `python-idiomatic`,
 `python-minified` — and count tokens for each under each encoding. The headline
 is the **MTL reduction ratio vs idiomatic Python** (higher = better for MTL).
 
-**Headline (stage 1, static program tokens):** on interpreter-validated
+**Headline (stage 1, static program tokens) — in-sample dev corpora only; see
+the retirement banner at the top of this file:** on interpreter-validated
 static-token counts, the frozen-`T_v0` **v0.2** solution set reaches **3.72x** vs
-idiomatic Python (**>=3x gate MET**), where the frozen **v0.1** solutions were
+idiomatic Python (**>=3x gate MET in-sample**), where the frozen **v0.1** solutions were
 **2.11x** (NOT MET). On the tier-2 probe set the aggregate rises from **v0.2
 1.91x (o200k) / 1.89x (cl100k)** to **v0.3 3.87x (o200k) / 3.92x (cl100k)** vs
-idiomatic Python — the **>=3x gate is now MET on the tier-2 probe set too**, and
-`single_number` moved from an inexpressible wall to solved via `$` xor. This is
+idiomatic Python — the **>=3x gate is MET on the tier-2 probe set too, in-sample
+only** (held-out this drops to **1.67x**; the gate is retired — see
+[`BASELINE-SEALED.md`](BASELINE-SEALED.md) and
+[`../docs/design/v0.8-generalization.md`](../docs/design/v0.8-generalization.md)),
+and `single_number` moved from an inexpressible wall to solved via `$` xor. This is
 still stage 1 (static program tokens); the full `E[tokens x attempts]` metric
 remains future work. No agent-success-rate claims.
 

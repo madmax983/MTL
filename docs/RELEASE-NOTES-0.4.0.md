@@ -1,5 +1,7 @@
 # MTL v0.4.0 — Effects, and a Fully Verified Core
 
+> **Superseded (v0.8, 2026-07-15):** the ≥3× Abrash compression gate recorded below held only in-sample. Out-of-sample (first held-out sealed measurement) it is **1.67×** and the gate is **retired**. Compression is now a niche property (2–4× loop/fold, ≤1× scans/builtins), not a headline; what generalizes is agent writability (100% pass@5) and per-solution economics (CSPM 2.124× held-out). See [README](../README.md) + [`docs/design/v0.8-generalization.md`](design/v0.8-generalization.md). The v0.4.0 numbers below are preserved as recorded.
+
 Release date: 2026-07-13
 
 ## The arc: 0.1 scaffold → 0.4 effects + complete P1–P5 proof suite
