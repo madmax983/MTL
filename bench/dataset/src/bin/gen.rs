@@ -167,15 +167,14 @@ fn main() {
     // ---- strategy 2: mutation — acceptance-rate signal + alt-correct programs ----
     let mut mut_total = 0u64;
     let mut mut_accept = 0u64;
-    let sample: Vec<(String, Vec<mtl_datagen::IoVector>, u8, u32, String)> = accepted_progs
+    // Re-deriving each seed's io-contract from families is heavy; instead we
+    // re-gate its mutations against the contract lookup rebuilt below. Only the
+    // source string is needed here.
+    let sample: Vec<String> = accepted_progs
         .iter()
         .filter(|(_, tier, _, _)| *tier != 3)
         .take(60)
-        .filter_map(|(src, tier, diff, fam)| {
-            // Recover the io-contract for this src by re-deriving from families is
-            // heavy; instead re-gate mutations against a fresh run of the seed.
-            Some((src.clone(), Vec::new(), *tier, *diff, fam.clone()))
-        })
+        .map(|(src, ..)| src.clone())
         .collect();
     // For the acceptance signal we need the seed's contract. Rebuild a lookup
     // from the family groups (regenerate; cheap and deterministic).
@@ -196,7 +195,7 @@ fn main() {
         m
     };
     let mut mut_added = 0usize;
-    for (src, _, _, _, _) in &sample {
+    for src in &sample {
         if let Some((io, tier, diff, _fam)) = contract.get(src) {
             for m in candidates::mutations(src) {
                 if m == *src {
@@ -212,7 +211,7 @@ fn main() {
                         family: "mutation".into(),
                         tier: *tier,
                         difficulty: *diff,
-                        description: contract_desc(&contract, src),
+                        description: contract_desc(src),
                         io: io.clone(),
                         program: m.clone(),
                         tier3_task: None,
@@ -351,13 +350,8 @@ fn main() {
 
     // ---- inline re-validation invariant: every response re-passes the oracle ----
     let mut reval_fail = 0u64;
-    for (rec, is_repair) in gen_records
-        .iter()
-        .map(|r| (r, false))
-        .chain(repair_records.iter().map(|r| (r, true)))
-    {
-        let ok = revalidate(rec, is_repair);
-        if !ok {
+    for rec in gen_records.iter().chain(repair_records.iter()) {
+        if !revalidate(rec) {
             eprintln!("RE-VALIDATION FAILED: {} :: {}", rec.family, rec.response);
             reval_fail += 1;
         }
@@ -426,11 +420,7 @@ fn main() {
     }
 }
 
-fn contract_desc(
-    contract: &BTreeMap<String, (Vec<mtl_datagen::IoVector>, u8, u32, String)>,
-    src: &str,
-) -> String {
-    let _ = contract;
+fn contract_desc(src: &str) -> String {
     format!("Write an MTL program equivalent to `{src}` (produces the same output on every input).")
 }
 
@@ -467,7 +457,7 @@ fn push_repair(
 /// Re-run the response program through the REAL oracle using the embedded
 /// re-runnable contract, and assert canonical-form stability. This is the same
 /// invariant the `tests/revalidation.rs` suite reloads and re-checks.
-fn revalidate(rec: &Record, _is_repair: bool) -> bool {
+fn revalidate(rec: &Record) -> bool {
     let canon_ok = match canonical_sha(&rec.response) {
         Some((canon, sha)) => canon == rec.response && sha == rec.canonical_sha256,
         None => false,
