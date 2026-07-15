@@ -9,6 +9,11 @@
 > capabilities**. This minimal reference deliberately omits the Host-capabilities
 > section; any task that reaches the host (Tier-3 I/O, tools, grants, budgets)
 > needs the full [`docs/mtl-quickref.md`](mtl-quickref.md).
+>
+> **Negative inputs.** Literals are unsigned (`-` is always Sub). A negative
+> *constant* in program text is `0 N -`; negative or list *inputs* are supplied
+> via `mtlrun --input '<spec>'` (e.g. `-24`, `[-5 -2 -8 -1]`) — a harness
+> decoder, not a language change.
 
 # MTL primitives (stack top at right; `[q]`=quote/list; 0=false; `-` is always Sub)
 
