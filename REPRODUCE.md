@@ -34,12 +34,15 @@ each reaches its exact `verified, 0 errors` count. Nothing here modifies a proof
   `rustup` (to add `rustc-dev rustfmt llvm-tools` to toolchain 1.96.0) and a
   C++ build toolchain (for Z3's `mk_make.py` + `make`).
 
-**Resource expectations (qualitative, no wall-clock promises):** the non-Verus
-pipeline is light — it compiles the Rust workspace once and runs fast test
-suites. The **Verus build is heavy**: it compiles Z3 and the full Verus prover
-(including `vstd`) from source and wants a machine with real CPU and several GB
-of free disk for the two source trees plus build artifacts. Budget accordingly;
-this document deliberately states no minute/hour estimates.
+**Resource expectations:** the non-Verus pipeline is light — it compiles the
+Rust workspace once and runs fast test suites. The **proof-gate path is a heavy
+from-source build, not a binary download**: `kit/build-verus.sh` compiles Z3 and
+the full Verus prover (including `vstd`) from source and wants a machine with
+real CPU and several GB of free disk for the two source trees plus build
+artifacts. In the reference in-container reproduction this build measured
+**≈18 min on 4 cores** (Z3 ~10 min + Verus `vargo build --release` ~5 min +
+toolchain install), using ~1 GB RAM. Treat that as the one measured data point,
+not a guarantee — it scales with core count and disk speed.
 
 ## Quick start
 
@@ -132,6 +135,44 @@ end-to-end (14/14 PASS) with each command's real output — is in
 [`kit/EVIDENCE.md`](kit/EVIDENCE.md). It is the AC #7 artifact: fresh checkout,
 kit-only, no repo-specific tribal knowledge.
 
-In-container proof-gate reproduction verdict (5 Verus roots, source-built prover):
+### Verus gates — reproduced in-container (5/5, source-built prover)
 
-<!-- VERUS_INCONTAINER_RESULT -->
+On **2026-07-16**, from a **clean container checkout** of this repo, all five
+proof roots were re-verified against a **from-source** build of the pinned prover
+(the GitHub release zip is 403-blocked in this environment, so `kit/build-verus.sh`'s
+source path is the sanctioned route). Each root was run as bare `verus <file>`
+(no `--crate-type`, module-root, or extra flags — confirmed against
+`.github/workflows/ci.yml` lines 176/198/234/259/326), with
+`VERUS_Z3_PATH` pointing at the co-built Z3. Every gate reproduced its published
+count **exactly**:
+
+| Proof root | Expected | Reproduced | Line observed |
+|---|---:|---:|---|
+| `crates/mtl-core/src/mtl_core.rs` | 76 | **76** | `verification results:: 76 verified, 0 errors` |
+| `crates/mtl-core/src/p5_universality.rs` (HARD GATE) | 118 | **118** | `verification results:: 118 verified, 0 errors` |
+| `crates/mtl-syntax/proofs/p4_verus.rs` | 101 | **101** | `verification results:: 101 verified, 0 errors` |
+| `crates/mtl-core/src/checker_verus.rs` (HARD GATE) | 116 | **116** | `verification results:: 116 verified, 0 errors` |
+| `crates/mtl-arena/proofs/arena_verus.rs` (HARD GATE) | 145 | **145** | `verification results:: 145 verified, 0 errors` |
+
+**Zero-cheat boundary confirmed.** `verus --no-cheating crates/mtl-core/src/mtl_core.rs`
+aborts flagging **exactly 2** `external_body` Clone stubs and nothing else —
+`Word::clone` (line 603) and `Value::clone` (line 627) — then `error: aborting
+due to 2 previous errors`. That is the declared two-stub trust boundary, no more.
+
+**Toolchain (all built/installed in-container):**
+- Verus **`0.2026.07.05.49b8806`** (commit `49b8806ca22bc969172eb2e018ac6c57c3abb926`),
+  release profile, `linux_x86_64`, `verus --version` reports Toolchain `1.96.0`.
+- Z3 **`4.12.5`** — built from source (`Z3Prover/z3` @ tag `z3-4.12.5`).
+- Rust **`1.96.0`** with `rustc-dev` / `rustfmt` / `llvm-tools`.
+- Verus self-build: `vargo build --release` finished `vstd` at 1972 verified, 0 errors.
+
+**Honest caveat.** This was **not a binary download.** The pinned Verus release
+asset returns HTTP 403 in the reference environment, so `kit/build-verus.sh`
+source-builds Verus **and** Z3 via `git clone` (which the proxy allows). The full
+build measured **≈18 min on 4 cores** (measured, single data point; Z3 ~10 min +
+Verus ~5 min + toolchain ~40 s). The proof re-check itself is fast once the
+prover exists; the cost is the one-time prover build.
+
+The captured per-gate transcripts (the `verification results::` lines, the
+`--no-cheating` abort, and `verus --version`) are quoted in
+[`kit/EVIDENCE.md`](kit/EVIDENCE.md).

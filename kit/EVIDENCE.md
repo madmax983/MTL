@@ -154,6 +154,95 @@ Expected scoreboard (each root run as bare `verus <root.rs>` with
 `verus --no-cheating` flags exactly **2** trusted P2 Clone `external_body` stubs
 (`Word::clone`, `Value::clone`) — the declared trust boundary, report-only.
 
-In-container proof-gate reproduction verdict (filled by the Verus-build worker):
+### Captured in-container proof-gate transcript (2026-07-16)
 
-<!-- VERUS_INCONTAINER_RESULT -->
+Built from a **clean container source build** (Verus `0.2026.07.05.49b8806` +
+Z3 `4.12.5` from `git clone`; the release zip is 403-blocked so the source path
+in `kit/build-verus.sh` was used — ≈18 min on 4 cores, measured). Each root run
+as bare `verus <file>` with `VERUS_Z3_PATH` set. Verbatim result lines:
+
+```
+$ verus --version
+Verus
+  Version: 0.2026.07.05.49b8806
+  Profile: release
+  Platform: linux_x86_64
+  Toolchain: 1.96.0-x86_64-unknown-linux-gnu
+
+$ verus crates/mtl-core/src/mtl_core.rs
+verification results:: 76 verified, 0 errors
+
+$ verus crates/mtl-core/src/p5_universality.rs
+verification results:: 118 verified, 0 errors
+
+$ verus crates/mtl-syntax/proofs/p4_verus.rs
+verification results:: 101 verified, 0 errors
+
+$ verus crates/mtl-core/src/checker_verus.rs
+verification results:: 116 verified, 0 errors
+
+$ verus crates/mtl-arena/proofs/arena_verus.rs
+verification results:: 145 verified, 0 errors
+```
+
+All five reproduced their published counts **exactly** (76 + 118 + 101 + 116 +
+145 verified, 0 errors). The invocations are bare `verus <file>` — confirmed
+against `.github/workflows/ci.yml` lines 176/198/234/259/326 (no `--crate-type`,
+module-root, or extra flags).
+
+**Zero-cheat check — exactly 2 trusted stubs:**
+
+```
+$ verus --no-cheating crates/mtl-core/src/mtl_core.rs
+error: external_body/assume_specification not allowed with --no-cheating
+   --> crates/mtl-core/src/mtl_core.rs:603:5
+    |
+603 |     fn clone(&self) -> (res: Self)
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: external_body/assume_specification not allowed with --no-cheating
+   --> crates/mtl-core/src/mtl_core.rs:627:5
+    |
+627 |     fn clone(&self) -> (res: Self)
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+error: aborting due to 2 previous errors
+```
+
+`--no-cheating` flags **exactly** the two `external_body` Clone stubs
+(`Word::clone` line 603, `Value::clone` line 627) and nothing else — the declared
+two-stub trust boundary. **Verus gates reproduced: 5/5.**
+
+---
+
+## AC #7 — strict fresh-clone dry-run (non-Verus pipeline, kit-only)
+
+Beyond the same-checkout run above, the non-Verus pipeline was also re-run under
+the **strictest AC #7 conditions**: `git clone --branch paper` into a fresh temp
+dir (`/tmp/mtl-freshclone`), then `./kit/replicate.sh` from that clone with
+**no repo-specific tribal knowledge** — kit commands only. It reproduced every
+headline ratio byte-identically. Verbatim SUMMARY block:
+
+```
+===================================================================
+== SUMMARY
+===================================================================
+  PASS  tiktoken toolchain installed
+  PASS  cargo test --workspace: 322 passed, 0 failed
+  PASS  bench/BASELINE.md byte-identical after regeneration
+  PASS  T_v0 aggregate 3.72x present (found: 3.72x)
+  PASS  bench/BASELINE-TIER2.md byte-identical after regeneration
+  PASS  tier-2 o200k 3.87x present (found: 3.87x)
+  PASS  tier-2 cl100k 3.92x present (found: 3.92x)
+  PASS  bench/BASELINE-TIER3.md byte-identical after regeneration
+  PASS  tier-3 exec o200k 1.86x present (found: 1.86x)
+  PASS  tier-3 exec cl100k 1.85x present (found: 1.85x)
+  PASS  mtl-bench-validate: all corpus/tier2/tier2_v03/sealed vectors pass (14/14 sealed correct)
+  PASS  arena oracle: 148/148 programs agree (direct + forced-compaction)
+  PASS  mtl-datagen: contamination + coverage + oracle-gate + revalidation pass
+  PASS  factorial demo produced 120 (HALT: 120)
+
+  Steps passed: 14   Steps failed: 0
+  RESULT: PASS — the full non-Verus MTL pipeline reproduced every headline ratio byte-identically.
+```
+
+**Both observed reproductions now on record: non-Verus 14/14 (fresh clone,
+kit-only) and Verus 5/5 (source-built prover, same container).**

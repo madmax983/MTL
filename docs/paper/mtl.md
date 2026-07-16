@@ -594,7 +594,11 @@ The top-level `REPRODUCE.md` (a separate deliverable) carries the claim→comman
 Verus at the pin and re-run each proof root, how to regenerate the token baselines with tiktoken,
 and how to re-run the contamination gate and sealed validation. Readers should start there and
 follow the claim→command map; Appendix B of this paper maps each headline number to its artifact
-file.
+file. As of this writeup, all five proof gates (`mtl_core` 76, `p5_universality` 118, `p4_verus`
+101, `checker_verus` 116, `arena_verus` 145 — 0 errors each) and the full non-Verus ratio pipeline
+were independently reproduced from a clean container checkout (`REPRODUCE.md`, `kit/EVIDENCE.md`):
+the Verus roots against a source-built prover at the pin, and the token/test pipeline byte-identically
+(14/14) from a fresh `git clone`.
 
 What is **not** push-button reproducible: the live-model agent trials. The kit reproduces the
 deterministic scorer, the ground-truth I/O vectors, and the protocol — but not the raw model
