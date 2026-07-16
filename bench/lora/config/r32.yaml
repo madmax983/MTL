@@ -1,0 +1,44 @@
+# bench/lora/config/r32.yaml — low end of the r=32/64/128 sweep.
+# Recipe contract: docs/design/v0.7-lora-warm-agent.md §6, issue #83.
+# Effective batch kept CONSTANT at 32 across the sweep (8 * 4).
+
+base_model: Qwen/Qwen2.5-Coder-7B-Instruct
+
+# --- LoRA / QLoRA ---
+r: 32
+alpha: 32                 # alpha = r
+use_rslora: true
+target_modules: all-linear
+lora_dropout: 0.05
+
+# --- optimisation ---
+lr: 2.0e-4
+epochs: 2
+warmup_ratio: 0.05
+weight_decay: 0.01
+lr_scheduler_type: cosine
+max_seq_len: 2048
+per_device_batch_size: 8
+grad_accum: 4             # effective batch = 32 (constant across sweep)
+packing: true
+gradient_checkpointing: true
+
+# --- general-code replay ---
+replay_dataset: bigcode/the-stack-smol
+replay_text_field: content
+replay_data_dir: data/python
+replay_split: train
+replay_fraction: 0.15
+replay_max_seq_len: 1024
+
+# --- eval holdout ---
+eval_fraction: 0.05
+
+# --- provenance / determinism ---
+seed: 0
+
+# --- checkpointing ---
+save_steps: 200
+save_total_limit: 3
+
+system_marker: emit MTL

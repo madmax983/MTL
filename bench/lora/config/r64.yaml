@@ -1,0 +1,49 @@
+# bench/lora/config/r64.yaml — PRIMARY v0.7 warm-agent QLoRA config.
+# Recipe contract: docs/design/v0.7-lora-warm-agent.md §6, issue #83.
+# r=64 is the primary rank (sweep is r32/r64/r128; keep effective batch = 32 constant).
+
+base_model: Qwen/Qwen2.5-Coder-7B-Instruct   # Apache-2.0, 32K ctx, preserves MTL edge (0.856 tok/glyph)
+
+# --- LoRA / QLoRA ---
+r: 64
+alpha: 64                 # alpha = r
+use_rslora: true          # alpha/sqrt(r) scaling — what makes r=64-128 pay off
+target_modules: all-linear # q,k,v,o,gate,up,down (attention-only caps effective rank)
+lora_dropout: 0.05
+
+# --- optimisation ---
+lr: 2.0e-4
+epochs: 2                 # 2-3; >3 = diminishing returns + forgetting
+warmup_ratio: 0.05        # 5-10%
+weight_decay: 0.01
+lr_scheduler_type: cosine
+max_seq_len: 2048
+per_device_batch_size: 8
+grad_accum: 4             # effective batch = 8 * 4 = 32
+packing: true
+gradient_checkpointing: true
+
+# --- general-code replay (catastrophic-forgetting mitigation, ~10-20%) ---
+# Default: bigcode/the-stack-smol — BigCode-governed, permissively-licensed code
+# only (no OpenAI-derived / synthetic-license contamination). Trained as plain
+# code continuation (full-sequence causal LM loss). Swap replay_dataset to
+# bigcode/self-oss-instruct-sc2-exec-filter-50k for instruction-formatted replay.
+replay_dataset: bigcode/the-stack-smol
+replay_text_field: content
+replay_data_dir: data/python
+replay_split: train
+replay_fraction: 0.15
+replay_max_seq_len: 1024
+
+# --- eval holdout (carved deterministically by seed, tier-stratified) ---
+eval_fraction: 0.05
+
+# --- provenance / determinism ---
+seed: 0
+
+# --- checkpointing (out MUST be on the RunPod network volume) ---
+save_steps: 200
+save_total_limit: 3
+
+# Optional short system marker so inference-time prompt matches training (design §2).
+system_marker: emit MTL

@@ -1,0 +1,60 @@
+# bench/lora/config/r128.yaml — high end of the r=32/64/128 sweep.
+# Recipe contract: docs/design/v0.7-lora-warm-agent.md §6, issue #83.
+# r=128 is also the FIRST rung of the fallback escalation ladder (design §6) on a
+# measured miss. High rank + rsLoRA is what narrows the "LoRA learns less" gap on
+# new-syntax acquisition.
+#
+# Effective batch kept CONSTANT at 32 across the sweep. r=128 roughly doubles the
+# LoRA optimizer-state footprint vs r=64, so this is the most OOM-prone rung.
+#
+# ------------------------------------------------------------------------------
+# OOM FALLBACK (uncomment if r=128 OOMs on a 24GB 4090 — see RUNBOOK "OOM playbook"):
+#   per_device_batch_size: 1     # <-- drop micro-batch to 1
+#   grad_accum: 32               # <-- raise to HOLD effective batch = 32 constant
+#   gradient_checkpointing: true # <-- already on below; keep on
+#   replay_max_seq_len: 512      # <-- cap replay sequence length (replay drives OOM,
+#                                #     NOT MTL: MTL completions are ~90 tok, tiny)
+#   max_seq_len: 1536            # <-- optionally trim the packed window
+# MTL completions are tiny (~90 tok); OOM comes from replay/seq-len, not MTL.
+# ------------------------------------------------------------------------------
+
+base_model: Qwen/Qwen2.5-Coder-7B-Instruct
+
+# --- LoRA / QLoRA ---
+r: 128
+alpha: 128                # alpha = r
+use_rslora: true          # essential at r=128 (prevents alpha/r gradient collapse)
+target_modules: all-linear
+lora_dropout: 0.05
+
+# --- optimisation ---
+lr: 2.0e-4
+epochs: 2
+warmup_ratio: 0.05
+weight_decay: 0.01
+lr_scheduler_type: cosine
+max_seq_len: 2048
+per_device_batch_size: 8
+grad_accum: 4             # effective batch = 32 (constant across sweep)
+packing: true
+gradient_checkpointing: true
+
+# --- general-code replay ---
+replay_dataset: bigcode/the-stack-smol
+replay_text_field: content
+replay_data_dir: data/python
+replay_split: train
+replay_fraction: 0.15
+replay_max_seq_len: 1024
+
+# --- eval holdout ---
+eval_fraction: 0.05
+
+# --- provenance / determinism ---
+seed: 0
+
+# --- checkpointing ---
+save_steps: 200
+save_total_limit: 3
+
+system_marker: emit MTL

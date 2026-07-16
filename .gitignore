@@ -6,3 +6,5 @@ Cargo.lock
 *.smt2
 .verus-log/
 crates/mtl-core/tests/*.proptest-regressions
+# Generated LoRA training data (see bench/lora/RUNBOOK.md; regenerate with `gen --seed 0`)
+/bench/dataset/full/

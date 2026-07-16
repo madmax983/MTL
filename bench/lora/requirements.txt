@@ -1,0 +1,24 @@
+# bench/lora/requirements.txt — pinned deps for the v0.7 warm-agent LoRA train + serve.
+# Install ON THE POD, on top of the RunPod PyTorch/CUDA base image:
+#   pip install -r bench/lora/requirements.txt
+#
+# torch is NOT pinned here: it ships with the RunPod base image
+# (runpod/pytorch:2.x-cu12x) already CUDA-matched. Pinning torch here would fight
+# the image's build. If you train off-RunPod, install a CUDA-matched torch first.
+#
+# Versions were resolved against the package index in July 2026 (this repo's build
+# date). Unsloth and vLLM move fast and are CUDA/torch-sensitive — re-check the two
+# lines flagged below at install time.
+
+unsloth==2026.7.3            # verify latest at install time (fast-moving; torch/CUDA-sensitive)
+transformers==4.57.6        # 4.57.x line; unsloth/trl-compatible (5.x is a major bump — hold unless unsloth pins it)
+trl==0.24.0                 # SFTTrainer + train_on_responses_only / DataCollatorForCompletionOnlyLM
+peft==0.19.1                # LoRA/QLoRA adapters
+bitsandbytes==0.49.2        # NF4 4-bit + double-quant
+accelerate==1.14.0          # trainer backend
+datasets==4.8.5             # MTL jsonl + general-code replay loading
+huggingface_hub==1.23.0     # model/tokenizer pull + adapter push
+pyyaml==6.0.3               # config parsing (also required by --smoke)
+
+# --- serving (eval) ---
+vllm==0.11.2                # verify latest at install time; serves the adapter with --enable-lora (OpenAI-compatible)
