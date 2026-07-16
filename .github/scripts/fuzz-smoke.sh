@@ -35,7 +35,15 @@ set -x
 # so a bare `cargo fuzz run` resolves to STABLE and fails with
 # "error: the option `Z` is only accepted on the nightly compiler". `+nightly`
 # bypasses the override (matching the documented local `cargo +nightly fuzz`).
-cargo +nightly fuzz run "${target}" -- \
+#
+# Pin `--target` explicitly to the GNU host triple. cargo-fuzz derives its
+# DEFAULT build target from its OWN host triple, and it is binstalled here as a
+# musl binary (`x86_64-unknown-linux-musl`). Static musl libc is incompatible
+# with the required AddressSanitizer (`-Zsanitizer=address`), so a defaulted
+# build fails to compile `mtl-core` and libFuzzer exits non-zero with no
+# artifact. The runner's rustc host is `x86_64-unknown-linux-gnu`, so pinning
+# the target to gnu builds the harness against glibc where ASan works.
+cargo +nightly fuzz run --target x86_64-unknown-linux-gnu "${target}" -- \
   -max_total_time="${budget}" \
   -rss_limit_mb=2048 \
   -timeout=25 \
