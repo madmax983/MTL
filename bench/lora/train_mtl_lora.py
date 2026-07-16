@@ -39,11 +39,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import os
 import random
-import sys
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 
 # yaml is the ONLY third-party import allowed at module top level (smoke needs it,
@@ -57,13 +55,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 DEFAULT_PILOT = os.path.join(REPO_ROOT, "bench", "dataset", "pilot", "dataset.jsonl")
 
-# Verbatim success gate from docs/design/v0.7-lora-warm-agent.md §6 (do NOT edit):
-SUCCESS_GATE = (
-    "Eval gate  warm pass@1 >= cold, tok->correct within +/-2, 0 preamble, "
-    "N* <= 2 on >=3/5 price configs, on the #53 sealed set"
-)
-# The exact §6 string uses unicode >= / <= / -> ; keep an exact copy too for the
-# model card / manifest so the pre-registered gate is byte-reproducible.
+# Verbatim success gate from docs/design/v0.7-lora-warm-agent.md §6 (do NOT edit).
+# Kept byte-exact (unicode ≥ / ≤ / →) so the pre-registered gate is reproducible in
+# the model card / manifest.
 SUCCESS_GATE_VERBATIM = (
     "Eval gate  warm pass@1 ≥ cold, tok→correct within ±2, 0 preamble, "
     "N* ≤ 2 on ≥3/5 price configs, on the #53 sealed set"
@@ -284,7 +278,6 @@ def structural_chatml(row: dict, system_marker: str | None) -> str:
 
 # Qwen2.5 assistant header used for completion-only masking.
 ASSISTANT_HEADER = "<|im_start|>assistant\n"
-RESPONSE_TEMPLATE = "<|im_start|>assistant\n"  # DataCollatorForCompletionOnlyLM anchor
 
 
 # ------------------------------------------------------------------------------
